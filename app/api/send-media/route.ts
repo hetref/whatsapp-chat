@@ -286,22 +286,9 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Update last_active for the sender - Fix RLS policy issue
-    const { error: userUpdateError } = await supabase
-      .from('users')
-      .upsert([{
-        id: user.id,
-        name: user.user_metadata?.full_name || user.email || 'Unknown User',
-        last_active: timestamp
-      }], {
-        onConflict: 'id',
-        ignoreDuplicates: false
-      });
-
-    if (userUpdateError) {
-      console.error('Error updating user last_active:', userUpdateError);
-      // Don't fail the request for this non-critical update
-    }
+    // Note: Removed user last_active update to avoid RLS policy issues
+    // The user's last_active will be updated by the webhook when they receive messages
+    // or by other parts of the application where the user context is clearer
 
     // Return results
     const successCount = results.filter(r => r.success).length;
