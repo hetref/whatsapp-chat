@@ -115,7 +115,7 @@ export function UserList({ users, selectedUser, onUserSelect, currentUserId }: U
                       </span>
                     </div>
                     <p className="text-sm text-muted-foreground truncate">
-                      Click to start messaging
+                      +{user.id}
                     </p>
                   </div>
                 </div>
