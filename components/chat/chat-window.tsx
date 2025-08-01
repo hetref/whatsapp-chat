@@ -3,7 +3,7 @@
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ArrowLeft, Send, MessageCircle, Loader2, X, Download, FileText, Music, Image as ImageIcon, Play, Pause } from "lucide-react";
+import { ArrowLeft, Send, MessageCircle, Loader2, X, Download, FileText, Music, Image as ImageIcon, Play, Pause, RefreshCw } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 
 interface ChatUser {
@@ -32,6 +32,9 @@ interface MediaData {
   caption?: string;
   voice?: boolean;
   media_url?: string;
+  s3_uploaded?: boolean;
+  upload_timestamp?: string;
+  url_refreshed_at?: string;
 }
 
 interface ChatWindowProps {
@@ -57,6 +60,7 @@ export function ChatWindow({
 }: ChatWindowProps) {
   const [messageInput, setMessageInput] = useState("");
   const [playingAudio, setPlayingAudio] = useState<string | null>(null);
+  const [refreshingUrls, setRefreshingUrls] = useState<Set<string>>(new Set());
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const audioRefs = useRef<{ [key: string]: HTMLAudioElement }>({});
@@ -171,6 +175,43 @@ export function ChatWindow({
     }
   };
 
+  const refreshMediaUrl = async (messageId: string) => {
+    if (refreshingUrls.has(messageId)) return;
+
+    setRefreshingUrls(prev => new Set(prev).add(messageId));
+
+    try {
+      const response = await fetch('/api/media/refresh-url', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ messageId }),
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        console.log('Media URL refreshed:', result);
+        
+        // Trigger a re-render by updating the messages
+        // This will be handled by the parent component's real-time subscription
+        
+        // Show success feedback
+        // You might want to add a toast notification here
+      } else {
+        console.error('Failed to refresh media URL:', await response.text());
+      }
+    } catch (error) {
+      console.error('Error refreshing media URL:', error);
+    } finally {
+      setRefreshingUrls(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(messageId);
+        return newSet;
+      });
+    }
+  };
+
   const renderMessageContent = (message: Message, isOwn: boolean) => {
     const messageType = message.message_type || 'text';
     let mediaData: MediaData | null = null;
@@ -189,34 +230,55 @@ export function ChatWindow({
         : 'bg-white dark:bg-muted border border-border mr-4'
     }`;
 
+    const isRefreshing = refreshingUrls.has(message.id);
+
     switch (messageType) {
       case 'image':
         return (
           <div className={baseClasses}>
-            {mediaData?.media_url && (
-              <div className="mb-2">
+            {mediaData?.media_url && mediaData.s3_uploaded ? (
+              <div className="mb-2 relative">
                 <img 
                   src={mediaData.media_url} 
                   alt="Shared image"
                   className="max-w-full h-auto rounded-lg cursor-pointer"
                   onClick={() => window.open(mediaData.media_url, '_blank')}
-                  onError={(e) => {
-                    const target = e.target as HTMLImageElement;
-                    target.style.display = 'none';
+                  onError={() => {
+                    console.log('Image failed to load, attempting to refresh URL');
+                    refreshMediaUrl(message.id);
                   }}
                 />
+                {isRefreshing && (
+                  <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center rounded-lg">
+                    <RefreshCw className="h-6 w-6 text-white animate-spin" />
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 text-sm mb-2">
+                <ImageIcon className="h-4 w-4" />
+                <span>Image</span>
+                {mediaData?.s3_uploaded === false && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="p-1 h-6 w-6"
+                    onClick={() => refreshMediaUrl(message.id)}
+                    disabled={isRefreshing}
+                  >
+                    {isRefreshing ? (
+                      <RefreshCw className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <RefreshCw className="h-3 w-3" />
+                    )}
+                  </Button>
+                )}
               </div>
             )}
             {mediaData?.caption && (
               <p className="text-sm whitespace-pre-wrap break-words mb-1">
                 {mediaData.caption}
               </p>
-            )}
-            {!mediaData?.media_url && (
-              <div className="flex items-center gap-2 text-sm">
-                <ImageIcon className="h-4 w-4" />
-                <span>Image</span>
-              </div>
             )}
             <span className={`text-xs mt-1 block ${isOwn ? 'text-green-100' : 'text-muted-foreground'}`}>
               {formatTime(message.timestamp)}
@@ -239,14 +301,30 @@ export function ChatWindow({
                   {mediaData?.mime_type}
                 </p>
               </div>
-              {mediaData?.media_url && (
+              {mediaData?.media_url && mediaData.s3_uploaded && (
                 <Button
                   size="sm"
                   variant="ghost"
                   className={`p-1 h-8 w-8 ${isOwn ? 'hover:bg-green-600' : 'hover:bg-gray-200'}`}
                   onClick={() => downloadMedia(mediaData.media_url!, mediaData?.filename || 'document')}
+                  disabled={isRefreshing}
                 >
-                  <Download className="h-4 w-4" />
+                  {isRefreshing ? (
+                    <RefreshCw className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Download className="h-4 w-4" />
+                  )}
+                </Button>
+              )}
+              {(!mediaData?.media_url || !mediaData.s3_uploaded) && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className={`p-1 h-8 w-8 ${isOwn ? 'hover:bg-green-600' : 'hover:bg-gray-200'}`}
+                  onClick={() => refreshMediaUrl(message.id)}
+                  disabled={isRefreshing}
+                >
+                  <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
                 </Button>
               )}
             </div>
@@ -265,9 +343,11 @@ export function ChatWindow({
                 variant="ghost"
                 className={`p-2 rounded-full ${isOwn ? 'bg-green-600 hover:bg-green-700' : 'bg-gray-200 hover:bg-gray-300'}`}
                 onClick={() => mediaData?.media_url && handleAudioPlay(message.id, mediaData.media_url)}
-                disabled={!mediaData?.media_url}
+                disabled={!mediaData?.media_url || !mediaData.s3_uploaded || isRefreshing}
               >
-                {playingAudio === message.id ? (
+                {isRefreshing ? (
+                  <RefreshCw className="h-4 w-4 animate-spin" />
+                ) : playingAudio === message.id ? (
                   <Pause className="h-4 w-4" />
                 ) : (
                   <Play className="h-4 w-4" />
@@ -279,6 +359,17 @@ export function ChatWindow({
                   <span className="text-sm">
                     {mediaData?.voice ? 'Voice Message' : 'Audio'}
                   </span>
+                  {(!mediaData?.media_url || !mediaData.s3_uploaded) && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="p-1 h-6 w-6"
+                      onClick={() => refreshMediaUrl(message.id)}
+                      disabled={isRefreshing}
+                    >
+                      <RefreshCw className={`h-3 w-3 ${isRefreshing ? 'animate-spin' : ''}`} />
+                    </Button>
+                  )}
                 </div>
                 <div className={`h-1 bg-current opacity-20 rounded-full mt-1`}></div>
               </div>
@@ -292,28 +383,51 @@ export function ChatWindow({
       case 'video':
         return (
           <div className={baseClasses}>
-            {mediaData?.media_url && (
-              <div className="mb-2">
+            {mediaData?.media_url && mediaData.s3_uploaded ? (
+              <div className="mb-2 relative">
                 <video 
                   controls
                   className="max-w-full h-auto rounded-lg"
                   preload="metadata"
+                  onError={() => {
+                    console.log('Video failed to load, attempting to refresh URL');
+                    refreshMediaUrl(message.id);
+                  }}
                 >
                   <source src={mediaData.media_url} type={mediaData.mime_type} />
                   Your browser does not support the video tag.
                 </video>
+                {isRefreshing && (
+                  <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center rounded-lg">
+                    <RefreshCw className="h-6 w-6 text-white animate-spin" />
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 text-sm mb-2">
+                <Play className="h-4 w-4" />
+                <span>Video</span>
+                {(!mediaData?.media_url || !mediaData.s3_uploaded) && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="p-1 h-6 w-6"
+                    onClick={() => refreshMediaUrl(message.id)}
+                    disabled={isRefreshing}
+                  >
+                    {isRefreshing ? (
+                      <RefreshCw className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <RefreshCw className="h-3 w-3" />
+                    )}
+                  </Button>
+                )}
               </div>
             )}
             {mediaData?.caption && (
               <p className="text-sm whitespace-pre-wrap break-words mb-1">
                 {mediaData.caption}
               </p>
-            )}
-            {!mediaData?.media_url && (
-              <div className="flex items-center gap-2 text-sm">
-                <Play className="h-4 w-4" />
-                <span>Video</span>
-              </div>
             )}
             <span className={`text-xs mt-1 block ${isOwn ? 'text-green-100' : 'text-muted-foreground'}`}>
               {formatTime(message.timestamp)}

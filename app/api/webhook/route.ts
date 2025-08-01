@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { downloadAndUploadToS3 } from '@/lib/aws-s3';
 
 // WhatsApp webhook verification token (set this in your environment variables)
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN || 'your-verify-token';
@@ -66,16 +67,16 @@ export async function GET(request: NextRequest) {
 }
 
 /**
- * Download media from WhatsApp API and get the URL
+ * Get media URL from WhatsApp API
  */
-async function getMediaUrl(mediaId: string): Promise<string | null> {
+async function getWhatsAppMediaUrl(mediaId: string): Promise<string | null> {
   try {
     if (!WHATSAPP_ACCESS_TOKEN) {
       console.error('WhatsApp access token not configured');
       return null;
     }
 
-    // First, get media info
+    // Get media info from WhatsApp API
     const mediaInfoResponse = await fetch(
       `https://graph.facebook.com/${WHATSAPP_API_VERSION}/${mediaId}`,
       {
@@ -91,11 +92,11 @@ async function getMediaUrl(mediaId: string): Promise<string | null> {
     }
 
     const mediaInfo = await mediaInfoResponse.json();
-    console.log('Media info retrieved:', { id: mediaId, url: mediaInfo.url });
+    console.log('WhatsApp media info retrieved:', { id: mediaId, url: mediaInfo.url });
     
     return mediaInfo.url;
   } catch (error) {
-    console.error('Error getting media URL:', error);
+    console.error('Error getting WhatsApp media URL:', error);
     return null;
   }
 }
@@ -207,12 +208,33 @@ export async function POST(request: NextRequest) {
       // Process message content based on type
       const { content, messageType, mediaData } = processMessageContent(message);
 
-      // Get media URL if it's a media message
-      let mediaUrl = null;
-      if (mediaData && mediaData.id) {
-        mediaUrl = await getMediaUrl(mediaData.id);
-        if (mediaUrl) {
-          console.log(`Media URL retrieved for ${messageType}:`, mediaUrl);
+      // Handle media upload to S3 if it's a media message
+      let s3MediaUrl = null;
+      if (mediaData && mediaData.id && WHATSAPP_ACCESS_TOKEN) {
+        console.log(`Processing media upload for ${messageType}: ${mediaData.id}`);
+        
+        // Get WhatsApp media URL first
+        const whatsappMediaUrl = await getWhatsAppMediaUrl(mediaData.id);
+        
+        if (whatsappMediaUrl) {
+          console.log(`Downloading and uploading ${messageType} to S3...`);
+          
+          // Download from WhatsApp and upload to S3
+          s3MediaUrl = await downloadAndUploadToS3(
+            whatsappMediaUrl,
+            phoneNumber, // sender ID for folder structure
+            mediaData.id, // media ID for filename
+            mediaData.mime_type || 'application/octet-stream',
+            WHATSAPP_ACCESS_TOKEN
+          );
+          
+          if (s3MediaUrl) {
+            console.log(`Successfully uploaded ${messageType} to S3: ${s3MediaUrl}`);
+          } else {
+            console.error(`Failed to upload ${messageType} to S3`);
+          }
+        } else {
+          console.error(`Failed to get WhatsApp media URL for ${mediaData.id}`);
         }
       }
 
@@ -287,7 +309,7 @@ export async function POST(request: NextRequest) {
 
       console.log(`Message receiver identified as: ${receiverId}`);
 
-      // Prepare message object for database
+      // Prepare message object for database with S3 URL
       const messageObject = {
         id: message.id, // Use WhatsApp message ID
         sender_id: phoneNumber,
@@ -298,11 +320,13 @@ export async function POST(request: NextRequest) {
         message_type: messageType,
         media_data: mediaData ? JSON.stringify({
           ...mediaData,
-          media_url: mediaUrl
+          media_url: s3MediaUrl, // Use S3 URL instead of WhatsApp URL
+          s3_uploaded: !!s3MediaUrl, // Flag to indicate if uploaded to S3
+          upload_timestamp: s3MediaUrl ? new Date().toISOString() : null
         }) : null
       };
 
-      // Store the incoming message with proper receiver_id and media data
+      // Store the incoming message with S3 media URL
       const { error: messageError } = await supabase
         .from('messages')
         .insert([messageObject]);
@@ -312,7 +336,12 @@ export async function POST(request: NextRequest) {
       } else {
         console.log(`${messageType} message stored successfully: ${message.id} (from: ${phoneNumber} to: ${receiverId})`);
         if (mediaData) {
-          console.log('Media data stored:', mediaData);
+          console.log('Media data stored with S3 URL:', {
+            type: mediaData.type,
+            id: mediaData.id,
+            s3_uploaded: !!s3MediaUrl,
+            has_s3_url: !!s3MediaUrl
+          });
         }
       }
     }
