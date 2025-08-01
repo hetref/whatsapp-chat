@@ -68,8 +68,8 @@ Use this checklist to ensure you have everything set up correctly for your Whats
 - [ ] `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_OR_ANON_KEY` set
 - [ ] `PHONE_NUMBER_ID` set
 - [ ] `WHATSAPP_TOKEN` set
-- [ ] `WHATSAPP_VERIFY_TOKEN` set
-- [ ] `WHATSAPP_API_VERSION` set (default: v17.0)
+- [ ] `VERIFY_TOKEN` set
+- [ ] `WHATSAPP_API_VERSION` set (default: v23.0)
 
 ### 3. Application Testing
 - [ ] Development server starts (`npm run dev`)

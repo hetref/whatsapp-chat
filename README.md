@@ -121,10 +121,10 @@ NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_OR_ANON_KEY=your_supabase_anon_key
 
 # WhatsApp Cloud API Configuration
-WHATSAPP_PHONE_NUMBER_ID=your_whatsapp_phone_number_id
-WHATSAPP_ACCESS_TOKEN=your_permanent_access_token
-WHATSAPP_VERIFY_TOKEN=your_custom_verify_token
-WHATSAPP_API_VERSION=v17.0
+PHONE_NUMBER_ID=your_whatsapp_phone_number_id
+WHATSAPP_TOKEN=your_permanent_access_token
+VERIFY_TOKEN=your_custom_verify_token
+WHATSAPP_API_VERSION=v23.0
 ```
 
 ### 5. Run the Application

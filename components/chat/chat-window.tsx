@@ -3,7 +3,7 @@
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ArrowLeft, Send, MessageCircle } from "lucide-react";
+import { ArrowLeft, Send, MessageCircle, Loader2 } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 
 interface ChatUser {
@@ -28,6 +28,7 @@ interface ChatWindowProps {
   onBack?: () => void;
   currentUserId: string;
   isMobile?: boolean;
+  isLoading?: boolean;
 }
 
 export function ChatWindow({ 
@@ -36,7 +37,8 @@ export function ChatWindow({
   onSendMessage, 
   onBack, 
   currentUserId, 
-  isMobile = false 
+  isMobile = false,
+  isLoading = false
 }: ChatWindowProps) {
   const [messageInput, setMessageInput] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -49,7 +51,7 @@ export function ChatWindow({
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (messageInput.trim() && selectedUser) {
+    if (messageInput.trim() && selectedUser && !isLoading) {
       onSendMessage(messageInput.trim());
       setMessageInput("");
     }
@@ -126,7 +128,14 @@ export function ChatWindow({
         <div className="flex-1">
           <h2 className="font-semibold text-foreground">{selectedUser.name}</h2>
           <p className="text-sm text-muted-foreground">
-            Last seen {formatTime(selectedUser.last_active)}
+            {isLoading ? (
+              <span className="flex items-center gap-1">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                Sending message...
+              </span>
+            ) : (
+              `Last seen ${formatTime(selectedUser.last_active)}`
+            )}
           </p>
         </div>
       </div>
@@ -199,16 +208,21 @@ export function ChatWindow({
           <Input
             value={messageInput}
             onChange={(e) => setMessageInput(e.target.value)}
-            placeholder="Type a message..."
+            placeholder={isLoading ? "Sending..." : "Type a message..."}
             className="flex-1 border-border focus:ring-green-500"
             maxLength={1000}
+            disabled={isLoading}
           />
           <Button 
             type="submit" 
-            disabled={!messageInput.trim()}
-            className="bg-green-600 hover:bg-green-700 text-white px-4"
+            disabled={!messageInput.trim() || isLoading}
+            className="bg-green-600 hover:bg-green-700 text-white px-4 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <Send className="h-4 w-4" />
+            {isLoading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Send className="h-4 w-4" />
+            )}
           </Button>
         </form>
       </div>

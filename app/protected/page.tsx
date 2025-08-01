@@ -28,6 +28,7 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isMobile, setIsMobile] = useState(false);
   const [showChat, setShowChat] = useState(false);
+  const [sendingMessage, setSendingMessage] = useState(false);
   const supabase = createClient();
 
   // Check screen size for responsive behavior
@@ -131,22 +132,65 @@ export default function ChatPage() {
   };
 
   const handleSendMessage = async (content: string) => {
-    if (!selectedUser || !user) return;
+    if (!selectedUser || !user || sendingMessage) return;
 
-    const message = {
-      sender_id: user.id,
-      receiver_id: selectedUser.id,
-      content,
-      timestamp: new Date().toISOString(),
-      is_sent_by_me: true
-    };
+    setSendingMessage(true);
+    
+    try {
+      // Call the WhatsApp API endpoint which handles both WhatsApp sending and database storage
+      const response = await fetch('/api/send-message', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          to: selectedUser.id,
+          message: content,
+        }),
+      });
 
-    const { error } = await supabase
-      .from('messages')
-      .insert([message]);
+      const result = await response.json();
 
-    if (error) {
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to send message');
+      }
+
+      console.log('Message sent successfully:', result);
+      
+      // The message will be automatically added to the UI via real-time subscription
+      // No need to manually update the messages state here
+      
+    } catch (error) {
       console.error('Error sending message:', error);
+      
+      // Show error to user (you might want to add a toast notification here)
+      alert(`Failed to send message: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      
+      // Fallback: Store in database only if WhatsApp API fails
+      try {
+        const fallbackMessage = {
+          id: `fallback_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          sender_id: user.id,
+          receiver_id: selectedUser.id,
+          content,
+          timestamp: new Date().toISOString(),
+          is_sent_by_me: true
+        };
+
+        const { error: dbError } = await supabase
+          .from('messages')
+          .insert([fallbackMessage]);
+
+        if (dbError) {
+          console.error('Fallback database storage also failed:', dbError);
+        } else {
+          console.log('Message stored in database as fallback');
+        }
+      } catch (fallbackError) {
+        console.error('Fallback storage failed:', fallbackError);
+      }
+    } finally {
+      setSendingMessage(false);
     }
   };
 
@@ -183,6 +227,7 @@ export default function ChatPage() {
               messages={messages}
               onSendMessage={handleSendMessage}
               currentUserId={user.id}
+              isLoading={sendingMessage}
             />
           </div>
         </>
@@ -211,6 +256,7 @@ export default function ChatPage() {
                 onBack={handleBackToUsers}
                 currentUserId={user.id}
                 isMobile={true}
+                isLoading={sendingMessage}
               />
             </div>
           )}
