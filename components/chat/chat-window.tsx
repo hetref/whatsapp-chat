@@ -3,11 +3,32 @@
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ArrowLeft, Send, MessageCircle, Loader2, X, Download, FileText, Image as ImageIcon, Play, Pause, RefreshCw, Volume2, Paperclip } from "lucide-react";
+import { ArrowLeft, Send, MessageCircle, Loader2, X, Download, FileText, Image as ImageIcon, Play, Pause, RefreshCw, Volume2, Paperclip, MessageSquare } from "lucide-react";
 import { useState, useRef, useEffect, useCallback } from "react";
 import Image from "next/image";
 import { MediaUpload } from "./media-upload";
 import { UserInfoDialog } from "./user-info-dialog";
+import { TemplateSelector } from "./template-selector";
+
+// Template interfaces
+interface TemplateComponent {
+  type: string;
+  format?: string;
+  text?: string;
+  buttons?: Array<{
+    type: string;
+    text: string;
+    url?: string;
+    phone_number?: string;
+  }>;
+}
+
+interface WhatsAppTemplate {
+  id: string;
+  name: string;
+  language: string;
+  components: TemplateComponent[];
+}
 
 interface ChatUser {
   id: string;
@@ -42,6 +63,26 @@ interface MediaData {
   s3_uploaded?: boolean;
   upload_timestamp?: string;
   url_refreshed_at?: string;
+  template_name?: string; // Added for template messages
+  language?: string; // Added for template language
+  header?: {
+    format: 'IMAGE' | 'VIDEO' | 'DOCUMENT';
+    media_url?: string;
+    text?: string;
+    filename?: string; // Added for document headers
+  };
+  body?: {
+    text?: string;
+  };
+  footer?: {
+    text?: string;
+  };
+  buttons?: Array<{
+    type: 'URL' | 'PHONE_NUMBER' | 'QUICK_REPLY';
+    text: string;
+    url?: string;
+    phone_number?: string;
+  }>;
 }
 
 interface MediaFile {
@@ -85,10 +126,42 @@ export function ChatWindow({
   const [isDragging, setIsDragging] = useState(false);
   const [sendingMedia, setSendingMedia] = useState(false);
   const [showUserInfo, setShowUserInfo] = useState(false);
+  const [showTemplateSelector, setShowTemplateSelector] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const unreadIndicatorRef = useRef<HTMLDivElement>(null);
   const audioRefs = useRef<{ [key: string]: HTMLAudioElement }>({});
+
+  // Handle template message sending
+  const handleSendTemplate = async (templateName: string, templateData: WhatsAppTemplate, variables: Record<string, string>) => {
+    if (!selectedUser) return;
+
+    try {
+      const response = await fetch('/api/send-template', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          to: selectedUser.id,
+          templateName,
+          templateData,
+          variables,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.message || result.error || 'Failed to send template');
+      }
+
+      console.log('Template sent successfully:', result);
+    } catch (error) {
+      console.error('Error sending template:', error);
+      throw error; // Let the template selector handle the error display
+    }
+  };
 
   // Calculate unread messages
   const unreadMessages = messages.filter(msg => 
@@ -118,6 +191,8 @@ export function ChatWindow({
       if (event.key === 'Escape') {
         if (showMediaUpload) {
           setShowMediaUpload(false);
+        } else if (showTemplateSelector) {
+          setShowTemplateSelector(false);
         } else if (isMobile && onBack) {
           onBack();
         } else if (!isMobile && onClose) {
@@ -131,7 +206,7 @@ export function ChatWindow({
       window.addEventListener('keydown', handleKeyDown);
       return () => window.removeEventListener('keydown', handleKeyDown);
     }
-  }, [selectedUser, isMobile, onBack, onClose, showMediaUpload]);
+  }, [selectedUser, isMobile, onBack, onClose, showMediaUpload, showTemplateSelector]);
 
   // Handle drag and drop for the entire chat window
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -683,6 +758,180 @@ export function ChatWindow({
           </div>
         );
 
+      case 'template':
+        // Template message with full component display
+        return (
+          <div className={baseClasses}>
+            <div className="flex items-center gap-2 mb-3">
+              <MessageSquare className="h-4 w-4 opacity-75" />
+              <span className="text-xs opacity-75 font-medium">Template Message</span>
+            </div>
+            
+            {/* Template Content */}
+            <div className="space-y-2">
+              {/* Header Component */}
+              {mediaData?.header && (
+                <div className="border-b border-opacity-20 border-current pb-2">
+                  <div className="flex items-center gap-2 mb-1">
+                    <div className="w-2 h-2 rounded-full bg-current opacity-50"></div>
+                    <span className="text-xs opacity-75 font-medium uppercase tracking-wide">Header</span>
+                  </div>
+                  {mediaData.header.format === 'IMAGE' && mediaData.header.media_url ? (
+                    <div className="mb-2 rounded-lg overflow-hidden">
+                      <Image
+                        src={mediaData.header.media_url}
+                        alt="Template header image"
+                        width={250}
+                        height={150}
+                        className="max-w-full h-auto object-cover rounded-lg"
+                        style={{ maxWidth: '100%', height: 'auto' }}
+                      />
+                    </div>
+                  ) : mediaData.header.format === 'VIDEO' && mediaData.header.media_url ? (
+                    <div className="mb-2 rounded-lg overflow-hidden">
+                      <video 
+                        controls
+                        className="max-w-full h-auto rounded-lg"
+                        preload="metadata"
+                      >
+                        <source src={mediaData.header.media_url} type="video/mp4" />
+                        Your browser does not support the video tag.
+                      </video>
+                    </div>
+                  ) : mediaData.header.format === 'DOCUMENT' && mediaData.header.media_url ? (
+                    <div className="flex items-center gap-3 p-2 bg-gray-100 dark:bg-gray-800 rounded-lg mb-2">
+                      <FileText className="h-5 w-5 text-gray-600" />
+                      <span className="text-sm font-medium">{mediaData.header.filename || 'Document'}</span>
+                    </div>
+                  ) : mediaData.header.text ? (
+                    <p className="text-sm font-semibold leading-relaxed">
+                      {mediaData.header.text}
+                    </p>
+                  ) : null}
+                </div>
+              )}
+
+              {/* Body Component */}
+              {mediaData?.body && (
+                <div className={mediaData?.header ? '' : 'pb-2'}>
+                  {mediaData?.header && (
+                    <div className="flex items-center gap-2 mb-1">
+                      <div className="w-2 h-2 rounded-full bg-current opacity-50"></div>
+                      <span className="text-xs opacity-75 font-medium uppercase tracking-wide">Body</span>
+                    </div>
+                  )}
+                  <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
+                    {mediaData.body.text || message.content}
+                  </p>
+                </div>
+              )}
+
+              {/* If no structured data, show the processed content */}
+              {!mediaData?.body && !mediaData?.header && (
+                <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
+                  {message.content}
+                </p>
+              )}
+
+              {/* Footer Component */}
+              {mediaData?.footer && (
+                <div className="border-t border-opacity-20 border-current pt-2">
+                  <div className="flex items-center gap-2 mb-1">
+                    <div className="w-2 h-2 rounded-full bg-current opacity-50"></div>
+                    <span className="text-xs opacity-75 font-medium uppercase tracking-wide">Footer</span>
+                  </div>
+                  <p className="text-xs opacity-75 leading-relaxed">
+                    {mediaData.footer.text}
+                  </p>
+                </div>
+              )}
+
+              {/* Buttons Component */}
+              {mediaData?.buttons && mediaData.buttons.length > 0 && (
+                <div className="border-t border-opacity-20 border-current pt-2">
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="w-2 h-2 rounded-full bg-current opacity-50"></div>
+                    <span className="text-xs opacity-75 font-medium uppercase tracking-wide">Buttons</span>
+                  </div>
+                  <div className="space-y-1">
+                    {mediaData.buttons.map((button: {
+                      type: string;
+                      text: string;
+                      url?: string;
+                      phone_number?: string;
+                    }, index: number) => (
+                      <div
+                        key={index}
+                        className={`
+                          px-3 py-2 rounded-lg border border-opacity-30 border-current text-center text-sm font-medium
+                          ${isOwn 
+                            ? 'bg-white bg-opacity-20 hover:bg-opacity-30' 
+                            : 'bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600'
+                          }
+                          cursor-pointer transition-colors
+                        `}
+                      >
+                        <div className="flex items-center justify-center gap-2">
+                          {button.type === 'URL' && (
+                            <>
+                              <span>🔗</span>
+                              <span>{button.text}</span>
+                            </>
+                          )}
+                          {button.type === 'PHONE_NUMBER' && (
+                            <>
+                              <span>📞</span>
+                              <span>{button.text}</span>
+                            </>
+                          )}
+                          {button.type === 'QUICK_REPLY' && (
+                            <>
+                              <span>💬</span>
+                              <span>{button.text}</span>
+                            </>
+                          )}
+                          {!['URL', 'PHONE_NUMBER', 'QUICK_REPLY'].includes(button.type) && (
+                            <span>{button.text}</span>
+                          )}
+                        </div>
+                        {button.url && (
+                          <div className="text-xs opacity-60 mt-1 truncate">
+                            {button.url}
+                          </div>
+                        )}
+                        {button.phone_number && (
+                          <div className="text-xs opacity-60 mt-1">
+                            {button.phone_number}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Template Info Footer */}
+            <div className="mt-3 pt-2 border-t border-opacity-20 border-current flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                {mediaData?.template_name && (
+                  <span className="text-xs opacity-75">
+                    Template: {mediaData.template_name}
+                  </span>
+                )}
+                {mediaData?.language && (
+                  <span className="text-xs opacity-60">
+                    • {mediaData.language.toUpperCase()}
+                  </span>
+                )}
+              </div>
+              <span className={`text-xs ${isOwn ? 'text-green-100' : 'text-muted-foreground'}`}>
+                {formatTime(message.timestamp)}
+              </span>
+            </div>
+          </div>
+        );
+
       default:
         // Text message or fallback
         return (
@@ -850,6 +1099,16 @@ export function ChatWindow({
           >
             <Paperclip className="h-5 w-5" />
           </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => setShowTemplateSelector(true)}
+            className="p-2 hover:bg-muted rounded-full transition-colors"
+            title="Send template"
+          >
+            <MessageSquare className="h-5 w-5" />
+          </Button>
           <Input
             value={messageInput}
             onChange={(e) => setMessageInput(e.target.value)}
@@ -894,6 +1153,14 @@ export function ChatWindow({
         onClose={() => setShowMediaUpload(false)}
         onSend={handleSendMedia}
         selectedUser={selectedUser}
+      />
+
+      {/* Template Selector Modal */}
+      <TemplateSelector
+        isOpen={showTemplateSelector}
+        onClose={() => setShowTemplateSelector(false)}
+        onSendTemplate={handleSendTemplate}
+        selectedUser={selectedUser!}
       />
 
       {/* User Info Dialog */}
