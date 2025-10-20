@@ -20,6 +20,8 @@ export function SignUpForm({
   className,
   ...props
 }: React.ComponentPropsWithoutRef<"div">) {
+  const [fullName, setFullName] = useState("");
+  const [phoneNumber, setPhoneNumber] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [repeatPassword, setRepeatPassword] = useState("");
@@ -39,12 +41,36 @@ export function SignUpForm({
       return;
     }
 
+    if (!fullName.trim()) {
+      setError("Full name is required");
+      setIsLoading(false);
+      return;
+    }
+
+    if (!phoneNumber.trim()) {
+      setError("Phone number is required");
+      setIsLoading(false);
+      return;
+    }
+
+    // Validate phone number format (basic validation)
+    const phoneRegex = /^[+]?[\d\s()-]{10,}$/;
+    if (!phoneRegex.test(phoneNumber)) {
+      setError("Please enter a valid phone number");
+      setIsLoading(false);
+      return;
+    }
+
     try {
       const { error } = await supabase.auth.signUp({
         email,
         password,
         options: {
-          emailRedirectTo: `${window.location.origin}/protected`,
+          emailRedirectTo: `${window.location.origin}/protected/setup`,
+          data: {
+            full_name: fullName,
+            phone_number: phoneNumber,
+          },
         },
       });
       if (error) throw error;
@@ -66,6 +92,31 @@ export function SignUpForm({
         <CardContent>
           <form onSubmit={handleSignUp}>
             <div className="flex flex-col gap-6">
+              <div className="grid gap-2">
+                <Label htmlFor="full-name">Full Name</Label>
+                <Input
+                  id="full-name"
+                  type="text"
+                  placeholder="John Doe"
+                  required
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="phone-number">Phone Number</Label>
+                <Input
+                  id="phone-number"
+                  type="tel"
+                  placeholder="+1234567890"
+                  required
+                  value={phoneNumber}
+                  onChange={(e) => setPhoneNumber(e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Include country code (e.g., +1 for US, +91 for India)
+                </p>
+              </div>
               <div className="grid gap-2">
                 <Label htmlFor="email">Email</Label>
                 <Input

@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 
 /**
  * Especially important if using Fluid compute: Don't put this client in a
@@ -30,5 +31,32 @@ export async function createClient() {
         },
       },
     },
+  );
+}
+
+/**
+ * Create a Supabase client with service role key
+ * This bypasses Row Level Security (RLS) policies
+ * 
+ * ⚠️ SECURITY WARNING: Only use this for:
+ * - Webhook endpoints that need to access data without user auth
+ * - Server-side operations that require admin access
+ * 
+ * Never expose this client to the client-side or use for user-facing operations!
+ */
+export function createServiceRoleClient() {
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    throw new Error('SUPABASE_SERVICE_ROLE_KEY environment variable is not set');
+  }
+
+  return createSupabaseClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY,
+    {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false
+      }
+    }
   );
 }

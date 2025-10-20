@@ -12,67 +12,83 @@ export async function POST(request: NextRequest) {
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) {
       console.error('Authentication error:', authError);
-      return new NextResponse('Unauthorized', { status: 401 });
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
     }
 
     // Parse request body
     const { userId, customName } = await request.json();
 
     if (!userId) {
-      return new NextResponse('Missing userId parameter', { status: 400 });
-    }
-
-    // Validate phone number format (basic validation)
-    const phoneRegex = /^\+?[1-9]\d{1,14}$/;
-    if (!phoneRegex.test(userId)) {
-      return new NextResponse('Invalid phone number format', { status: 400 });
+      return NextResponse.json(
+        { error: 'Missing userId parameter' },
+        { status: 400 }
+      );
     }
 
     // Validate custom name length
     if (customName && customName.length > 100) {
-      return new NextResponse('Custom name too long (max 100 characters)', { status: 400 });
-    }
-
-    console.log(`Updating custom name for user ${userId}: "${customName}"`);
-
-    // Call the database function to update custom name
-    const { data, error } = await supabase.rpc('update_user_custom_name', {
-      user_id: userId,
-      new_custom_name: customName || null
-    });
-
-    if (error) {
-      console.error('Error updating user custom name:', error);
-      return new NextResponse(
-        JSON.stringify({ error: 'Failed to update user name', details: error.message }), 
-        { status: 500, headers: { 'Content-Type': 'application/json' } }
+      return NextResponse.json(
+        { 
+          error: 'Custom name too long', 
+          message: 'Custom name must be 100 characters or less' 
+        }, 
+        { status: 400 }
       );
     }
 
-    if (!data) {
-      return new NextResponse(
-        JSON.stringify({ error: 'User not found' }), 
-        { status: 404, headers: { 'Content-Type': 'application/json' } }
+    console.log(`Updating custom name for user ${userId} to "${customName}"`);
+
+    // Update the user's custom name
+    const { data: updatedUser, error: updateError } = await supabase
+      .from('users')
+      .update({ 
+        custom_name: customName,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', userId)
+      .select()
+      .single();
+
+    if (updateError) {
+      console.error('Error updating user name:', updateError);
+      return NextResponse.json(
+        { error: 'Failed to update user name', details: updateError.message },
+        { status: 500 }
       );
     }
 
-    console.log(`Successfully updated custom name for user ${userId}`);
+    if (!updatedUser) {
+      return NextResponse.json(
+        { error: 'User not found' },
+        { status: 404 }
+      );
+    }
+
+    console.log('User name updated successfully:', updatedUser);
 
     return NextResponse.json({
       success: true,
-      userId,
-      customName: customName || null,
+      user: {
+        id: updatedUser.id,
+        name: updatedUser.name,
+        custom_name: updatedUser.custom_name,
+        whatsapp_name: updatedUser.name,
+        last_active: updatedUser.last_active
+      },
       timestamp: new Date().toISOString()
     });
 
   } catch (error) {
     console.error('Error in update-name API:', error);
-    return new NextResponse(
-      JSON.stringify({ 
+    return NextResponse.json(
+      { 
         error: 'Internal server error', 
         message: error instanceof Error ? error.message : 'Unknown error' 
-      }), 
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
+      }, 
+      { status: 500 }
     );
   }
 }
@@ -85,4 +101,4 @@ export async function GET() {
     status: 'Update User Name API',
     timestamp: new Date().toISOString()
   });
-} 
+}

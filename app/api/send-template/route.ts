@@ -1,11 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 
-// WhatsApp Cloud API configuration
-const WHATSAPP_PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
-const WHATSAPP_ACCESS_TOKEN = process.env.WHATSAPP_TOKEN;
-const WHATSAPP_API_VERSION = process.env.WHATSAPP_API_VERSION || 'v23.0';
-
 interface SendTemplateRequest {
   to: string;
   templateName: string;
@@ -33,12 +28,15 @@ interface SendTemplateRequest {
 }
 
 /**
- * Send template message via WhatsApp Cloud API
+ * Send template message via WhatsApp Cloud API using user-specific credentials
  */
 async function sendTemplateMessage(
   to: string,
   templateName: string,
   language: string,
+  accessToken: string,
+  phoneNumberId: string,
+  apiVersion: string,
   variables: {
     header: Record<string, string>;
     body: Record<string, string>;
@@ -46,7 +44,7 @@ async function sendTemplateMessage(
   }
 ): Promise<{ messages: { id: string }[] }> {
   try {
-    const whatsappApiUrl = `https://graph.facebook.com/${WHATSAPP_API_VERSION}/${WHATSAPP_PHONE_NUMBER_ID}/messages`;
+    const whatsappApiUrl = `https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`;
 
     // Build template parameters for each component
     const templateComponents = [];
@@ -114,7 +112,7 @@ async function sendTemplateMessage(
     const response = await fetch(whatsappApiUrl, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
+        'Authorization': `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(messageData),
@@ -144,6 +142,7 @@ async function sendTemplateMessage(
 
 /**
  * POST handler for sending template messages
+ * Now uses user-specific access tokens and phone number IDs
  */
 export async function POST(request: NextRequest) {
   try {
@@ -153,7 +152,10 @@ export async function POST(request: NextRequest) {
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) {
       console.error('Authentication error:', authError);
-      return new NextResponse('Unauthorized', { status: 401 });
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
     }
 
     // Parse request body
@@ -162,18 +164,51 @@ export async function POST(request: NextRequest) {
     // Validate required parameters
     if (!to || !templateName || !templateData) {
       console.error('Missing required parameters:', { to: !!to, templateName: !!templateName, templateData: !!templateData });
-      return new NextResponse('Missing required parameters: to, templateName, templateData', { status: 400 });
+      return NextResponse.json(
+        { error: 'Missing required parameters: to, templateName, templateData' },
+        { status: 400 }
+      );
     }
 
-    if (!WHATSAPP_PHONE_NUMBER_ID || !WHATSAPP_ACCESS_TOKEN) {
-      console.error('WhatsApp API credentials not configured');
-      return new NextResponse('WhatsApp API not configured', { status: 500 });
+    // Get user's WhatsApp API credentials
+    const { data: settings, error: settingsError } = await supabase
+      .from('user_settings')
+      .select('access_token, phone_number_id, api_version, access_token_added')
+      .eq('id', user.id)
+      .single();
+
+    if (settingsError || !settings) {
+      console.error('User settings not found:', settingsError);
+      return NextResponse.json(
+        { error: 'WhatsApp credentials not configured. Please complete setup.' },
+        { status: 400 }
+      );
     }
+
+    if (!settings.access_token_added || !settings.access_token || !settings.phone_number_id) {
+      console.error('WhatsApp API credentials not configured for user:', user.id);
+      return NextResponse.json(
+        { error: 'WhatsApp Access Token not configured. Please complete setup.' },
+        { status: 400 }
+      );
+    }
+
+    const accessToken = settings.access_token;
+    const phoneNumberId = settings.phone_number_id;
+    const apiVersion = settings.api_version || 'v23.0';
 
     console.log(`Sending template message: ${templateName} to ${to}`);
 
-    // Send template message via WhatsApp
-    const messageResponse = await sendTemplateMessage(to, templateName, templateData.language, variables);
+    // Send template message via WhatsApp using user-specific credentials
+    const messageResponse = await sendTemplateMessage(
+      to, 
+      templateName, 
+      templateData.language, 
+      accessToken,
+      phoneNumberId,
+      apiVersion,
+      variables
+    );
     const messageId = messageResponse.messages?.[0]?.id;
 
     if (!messageId) {
@@ -258,8 +293,8 @@ export async function POST(request: NextRequest) {
 
     const messageObject = {
       id: messageId,
-      sender_id: user.id,
-      receiver_id: to,
+      sender_id: to, // Recipient phone number (sender in DB)
+      receiver_id: user.id, // Current authenticated user (receiver in DB)
       content: displayContent,
       timestamp: timestamp,
       is_sent_by_me: true,
@@ -301,26 +336,54 @@ export async function POST(request: NextRequest) {
 
   } catch (error) {
     console.error('Error in send-template API:', error);
-    return new NextResponse(
-      JSON.stringify({ 
+    return NextResponse.json(
+      { 
         error: 'Internal server error', 
         message: error instanceof Error ? error.message : 'Unknown error' 
-      }), 
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
+      }, 
+      { status: 500 }
     );
   }
 }
 
 /**
- * GET handler for checking API status
+ * GET handler for checking API status (now user-specific)
  */
-export async function GET() {
-  const isConfigured = !!(WHATSAPP_PHONE_NUMBER_ID && WHATSAPP_ACCESS_TOKEN);
-  
-  return NextResponse.json({
-    status: 'WhatsApp Send Template API',
-    configured: isConfigured,
-    version: WHATSAPP_API_VERSION,
-    timestamp: new Date().toISOString()
-  });
+export async function GET(request: NextRequest) {
+  try {
+    const supabase = await createClient();
+    
+    // Verify user authentication
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+
+    // Get user's WhatsApp API credentials
+    const { data: settings } = await supabase
+      .from('user_settings')
+      .select('access_token_added, api_version')
+      .eq('id', user.id)
+      .single();
+
+    const isConfigured = settings?.access_token_added || false;
+    const apiVersion = settings?.api_version || 'v23.0';
+    
+    return NextResponse.json({
+      status: 'WhatsApp Send Template API',
+      configured: isConfigured,
+      version: apiVersion,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    return NextResponse.json({
+      status: 'WhatsApp Send Template API',
+      configured: false,
+      error: 'Failed to check configuration',
+      timestamp: new Date().toISOString()
+    });
+  }
 } 

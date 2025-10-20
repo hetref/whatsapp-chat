@@ -1,14 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
 
-// WhatsApp Cloud API configuration
-const WHATSAPP_PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
-const WHATSAPP_ACCESS_TOKEN = process.env.WHATSAPP_TOKEN;
-const WHATSAPP_API_VERSION = process.env.WHATSAPP_API_VERSION || 'v23.0';
+import { createClient } from '@/lib/supabase/server';
 
 /**
  * POST handler for sending WhatsApp messages
  * Accepts message data and sends it via WhatsApp Cloud API
+ * Now uses user-specific access tokens and phone number IDs
  */
 export async function POST(request: NextRequest) {
   try {
@@ -18,7 +15,10 @@ export async function POST(request: NextRequest) {
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) {
       console.error('Authentication error:', authError);
-      return new NextResponse('Unauthorized', { status: 401 });
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
     }
 
     // Parse request body
@@ -27,20 +27,61 @@ export async function POST(request: NextRequest) {
     // Validate required parameters
     if (!to || !message) {
       console.error('Missing required parameters:', { to: !!to, message: !!message });
-      return new NextResponse('Missing required parameters: to, message', { status: 400 });
+      return NextResponse.json(
+        { error: 'Missing required parameters: to, message' },
+        { status: 400 }
+      );
     }
 
-    if (!WHATSAPP_PHONE_NUMBER_ID || !WHATSAPP_ACCESS_TOKEN) {
-      console.error('WhatsApp API credentials not configured');
-      return new NextResponse('WhatsApp API not configured', { status: 500 });
+    // Clean and validate phone number format for WhatsApp API
+    // WhatsApp expects phone numbers without + prefix, with country code
+    const cleanPhoneNumber = to.replace(/\s+/g, '').replace(/[^\d]/g, ''); // Remove all non-digits including +
+    
+    // Validate phone number format (10-15 digits without + prefix)
+    const phoneRegex = /^\d{10,15}$/;
+    if (!phoneRegex.test(cleanPhoneNumber)) {
+      return NextResponse.json(
+        { 
+          error: 'Invalid phone number format', 
+          message: 'Phone number must contain 10-15 digits (e.g., 918097296453)' 
+        },
+        { status: 400 }
+      );
     }
+
+    // Get user's WhatsApp API credentials
+    const { data: settings, error: settingsError } = await supabase
+      .from('user_settings')
+      .select('access_token, phone_number_id, api_version, access_token_added, phone_number')
+      .eq('id', user.id)
+      .single();
+
+    if (settingsError || !settings) {
+      console.error('User settings not found:', settingsError);
+      return NextResponse.json(
+        { error: 'WhatsApp credentials not configured. Please complete setup.' },
+        { status: 400 }
+      );
+    }
+
+    if (!settings.access_token_added || !settings.access_token || !settings.phone_number_id) {
+      console.error('WhatsApp API credentials not configured for user:', user.id);
+      return NextResponse.json(
+        { error: 'WhatsApp Access Token not configured. Please complete setup.' },
+        { status: 400 }
+      );
+    }
+
+    const accessToken = settings.access_token;
+    const phoneNumberId = settings.phone_number_id;
+    const apiVersion = settings.api_version || 'v23.0';
 
     // Prepare WhatsApp API request
-    const whatsappApiUrl = `https://graph.facebook.com/${WHATSAPP_API_VERSION}/${WHATSAPP_PHONE_NUMBER_ID}/messages`;
+    const whatsappApiUrl = `https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`;
     
     const messageData = {
       messaging_product: 'whatsapp',
-      to: to,
+      to: cleanPhoneNumber, // Use cleaned phone number
       type: 'text',
       text: {
         body: message
@@ -48,16 +89,17 @@ export async function POST(request: NextRequest) {
     };
 
     console.log('Sending message to WhatsApp API:', {
-      to,
+      to: cleanPhoneNumber,
+      originalTo: to,
       message: message.substring(0, 50) + (message.length > 50 ? '...' : ''),
       userId: user.id
     });
 
-    // Send message via WhatsApp Cloud API
+    // Send message via WhatsApp Cloud API using user-specific access token
     const whatsappResponse = await fetch(whatsappApiUrl, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
+        'Authorization': `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(messageData),
@@ -69,11 +111,11 @@ export async function POST(request: NextRequest) {
 
     if (!whatsappResponse.ok) {
       console.error('WhatsApp API error:', responseData);
-      return new NextResponse(
-        JSON.stringify({ 
+      return NextResponse.json(
+        { 
           error: 'Failed to send message via WhatsApp API', 
           details: responseData 
-        }), 
+        }, 
         { status: whatsappResponse.status }
       );
     }
@@ -85,10 +127,11 @@ export async function POST(request: NextRequest) {
     console.log('Message sent successfully via WhatsApp API:', messageId);
 
     // Prepare message object for database insertion
+    // Note: sender_id is phone number (TEXT), receiver_id is auth user (UUID)
     const messageObject = {
       id: messageId || `outgoing_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      sender_id: user.id,
-      receiver_id: to,
+      sender_id: cleanPhoneNumber, // Recipient phone number (sender in DB)
+      receiver_id: user.id, // Current authenticated user (receiver in DB)
       content: message,
       timestamp: timestamp,
       is_sent_by_me: true,
@@ -146,26 +189,54 @@ export async function POST(request: NextRequest) {
 
   } catch (error) {
     console.error('Error in send-message API:', error);
-    return new NextResponse(
-      JSON.stringify({ 
+    return NextResponse.json(
+      { 
         error: 'Internal server error', 
         message: error instanceof Error ? error.message : 'Unknown error' 
-      }), 
+      }, 
       { status: 500 }
     );
   }
 }
 
 /**
- * GET handler for checking API status
+ * GET handler for checking API status (now user-specific)
  */
-export async function GET() {
-  const isConfigured = !!(WHATSAPP_PHONE_NUMBER_ID && WHATSAPP_ACCESS_TOKEN);
-  
-  return NextResponse.json({
-    status: 'WhatsApp Send Message API',
-    configured: isConfigured,
-    version: WHATSAPP_API_VERSION,
-    timestamp: new Date().toISOString()
-  });
+export async function GET(request: NextRequest) {
+  try {
+    const supabase = await createClient();
+    
+    // Verify user authentication
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+
+    // Get user's WhatsApp API credentials
+    const { data: settings } = await supabase
+      .from('user_settings')
+      .select('access_token_added, api_version')
+      .eq('id', user.id)
+      .single();
+
+    const isConfigured = settings?.access_token_added || false;
+    const apiVersion = settings?.api_version || 'v23.0';
+    
+    return NextResponse.json({
+      status: 'WhatsApp Send Message API',
+      configured: isConfigured,
+      version: apiVersion,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    return NextResponse.json({
+      status: 'WhatsApp Send Message API',
+      configured: false,
+      error: 'Failed to check configuration',
+      timestamp: new Date().toISOString()
+    });
+  }
 } 

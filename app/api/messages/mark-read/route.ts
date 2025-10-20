@@ -12,48 +12,54 @@ export async function POST(request: NextRequest) {
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) {
       console.error('Authentication error:', authError);
-      return new NextResponse('Unauthorized', { status: 401 });
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
     }
 
     // Parse request body
     const { otherUserId } = await request.json();
 
     if (!otherUserId) {
-      return new NextResponse('Missing otherUserId parameter', { status: 400 });
+      return NextResponse.json(
+        { error: 'Missing otherUserId parameter' },
+        { status: 400 }
+      );
     }
 
-    console.log(`Marking messages as read for conversation: ${user.id} <-> ${otherUserId}`);
+    console.log(`Marking messages as read for conversation with ${otherUserId}`);
 
     // Call the database function to mark messages as read
     const { data, error } = await supabase.rpc('mark_messages_as_read', {
-      user_id: user.id,
       other_user_id: otherUserId
     });
 
     if (error) {
       console.error('Error marking messages as read:', error);
-      return new NextResponse(
-        JSON.stringify({ error: 'Failed to mark messages as read', details: error.message }), 
-        { status: 500, headers: { 'Content-Type': 'application/json' } }
+      return NextResponse.json(
+        { error: 'Failed to mark messages as read', details: error.message },
+        { status: 500 }
       );
     }
 
-    console.log(`Successfully marked ${data} messages as read`);
+    const markedCount = data || 0;
+    console.log(`Marked ${markedCount} messages as read`);
 
     return NextResponse.json({
       success: true,
-      markedCount: data,
+      markedCount: markedCount,
       timestamp: new Date().toISOString()
     });
 
   } catch (error) {
     console.error('Error in mark-read API:', error);
-    return new NextResponse(
-      JSON.stringify({ 
+    return NextResponse.json(
+      { 
         error: 'Internal server error', 
         message: error instanceof Error ? error.message : 'Unknown error' 
-      }), 
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
+      }, 
+      { status: 500 }
     );
   }
 }
@@ -63,7 +69,7 @@ export async function POST(request: NextRequest) {
  */
 export async function GET() {
   return NextResponse.json({
-    status: 'Mark Messages Read API',
+    status: 'Mark Messages as Read API',
     timestamp: new Date().toISOString()
   });
-} 
+}

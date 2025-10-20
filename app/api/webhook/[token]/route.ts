@@ -1,12 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createServiceRoleClient } from '@/lib/supabase/server';
 import { downloadAndUploadToS3 } from '@/lib/aws-s3';
-
-/**
- * DEPRECATED: This webhook endpoint is deprecated.
- * Please use the new user-specific webhook endpoint: /api/webhook/[token]
- * This endpoint is kept for backward compatibility but may be removed in the future.
- */
 
 // TypeScript interfaces for webhook payload
 interface WhatsAppContact {
@@ -43,41 +37,68 @@ interface WhatsAppMessage {
 /**
  * GET handler for WhatsApp webhook verification
  * WhatsApp will call this endpoint to verify your webhook URL
- * Now supports multi-tenant verification with user-specific tokens
- * 
- * @deprecated Use /api/webhook/[token] instead for better security
+ * Uses unique token per user for enhanced security and multi-tenancy
  */
-export async function GET(request: NextRequest) {
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ token: string }> }
+) {
   try {
-    console.warn('DEPRECATED: Using legacy webhook endpoint. Please migrate to /api/webhook/[token]');
-    
+    const { token: webhookToken } = await params;
     const searchParams = request.nextUrl.searchParams;
     const mode = searchParams.get('hub.mode');
-    const token = searchParams.get('hub.verify_token');
+    const verifyToken = searchParams.get('hub.verify_token');
     const challenge = searchParams.get('hub.challenge');
+    console.log("SEARCHPARAMS:", mode, verifyToken, challenge);
 
-    console.log('Webhook verification attempt (legacy):', { mode, token: token ? '***' : null });
+    console.log('Webhook verification attempt for token:', webhookToken?.substring(0, 8) + '...');
 
     if (mode !== 'subscribe') {
       console.log('Invalid mode:', mode);
       return new NextResponse('Forbidden', { status: 403 });
     }
 
-    if (!token) {
-      console.log('No token provided');
+    if (!verifyToken) {
+      console.log('No verify token provided');
       return new NextResponse('Forbidden', { status: 403 });
     }
 
-    // Check if the token matches any user's verify token
-    const supabase = await createClient();
+    if (!webhookToken) {
+      console.log('No webhook token in URL');
+      return new NextResponse('Forbidden', { status: 403 });
+    }
+
+    // Find user by webhook token
+    // Using service role client to bypass RLS since webhook requests have no auth
+    const supabase = createServiceRoleClient();
     const { data: settings, error } = await supabase
       .from('user_settings')
-      .select('id, verify_token')
-      .eq('verify_token', token)
+      .select('id, verify_token, webhook_token')
+      .eq('webhook_token', webhookToken)
       .single();
 
+      console.log("SETTINGS:", settings, error, webhookToken);
+
     if (error || !settings) {
-      console.log('Webhook verification failed: token not found');
+      console.error('Webhook verification failed: webhook token not found');
+      console.error('Error details:', error);
+      console.error('Looking for webhook_token:', webhookToken);
+      
+      // Check if the column exists by trying to query all settings
+      const { data: allSettings, error: debugError } = await supabase
+        .from('user_settings')
+        .select('id, webhook_token')
+        .limit(1);
+      
+      console.error('Debug - Sample settings:', allSettings);
+      console.error('Debug - Query error:', debugError);
+      
+      return new NextResponse('Forbidden', { status: 403 });
+    }
+
+    // Verify the verify_token matches
+    if (settings.verify_token !== verifyToken) {
+      console.log('Webhook verification failed: verify token mismatch');
       return new NextResponse('Forbidden', { status: 403 });
     }
 
@@ -216,18 +237,54 @@ function processMessageContent(message: WhatsAppMessage) {
 /**
  * POST handler for incoming WhatsApp messages
  * WhatsApp will send message data to this endpoint
- * Now supports multi-tenant with user-specific credentials
- * 
- * @deprecated Use /api/webhook/[token] instead for better security
+ * Uses unique token per user for enhanced security and multi-tenancy
  */
-export async function POST(request: NextRequest) {
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ token: string }> }
+) {
   try {
-    console.warn('DEPRECATED: Using legacy webhook endpoint. Please migrate to /api/webhook/[token]');
-    
-    const supabase = await createClient();
+    const { token: webhookToken } = await params;
+    // Using service role client to bypass RLS since webhook requests have no auth
+    const supabase = createServiceRoleClient();
     const body = await request.json();
 
-    console.log('Received webhook payload (legacy):', JSON.stringify(body, null, 2));
+    console.log('Received webhook payload for token:', webhookToken?.substring(0, 8) + '...');
+
+    if (!webhookToken) {
+      console.error('No webhook token in URL');
+      return new NextResponse('Forbidden', { status: 403 });
+    }
+
+    // Find user by webhook token
+    const { data: userSettings, error: settingsError } = await supabase
+      .from('user_settings')
+      .select('id, access_token, api_version, phone_number_id')
+      .eq('webhook_token', webhookToken)
+      .single();
+
+    if (settingsError || !userSettings) {
+      console.error('No user found for webhook token:', webhookToken?.substring(0, 8) + '...');
+      console.error('Settings error:', settingsError);
+      
+      // Debug: Check if column exists
+      const { data: debugSettings, error: debugError } = await supabase
+        .from('user_settings')
+        .select('id, webhook_token')
+        .limit(1);
+      
+      console.error('Debug - Sample settings:', debugSettings);
+      console.error('Debug - Error:', debugError);
+      
+      // Still acknowledge to avoid retries
+      return new NextResponse('OK', { status: 200 });
+    }
+
+    const businessOwnerId = userSettings.id;
+    const accessToken = userSettings.access_token;
+    const apiVersion = userSettings.api_version || 'v23.0';
+
+    console.log('Found business owner:', businessOwnerId);
 
     // Extract message data from WhatsApp webhook payload
     const entry = body.entry?.[0];
@@ -236,29 +293,14 @@ export async function POST(request: NextRequest) {
     const messages: WhatsAppMessage[] = value?.messages || [];
     const contacts: WhatsAppContact[] = value?.contacts || [];
     
-    // Extract the phone number ID that received the message (WhatsApp Business Account)
+    // Extract the phone number ID that received the message
     const phoneNumberId = value?.metadata?.phone_number_id;
     
-    console.log('Incoming message for phone_number_id:', phoneNumberId);
-    
-    // Find the user who owns this phone number ID
-    const { data: userSettings, error: settingsError } = await supabase
-      .from('user_settings')
-      .select('id, access_token, api_version')
-      .eq('phone_number_id', phoneNumberId)
-      .single();
-    
-    if (settingsError || !userSettings) {
-      console.error('No user found for phone_number_id:', phoneNumberId);
-      // Still acknowledge the webhook to avoid retries
+    // Verify this message is for the correct user
+    if (phoneNumberId && userSettings.phone_number_id !== phoneNumberId) {
+      console.warn('Phone number ID mismatch. Expected:', userSettings.phone_number_id, 'Got:', phoneNumberId);
       return new NextResponse('OK', { status: 200 });
     }
-    
-    const businessOwnerId = userSettings.id;
-    const accessToken = userSettings.access_token;
-    const apiVersion = userSettings.api_version || 'v23.0';
-    
-    console.log('Found business owner:', businessOwnerId);
     
     // Process each incoming message
     for (const message of messages) {
@@ -282,7 +324,7 @@ export async function POST(request: NextRequest) {
         console.log(`Processing media upload for ${messageType}: ${mediaData.id}`);
         
         try {
-          // Get WhatsApp media URL first using user-specific credentials
+          // Get WhatsApp media URL first
           const whatsappMediaUrl = await getWhatsAppMediaUrl(
             mediaData.id, 
             accessToken, 
@@ -292,7 +334,7 @@ export async function POST(request: NextRequest) {
           if (whatsappMediaUrl) {
             console.log(`Downloading and uploading ${messageType} to S3...`);
             
-            // Validate media ID format (should be numeric)
+            // Validate media ID format
             if (!/^\d+$/.test(mediaData.id)) {
               throw new Error(`Invalid media ID format: ${mediaData.id}`);
             }
@@ -300,10 +342,10 @@ export async function POST(request: NextRequest) {
             // Download from WhatsApp and upload to S3
             s3MediaUrl = await downloadAndUploadToS3(
               whatsappMediaUrl,
-              phoneNumber, // sender ID for folder structure
-              mediaData.id, // media ID for filename
+              phoneNumber,
+              mediaData.id,
               mediaData.mime_type || 'application/octet-stream',
-              accessToken // Pass user-specific access token for authentication
+              accessToken
             );
             
             if (s3MediaUrl) {
@@ -317,7 +359,6 @@ export async function POST(request: NextRequest) {
           }
         } catch (error) {
           console.error(`Error processing media upload for ${mediaData.id}:`, error);
-          // Continue processing the message even if media upload fails
         }
       }
 
@@ -341,10 +382,10 @@ export async function POST(request: NextRequest) {
 
         if (userError) {
           console.error('Error creating user:', userError);
-          continue; // Skip this message if user creation fails
+          continue;
         }
       } else {
-        // Update last_active timestamp for existing user
+        // Update last_active timestamp
         const { error: updateError } = await supabase
           .from('users')
           .update({ last_active: messageTimestamp })
@@ -355,31 +396,31 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // The receiver is the business owner who owns this phone number ID
+      // The receiver is the business owner
       const receiverId = businessOwnerId;
 
       console.log(`Message receiver identified as: ${receiverId}`);
 
-      // Prepare message object for database with S3 URL
+      // Prepare message object with S3 URL
       const messageObject = {
-        id: message.id, // Use WhatsApp message ID
+        id: message.id,
         sender_id: phoneNumber,
         receiver_id: receiverId,
         content: content,
         timestamp: messageTimestamp,
         is_sent_by_me: false,
-        is_read: false, // Mark incoming messages as unread by default
+        is_read: false,
         message_type: messageType,
         media_data: mediaData ? JSON.stringify({
           ...mediaData,
-          media_url: s3MediaUrl, // Use S3 URL instead of WhatsApp URL
-          s3_uploaded: s3UploadSuccess, // Use the success flag instead of just checking URL presence
+          media_url: s3MediaUrl,
+          s3_uploaded: s3UploadSuccess,
           upload_timestamp: s3UploadSuccess ? new Date().toISOString() : null,
           upload_error: !s3UploadSuccess && mediaData.id ? 'Failed to upload to S3' : null
         }) : null
       };
 
-      // Store the incoming message with S3 media URL
+      // Store the message
       const { error: messageError } = await supabase
         .from('messages')
         .insert([messageObject]);
@@ -387,14 +428,13 @@ export async function POST(request: NextRequest) {
       if (messageError) {
         console.error('Error storing message:', messageError);
       } else {
-        console.log(`${messageType} message stored successfully: ${message.id} (from: ${phoneNumber} to: ${receiverId})`);
+        console.log(`${messageType} message stored successfully: ${message.id}`);
         if (mediaData) {
-          console.log('Media data stored with S3 URL:', {
+          console.log('Media data stored:', {
             type: mediaData.type,
             id: mediaData.id,
             s3_uploaded: s3UploadSuccess,
-            has_s3_url: !!s3MediaUrl,
-            upload_success: s3UploadSuccess
+            has_s3_url: !!s3MediaUrl
           });
         }
       }
@@ -408,3 +448,4 @@ export async function POST(request: NextRequest) {
     return new NextResponse('Internal Server Error', { status: 500 });
   }
 }
+

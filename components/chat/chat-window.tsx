@@ -49,6 +49,7 @@ interface Message {
   media_data?: string | null;
   is_read?: boolean;
   read_at?: string | null;
+  isOptimistic?: boolean; // Flag for optimistic messages
 }
 
 interface MediaData {
@@ -99,7 +100,6 @@ interface ChatWindowProps {
   onSendMessage: (content: string) => void;
   onBack?: () => void;
   onClose?: () => void;
-  currentUserId: string;
   isMobile?: boolean;
   isLoading?: boolean;
   onUpdateName?: (userId: string, customName: string) => Promise<void>;
@@ -111,7 +111,6 @@ export function ChatWindow({
   onSendMessage, 
   onBack, 
   onClose,
-  currentUserId, 
   isMobile = false,
   isLoading = false,
   onUpdateName
@@ -178,16 +177,23 @@ export function ChatWindow({
 
   // Auto-scroll to unread messages or bottom
   useEffect(() => {
-    if (hasUnreadMessages && firstUnreadIndex !== -1) {
-      // Scroll to first unread message on initial load
-      setTimeout(() => {
+    // Only scroll if we have messages
+    if (messages.length === 0) return;
+    
+    // Small delay to ensure DOM is updated
+    const scrollTimer = setTimeout(() => {
+      if (hasUnreadMessages && firstUnreadIndex !== -1) {
+        // Scroll to first unread message on initial load
         unreadIndicatorRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-      }, 100);
-    } else {
-      // Scroll to bottom for new messages or when no unread messages
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    }
-  }, [messages, hasUnreadMessages, firstUnreadIndex]);
+      } else {
+        // Scroll to bottom for new messages or when no unread messages
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      }
+    }, 50);
+
+    return () => clearTimeout(scrollTimer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages.length]); // Only depend on messages.length to avoid unnecessary scrolls
 
   // Handle ESC key press within the chat window
   useEffect(() => {
@@ -478,9 +484,15 @@ export function ChatWindow({
 
     if (message.media_data) {
       try {
-        mediaData = JSON.parse(message.media_data);
+        // Check if media_data is already an object or a string
+        if (typeof message.media_data === 'string') {
+          mediaData = JSON.parse(message.media_data);
+        } else if (typeof message.media_data === 'object') {
+          // Already an object, use it directly
+          mediaData = message.media_data as unknown as MediaData;
+        }
       } catch (error) {
-        console.error('Error parsing media data:', error);
+        console.error('Error parsing media data:', error, 'Type:', typeof message.media_data);
       }
     }
 
@@ -910,14 +922,24 @@ export function ChatWindow({
 
       default:
         // Text message or fallback
+        const isOptimistic = message.id.startsWith('optimistic_');
+        
         return (
-          <div className={baseClasses}>
+          <div className={`${baseClasses} ${isOptimistic ? 'opacity-70' : ''} transition-opacity duration-300`}>
             <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
               {message.content}
             </p>
-            <span className={`text-xs mt-2 block ${isOwn ? 'text-green-100' : 'text-muted-foreground'}`}>
-              {formatTime(message.timestamp)}
-            </span>
+            <div className="flex items-center gap-2 mt-2">
+              <span className={`text-xs ${isOwn ? 'text-green-100' : 'text-muted-foreground'}`}>
+                {formatTime(message.timestamp)}
+              </span>
+              {isOptimistic && isOwn && (
+                <span className="text-xs text-green-200 flex items-center gap-1">
+                  <span className="inline-block w-1 h-1 bg-green-200 rounded-full animate-pulse"></span>
+                  Sending...
+                </span>
+              )}
+            </div>
           </div>
         );
     }
@@ -1027,21 +1049,38 @@ export function ChatWindow({
 
                 {/* Messages for this date */}
                 <div className="space-y-3">
-                  {dayMessages.map((message) => {
-                    const isOwn = message.sender_id === currentUserId;
+                  {dayMessages.map((message, index) => {
+                    // Use is_sent_by_me field instead of comparing IDs to determine message ownership
+                    const isOwn = message.is_sent_by_me;
+                    
+                    // Debug logging to help identify the issue
+                    if (!isOwn && message.content && !message.content.startsWith('[')) {
+                      console.log('Message alignment check:', {
+                        id: message.id,
+                        is_sent_by_me: message.is_sent_by_me,
+                        sender_id: message.sender_id,
+                        receiver_id: message.receiver_id,
+                        content: message.content.substring(0, 30)
+                      });
+                    }
+                    
                     const globalIndex = messages.findIndex(m => m.id === message.id);
                     const isFirstUnread = globalIndex === firstUnreadIndex;
+                    const isNewMessage = index === dayMessages.length - 1 && dayMessages.length > 0;
                     
                     return (
-                      <div key={message.id}>
+                      <div 
+                        key={message.id}
+                        className={`${isNewMessage ? 'animate-fade-in-up' : ''}`}
+                      >
                         {/* Unread messages indicator */}
                         {isFirstUnread && hasUnreadMessages && (
                           <div 
                             ref={unreadIndicatorRef}
-                            className="flex items-center justify-center my-4"
+                            className="flex items-center justify-center my-4 animate-fade-in"
                           >
                             <div className="flex-1 h-px bg-red-500"></div>
-                            <div className="px-3 py-1 bg-red-500 text-white text-xs font-medium rounded-full">
+                            <div className="px-3 py-1 bg-red-500 text-white text-xs font-medium rounded-full shadow-lg">
                               {unreadMessages.length} unread message{unreadMessages.length !== 1 ? 's' : ''}
                             </div>
                             <div className="flex-1 h-px bg-red-500"></div>

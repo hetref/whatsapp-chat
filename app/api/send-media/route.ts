@@ -2,23 +2,23 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { uploadFileToS3, isWhatsAppSupportedFileType } from '@/lib/aws-s3';
 
-// WhatsApp Cloud API configuration
-const WHATSAPP_PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
-const WHATSAPP_ACCESS_TOKEN = process.env.WHATSAPP_TOKEN;
-const WHATSAPP_API_VERSION = process.env.WHATSAPP_API_VERSION || 'v23.0';
-
 interface MediaUploadResult {
   id: string;
   url: string;
 }
 
 /**
- * Upload media to WhatsApp and get media ID
+ * Upload media to WhatsApp and get media ID using user-specific credentials
  */
-async function uploadMediaToWhatsApp(file: File): Promise<MediaUploadResult | null> {
+async function uploadMediaToWhatsApp(
+  file: File,
+  accessToken: string,
+  phoneNumberId: string,
+  apiVersion: string
+): Promise<MediaUploadResult | null> {
   try {
-    if (!WHATSAPP_ACCESS_TOKEN || !WHATSAPP_PHONE_NUMBER_ID) {
-      console.error('WhatsApp API credentials not configured');
+    if (!accessToken || !phoneNumberId) {
+      console.error('WhatsApp API credentials not provided');
       return null;
     }
 
@@ -30,11 +30,11 @@ async function uploadMediaToWhatsApp(file: File): Promise<MediaUploadResult | nu
     formData.append('messaging_product', 'whatsapp');
 
     const uploadResponse = await fetch(
-      `https://graph.facebook.com/${WHATSAPP_API_VERSION}/${WHATSAPP_PHONE_NUMBER_ID}/media`,
+      `https://graph.facebook.com/${apiVersion}/${phoneNumberId}/media`,
       {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
+          'Authorization': `Bearer ${accessToken}`,
         },
         body: formData,
       }
@@ -62,7 +62,7 @@ async function uploadMediaToWhatsApp(file: File): Promise<MediaUploadResult | nu
 
     return {
       id: result.id,
-      url: `https://graph.facebook.com/${WHATSAPP_API_VERSION}/${result.id}`,
+      url: `https://graph.facebook.com/${apiVersion}/${result.id}`,
     };
   } catch (error) {
     console.error('Error uploading media to WhatsApp:', {
@@ -76,16 +76,19 @@ async function uploadMediaToWhatsApp(file: File): Promise<MediaUploadResult | nu
 }
 
 /**
- * Send media message via WhatsApp
+ * Send media message via WhatsApp using user-specific credentials
  */
 async function sendMediaMessage(
   to: string,
   mediaId: string,
   mediaType: string,
+  accessToken: string,
+  phoneNumberId: string,
+  apiVersion: string,
   caption?: string
 ): Promise<{ messages: { id: string }[] }> {
   try {
-    const whatsappApiUrl = `https://graph.facebook.com/${WHATSAPP_API_VERSION}/${WHATSAPP_PHONE_NUMBER_ID}/messages`;
+    const whatsappApiUrl = `https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`;
 
     const messageData: {
       messaging_product: string;
@@ -132,7 +135,7 @@ async function sendMediaMessage(
     const response = await fetch(whatsappApiUrl, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
+        'Authorization': `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(messageData),
@@ -163,6 +166,7 @@ function getWhatsAppMediaType(mimeType: string): string {
 
 /**
  * POST handler for sending media messages
+ * Now uses user-specific access tokens and phone number IDs
  */
 export async function POST(request: NextRequest) {
   try {
@@ -172,7 +176,10 @@ export async function POST(request: NextRequest) {
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) {
       console.error('Authentication error:', authError);
-      return new NextResponse('Unauthorized', { status: 401 });
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
     }
 
     // Parse form data
@@ -184,13 +191,38 @@ export async function POST(request: NextRequest) {
     // Validate required parameters
     if (!to || files.length === 0) {
       console.error('Missing required parameters:', { to: !!to, filesCount: files.length });
-      return new NextResponse('Missing required parameters: to, files', { status: 400 });
+      return NextResponse.json(
+        { error: 'Missing required parameters: to, files' },
+        { status: 400 }
+      );
     }
 
-    if (!WHATSAPP_PHONE_NUMBER_ID || !WHATSAPP_ACCESS_TOKEN) {
-      console.error('WhatsApp API credentials not configured');
-      return new NextResponse('WhatsApp API not configured', { status: 500 });
+    // Get user's WhatsApp API credentials
+    const { data: settings, error: settingsError } = await supabase
+      .from('user_settings')
+      .select('access_token, phone_number_id, api_version, access_token_added')
+      .eq('id', user.id)
+      .single();
+
+    if (settingsError || !settings) {
+      console.error('User settings not found:', settingsError);
+      return NextResponse.json(
+        { error: 'WhatsApp credentials not configured. Please complete setup.' },
+        { status: 400 }
+      );
     }
+
+    if (!settings.access_token_added || !settings.access_token || !settings.phone_number_id) {
+      console.error('WhatsApp API credentials not configured for user:', user.id);
+      return NextResponse.json(
+        { error: 'WhatsApp Access Token not configured. Please complete setup.' },
+        { status: 400 }
+      );
+    }
+
+    const accessToken = settings.access_token;
+    const phoneNumberId = settings.phone_number_id;
+    const apiVersion = settings.api_version || 'v23.0';
 
     // Validate file types before processing
     const unsupportedFiles = files.filter(file => !isWhatsAppSupportedFileType(file.type));
@@ -217,8 +249,8 @@ export async function POST(request: NextRequest) {
       console.log(`Processing file ${i + 1}/${files.length}: ${file.name} (${file.type}, ${file.size} bytes)`);
 
       try {
-        // Upload media to WhatsApp
-        const mediaUpload = await uploadMediaToWhatsApp(file);
+        // Upload media to WhatsApp using user-specific credentials
+        const mediaUpload = await uploadMediaToWhatsApp(file, accessToken, phoneNumberId, apiVersion);
         if (!mediaUpload) {
           throw new Error('Failed to upload media to WhatsApp');
         }
@@ -226,8 +258,16 @@ export async function POST(request: NextRequest) {
         // Determine media type
         const mediaType = getWhatsAppMediaType(file.type);
 
-        // Send media message
-        const messageResponse = await sendMediaMessage(to, mediaUpload.id, mediaType, caption);
+        // Send media message using user-specific credentials
+        const messageResponse = await sendMediaMessage(
+          to, 
+          mediaUpload.id, 
+          mediaType, 
+          accessToken, 
+          phoneNumberId, 
+          apiVersion, 
+          caption
+        );
         const messageId = messageResponse.messages?.[0]?.id;
 
         console.log(`Media message sent successfully: ${messageId}`);
@@ -239,8 +279,8 @@ export async function POST(request: NextRequest) {
         // Store in database
         const messageObject = {
           id: messageId || `outgoing_media_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-          sender_id: user.id,
-          receiver_id: to,
+          sender_id: to, // Recipient phone number (sender in DB)
+          receiver_id: user.id, // Current authenticated user (receiver in DB)
           content: caption || `[${mediaType.charAt(0).toUpperCase() + mediaType.slice(1)}]`,
           timestamp: timestamp,
           is_sent_by_me: true,
@@ -306,26 +346,54 @@ export async function POST(request: NextRequest) {
 
   } catch (error) {
     console.error('Error in send-media API:', error);
-    return new NextResponse(
-      JSON.stringify({ 
+    return NextResponse.json(
+      { 
         error: 'Internal server error', 
         message: error instanceof Error ? error.message : 'Unknown error' 
-      }), 
+      }, 
       { status: 500 }
     );
   }
 }
 
 /**
- * GET handler for checking API status
+ * GET handler for checking API status (now user-specific)
  */
-export async function GET() {
-  const isConfigured = !!(WHATSAPP_PHONE_NUMBER_ID && WHATSAPP_ACCESS_TOKEN);
-  
-  return NextResponse.json({
-    status: 'WhatsApp Send Media API',
-    configured: isConfigured,
-    version: WHATSAPP_API_VERSION,
-    timestamp: new Date().toISOString()
-  });
+export async function GET(request: NextRequest) {
+  try {
+    const supabase = await createClient();
+    
+    // Verify user authentication
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+
+    // Get user's WhatsApp API credentials
+    const { data: settings } = await supabase
+      .from('user_settings')
+      .select('access_token_added, api_version')
+      .eq('id', user.id)
+      .single();
+
+    const isConfigured = settings?.access_token_added || false;
+    const apiVersion = settings?.api_version || 'v23.0';
+    
+    return NextResponse.json({
+      status: 'WhatsApp Send Media API',
+      configured: isConfigured,
+      version: apiVersion,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    return NextResponse.json({
+      status: 'WhatsApp Send Media API',
+      configured: false,
+      error: 'Failed to check configuration',
+      timestamp: new Date().toISOString()
+    });
+  }
 } 

@@ -356,7 +356,7 @@ export function UserList({ users, selectedUser, onUserSelect, currentUserId, onU
           filteredUsers.map((user) => (
             <div
               key={user.id}
-              className={`group p-4 border-b border-border cursor-pointer hover:bg-muted/50 transition-colors ${
+              className={`group p-4 border-b border-border cursor-pointer hover:bg-muted/50 transition-all duration-200 ${
                 selectedUser?.id === user.id ? "bg-muted" : ""
               }`}
             >
@@ -448,7 +448,7 @@ export function UserList({ users, selectedUser, onUserSelect, currentUserId, onU
                         {formatTime(user.last_message_time || user.last_active)}
                       </span>
                       {(user.unread_count || 0) > 0 && (
-                        <div className="bg-green-600 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center font-medium">
+                        <div className="bg-green-600 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center font-medium shadow-md animate-scale-in">
                           {user.unread_count! > 99 ? '99+' : user.unread_count}
                         </div>
                       )}
