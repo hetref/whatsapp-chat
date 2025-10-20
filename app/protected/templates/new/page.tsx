@@ -83,6 +83,37 @@ export default function NewTemplatePage() {
   const [showPreview, setShowPreview] = useState(false);
   const router = useRouter();
 
+  // Extract variables from text (e.g., {{1}}, {{2}})
+  const extractVariables = (text: string): number[] => {
+    if (!text) return [];
+    const variableRegex = /\{\{(\d+)\}\}/g;
+    const variables: number[] = [];
+    let match;
+    
+    while ((match = variableRegex.exec(text)) !== null) {
+      const varNum = parseInt(match[1], 10);
+      if (!variables.includes(varNum)) {
+        variables.push(varNum);
+      }
+    }
+    
+    return variables.sort((a, b) => a - b);
+  };
+
+  // Replace variables with example values for preview
+  const replaceVariablesWithExamples = (text: string, examples?: string[]): string => {
+    if (!text || !examples || examples.length === 0) return text;
+    
+    let result = text;
+    examples.forEach((example, index) => {
+      const varNum = index + 1;
+      const regex = new RegExp(`\\{\\{${varNum}\\}\\}`, 'g');
+      result = result.replace(regex, example || `{{${varNum}}}`);
+    });
+    
+    return result;
+  };
+
   // Validate template data
   const validateTemplate = (): string[] => {
     const errors: string[] = [];
@@ -494,14 +525,64 @@ export default function NewTemplatePage() {
                         </div>
                         
                         {component.format === 'TEXT' && (
-                          <div>
-                            <Label>Header Text</Label>
-                            <Input
-                              value={component.text || ''}
-                              onChange={(e) => updateComponent(index, { text: e.target.value })}
-                              placeholder="Enter header text..."
-                              className="mt-1"
-                            />
+                          <div className="space-y-3">
+                            <div>
+                              <Label>Header Text</Label>
+                              <Input
+                                value={component.text || ''}
+                                onChange={(e) => updateComponent(index, { text: e.target.value })}
+                                placeholder="Enter header text... Use {{1}} for variables"
+                                className="mt-1"
+                              />
+                              <p className="text-xs text-muted-foreground mt-1">
+                                Use {`{{1}}, {{2}}`} for variables
+                              </p>
+                            </div>
+                            
+                            {/* Show example inputs if variables detected */}
+                            {(() => {
+                              const vars = extractVariables(component.text || '');
+                              if (vars.length > 0) {
+                                return (
+                                  <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 space-y-3">
+                                    <div className="flex items-start gap-2">
+                                      <Info className="h-4 w-4 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
+                                      <div className="flex-1">
+                                        <p className="text-sm font-medium text-blue-900 dark:text-blue-100 mb-2">
+                                          Example Values Required
+                                        </p>
+                                        <p className="text-xs text-blue-700 dark:text-blue-300 mb-3">
+                                          WhatsApp requires example values for variables. Provide examples for: {vars.map(v => `{{${v}}}`).join(', ')}
+                                        </p>
+                                        <div className="space-y-2">
+                                          {vars.map((varNum, varIndex) => (
+                                            <div key={varNum}>
+                                              <Label className="text-xs">Example for {`{{${varNum}}}`}</Label>
+                                              <Input
+                                                value={component.example?.header_text?.[varIndex] || ''}
+                                                onChange={(e) => {
+                                                  const newExamples = [...(component.example?.header_text || [])];
+                                                  newExamples[varIndex] = e.target.value;
+                                                  updateComponent(index, {
+                                                    example: {
+                                                      ...component.example,
+                                                      header_text: newExamples
+                                                    }
+                                                  });
+                                                }}
+                                                placeholder={`e.g., John`}
+                                                className="mt-1"
+                                              />
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              }
+                              return null;
+                            })()}
                           </div>
                         )}
                       </div>
@@ -509,18 +590,65 @@ export default function NewTemplatePage() {
 
                     {/* Body Component */}
                     {component.type === 'BODY' && (
-                      <div>
-                        <Label>Body Text *</Label>
-                        <Textarea
-                          value={component.text || ''}
-                          onChange={(e) => updateComponent(index, { text: e.target.value })}
-                          placeholder="Enter your message body text here. Use {{1}}, {{2}}, etc. for variables..."
-                          className="mt-1 min-h-[100px]"
-                          maxLength={1024}
-                        />
-                        <p className="text-xs text-muted-foreground mt-1">
-                          Maximum 1024 characters. Use {`{{1}}, {{2}}`} for variables.
-                        </p>
+                      <div className="space-y-3">
+                        <div>
+                          <Label>Body Text *</Label>
+                          <Textarea
+                            value={component.text || ''}
+                            onChange={(e) => updateComponent(index, { text: e.target.value })}
+                            placeholder="Enter your message body text here. Use {{1}}, {{2}}, etc. for variables..."
+                            className="mt-1 min-h-[100px]"
+                            maxLength={1024}
+                          />
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Maximum 1024 characters. Use {`{{1}}, {{2}}`} for variables.
+                          </p>
+                        </div>
+                        
+                        {/* Show example inputs if variables detected */}
+                        {(() => {
+                          const vars = extractVariables(component.text || '');
+                          if (vars.length > 0) {
+                            return (
+                              <div className="bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded-lg p-4 space-y-3">
+                                <div className="flex items-start gap-2">
+                                  <Info className="h-4 w-4 text-green-600 dark:text-green-400 mt-0.5 flex-shrink-0" />
+                                  <div className="flex-1">
+                                    <p className="text-sm font-medium text-green-900 dark:text-green-100 mb-2">
+                                      Example Values Required
+                                    </p>
+                                    <p className="text-xs text-green-700 dark:text-green-300 mb-3">
+                                      WhatsApp requires example values for variables. Provide examples for: {vars.map(v => `{{${v}}}`).join(', ')}
+                                    </p>
+                                    <div className="space-y-2">
+                                      {vars.map((varNum, varIndex) => (
+                                        <div key={varNum}>
+                                          <Label className="text-xs">Example for {`{{${varNum}}}`}</Label>
+                                          <Input
+                                            value={component.example?.body_text?.[0]?.[varIndex] || ''}
+                                            onChange={(e) => {
+                                              const newExamples = [...(component.example?.body_text?.[0] || [])];
+                                              newExamples[varIndex] = e.target.value;
+                                              updateComponent(index, {
+                                                example: {
+                                                  ...component.example,
+                                                  body_text: [newExamples]
+                                                }
+                                              });
+                                            }}
+                                            placeholder={`e.g., ${varNum === 1 ? 'John' : varNum === 2 ? 'December 25' : 'example value'}`}
+                                            className="mt-1"
+                                          />
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          }
+                          return null;
+                        })()}
                       </div>
                     )}
 
@@ -644,22 +772,40 @@ export default function NewTemplatePage() {
                   {/* WhatsApp-like message bubble */}
                   <div className="bg-green-500 text-white p-4 rounded-2xl m-4">
                     {/* Header */}
-                    {templateData.components.find(c => c.type === 'HEADER') && (
-                      <div className="mb-2">
-                        <p className="font-semibold text-sm">
-                          {templateData.components.find(c => c.type === 'HEADER')?.text || '[Header Content]'}
-                        </p>
-                      </div>
-                    )}
+                    {(() => {
+                      const headerComp = templateData.components.find(c => c.type === 'HEADER');
+                      if (headerComp && headerComp.text) {
+                        const displayText = replaceVariablesWithExamples(
+                          headerComp.text, 
+                          headerComp.example?.header_text
+                        );
+                        return (
+                          <div className="mb-2">
+                            <p className="font-semibold text-sm">{displayText}</p>
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
 
                     {/* Body */}
-                    {templateData.components.find(c => c.type === 'BODY') && (
-                      <div className="mb-2">
-                        <p className="text-sm leading-relaxed">
-                          {templateData.components.find(c => c.type === 'BODY')?.text || 'Enter your message body...'}
-                        </p>
-                      </div>
-                    )}
+                    {(() => {
+                      const bodyComp = templateData.components.find(c => c.type === 'BODY');
+                      if (bodyComp) {
+                        const displayText = bodyComp.text 
+                          ? replaceVariablesWithExamples(
+                              bodyComp.text, 
+                              bodyComp.example?.body_text?.[0]
+                            )
+                          : 'Enter your message body...';
+                        return (
+                          <div className="mb-2">
+                            <p className="text-sm leading-relaxed">{displayText}</p>
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
 
                     {/* Footer */}
                     {templateData.components.find(c => c.type === 'FOOTER') && (

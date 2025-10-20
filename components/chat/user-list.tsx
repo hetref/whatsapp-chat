@@ -42,11 +42,18 @@ interface UserListProps {
   onBroadcastToGroup?: (groupId: string, groupName: string) => void;
 }
 
+interface NewUserInput {
+  id: string;
+  phoneNumber: string;
+  customName: string;
+}
+
 export function UserList({ users, selectedUser, onUserSelect, currentUserId, onUsersUpdate, onBroadcastToGroup }: UserListProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [showNewChat, setShowNewChat] = useState(false);
-  const [newChatPhone, setNewChatPhone] = useState("");
-  const [newChatName, setNewChatName] = useState("");
+  const [newUsers, setNewUsers] = useState<NewUserInput[]>([
+    { id: '1', phoneNumber: '', customName: '' }
+  ]);
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
   const [isCreatingChat, setIsCreatingChat] = useState(false);
@@ -167,42 +174,113 @@ export function UserList({ users, selectedUser, onUserSelect, currentUserId, onU
     router.push("/");
   };
 
+  const handleAddUserInput = () => {
+    setNewUsers([...newUsers, { id: Date.now().toString(), phoneNumber: '', customName: '' }]);
+  };
+
+  const handleRemoveUserInput = (id: string) => {
+    if (newUsers.length > 1) {
+      setNewUsers(newUsers.filter(user => user.id !== id));
+    }
+  };
+
+  const handleUpdateUserInput = (id: string, field: 'phoneNumber' | 'customName', value: string) => {
+    setNewUsers(newUsers.map(user => 
+      user.id === id ? { ...user, [field]: value } : user
+    ));
+  };
+
   const handleCreateNewChat = async () => {
-    if (!newChatPhone.trim()) return;
+    // Filter out empty entries
+    const validUsers = newUsers.filter(u => u.phoneNumber.trim());
+    
+    if (validUsers.length === 0) {
+      alert('Please enter at least one phone number');
+      return;
+    }
 
     setIsCreatingChat(true);
     try {
-      const response = await fetch('/api/users/create-chat', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          phoneNumber: newChatPhone.trim(),
-          customName: newChatName.trim() || null
-        }),
-      });
+      // Single user creation (backward compatible)
+      if (validUsers.length === 1) {
+        const response = await fetch('/api/users/create-chat', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            phoneNumber: validUsers[0].phoneNumber.trim(),
+            customName: validUsers[0].customName.trim() || null
+          }),
+        });
 
-      const result = await response.json();
+        const result = await response.json();
 
-      if (!response.ok) {
-        throw new Error(result.message || result.error || 'Failed to create chat');
+        if (!response.ok) {
+          throw new Error(result.message || result.error || 'Failed to create chat');
+        }
+
+        console.log('Chat created successfully:', result);
+        
+        // Reset form
+        setNewUsers([{ id: '1', phoneNumber: '', customName: '' }]);
+        setShowNewChat(false);
+
+        // Refresh users list
+        if (onUsersUpdate) {
+          onUsersUpdate();
+        }
+
+        // Select the new/existing user
+        onUserSelect(result.user);
+
+      } else {
+        // Bulk user creation
+        const response = await fetch('/api/users/create-chat', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            users: validUsers.map(u => ({
+              phoneNumber: u.phoneNumber.trim(),
+              customName: u.customName.trim() || null
+            }))
+          }),
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+          throw new Error(result.error || 'Failed to create chats');
+        }
+
+        console.log('Bulk chat creation result:', result.results);
+        
+        // Show summary
+        const successCount = result.results.successCount;
+        const failedCount = result.results.failedCount;
+        
+        let message = `Successfully added ${successCount} user${successCount !== 1 ? 's' : ''}`;
+        
+        if (failedCount > 0) {
+          message += `\n\nFailed to add ${failedCount} user${failedCount !== 1 ? 's' : ''}:`;
+          result.results.failed.forEach((failure: any) => {
+            message += `\n- ${failure.phoneNumber}: ${failure.error}`;
+          });
+        }
+        
+        alert(message);
+        
+        // Reset form
+        setNewUsers([{ id: '1', phoneNumber: '', customName: '' }]);
+        setShowNewChat(false);
+
+        // Refresh users list
+        if (onUsersUpdate) {
+          onUsersUpdate();
+        }
       }
-
-      console.log('Chat created successfully:', result);
-      
-      // Reset form
-      setNewChatPhone("");
-      setNewChatName("");
-      setShowNewChat(false);
-
-      // Refresh users list
-      if (onUsersUpdate) {
-        onUsersUpdate();
-      }
-
-      // Select the new/existing user
-      onUserSelect(result.user);
 
     } catch (error) {
       console.error('Error creating chat:', error);
@@ -374,53 +452,112 @@ export function UserList({ users, selectedUser, onUserSelect, currentUserId, onU
         </div>
       </div>
 
-      {/* New Chat Form */}
+      {/* New Chat Form - Bulk User Creation */}
       {showNewChat && (
-        <div className="p-4 border-b border-border bg-muted/50">
+        <div className="p-4 border-b border-border bg-muted/50 max-h-[400px] overflow-y-auto">
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <h3 className="font-medium">New Chat</h3>
+              <h3 className="font-medium">Add User{newUsers.length > 1 ? 's' : ''}</h3>
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => setShowNewChat(false)}
+                onClick={() => {
+                  setShowNewChat(false);
+                  setNewUsers([{ id: '1', phoneNumber: '', customName: '' }]);
+                }}
                 className="p-1 h-6 w-6"
               >
                 <X className="h-4 w-4" />
               </Button>
             </div>
-            <Input
-              placeholder="Phone number (e.g., +1234567890)"
-              value={newChatPhone}
-              onChange={(e) => setNewChatPhone(e.target.value)}
-              className="text-sm"
-              disabled={isCreatingChat}
-            />
-            <Input
-              placeholder="Name (optional)"
-              value={newChatName}
-              onChange={(e) => setNewChatName(e.target.value)}
-              className="text-sm"
-              disabled={isCreatingChat}
-            />
-            <div className="flex gap-2">
+            
+            {/* User Inputs */}
+            <div className="space-y-3">
+              {newUsers.map((user, index) => (
+                <div key={user.id} className="space-y-2 p-3 border border-border rounded-lg bg-background">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium text-muted-foreground">
+                      User {index + 1}
+                    </span>
+                    {newUsers.length > 1 && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleRemoveUserInput(user.id)}
+                        disabled={isCreatingChat}
+                        className="p-1 h-6 w-6 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950"
+                        title="Remove this user"
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Phone className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                    <Input
+                      placeholder="Phone number (e.g., 918097296453)"
+                      value={user.phoneNumber}
+                      onChange={(e) => handleUpdateUserInput(user.id, 'phoneNumber', e.target.value)}
+                      className="text-sm"
+                      disabled={isCreatingChat}
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                    <Input
+                      placeholder="Name (optional)"
+                      value={user.customName}
+                      onChange={(e) => handleUpdateUserInput(user.id, 'customName', e.target.value)}
+                      className="text-sm"
+                      disabled={isCreatingChat}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Add More Button */}
+            {newUsers.length < 20 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleAddUserInput}
+                disabled={isCreatingChat}
+                className="w-full border-dashed"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Add Another User
+              </Button>
+            )}
+
+            {/* Action Buttons */}
+            <div className="flex gap-2 pt-2">
               <Button
                 onClick={handleCreateNewChat}
-                disabled={!newChatPhone.trim() || isCreatingChat}
+                disabled={isCreatingChat || newUsers.every(u => !u.phoneNumber.trim())}
                 className="flex-1 bg-green-600 hover:bg-green-700 text-white"
                 size="sm"
               >
-                {isCreatingChat ? "Creating..." : "Start Chat"}
+                {isCreatingChat ? "Adding..." : `Add User${newUsers.filter(u => u.phoneNumber.trim()).length > 1 ? 's' : ''}`}
               </Button>
               <Button
                 variant="outline"
-                onClick={() => setShowNewChat(false)}
+                onClick={() => {
+                  setShowNewChat(false);
+                  setNewUsers([{ id: '1', phoneNumber: '', customName: '' }]);
+                }}
                 disabled={isCreatingChat}
                 size="sm"
               >
                 Cancel
               </Button>
             </div>
+            
+            {/* Helper Text */}
+            <p className="text-xs text-muted-foreground text-center">
+              {newUsers.filter(u => u.phoneNumber.trim()).length} user{newUsers.filter(u => u.phoneNumber.trim()).length !== 1 ? 's' : ''} to add
+              {newUsers.length < 20 && ` • Max 20 at once`}
+            </p>
           </div>
         </div>
       )}

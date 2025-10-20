@@ -183,6 +183,24 @@ export async function POST(request: NextRequest) {
 }
 
 /**
+ * Extract variables from text (e.g., {{1}}, {{2}})
+ */
+function extractVariables(text: string): number[] {
+  const variableRegex = /\{\{(\d+)\}\}/g;
+  const variables: number[] = [];
+  let match;
+  
+  while ((match = variableRegex.exec(text)) !== null) {
+    const varNum = parseInt(match[1], 10);
+    if (!variables.includes(varNum)) {
+      variables.push(varNum);
+    }
+  }
+  
+  return variables.sort((a, b) => a - b);
+}
+
+/**
  * Validate template components
  */
 function validateComponents(components: TemplateComponent[]): string | null {
@@ -209,8 +227,21 @@ function validateComponents(components: TemplateComponent[]): string | null {
         if (!component.format) {
           return 'HEADER component requires format field';
         }
-        if (component.format === 'TEXT' && !component.text) {
-          return 'TEXT HEADER component requires text field';
+        if (component.format === 'TEXT') {
+          if (!component.text) {
+            return 'TEXT HEADER component requires text field';
+          }
+          
+          // Check for variables and require examples
+          const headerVariables = extractVariables(component.text);
+          if (headerVariables.length > 0) {
+            if (!component.example || !component.example.header_text) {
+              return `HEADER contains variables (${headerVariables.map(v => `{{${v}}}`).join(', ')}) but no examples provided. Please provide example values.`;
+            }
+            if (component.example.header_text.length !== headerVariables.length) {
+              return `HEADER has ${headerVariables.length} variable(s) but ${component.example.header_text.length} example(s) provided. They must match.`;
+            }
+          }
         }
         break;
 
@@ -221,6 +252,17 @@ function validateComponents(components: TemplateComponent[]): string | null {
         }
         if (component.text.length > 1024) {
           return 'BODY text must be 1024 characters or less';
+        }
+        
+        // Check for variables and require examples
+        const bodyVariables = extractVariables(component.text);
+        if (bodyVariables.length > 0) {
+          if (!component.example || !component.example.body_text || !component.example.body_text[0]) {
+            return `BODY contains variables (${bodyVariables.map(v => `{{${v}}}`).join(', ')}) but no examples provided. Please provide example values.`;
+          }
+          if (component.example.body_text[0].length !== bodyVariables.length) {
+            return `BODY has ${bodyVariables.length} variable(s) but ${component.example.body_text[0].length} example(s) provided. They must match.`;
+          }
         }
         break;
 
@@ -234,6 +276,12 @@ function validateComponents(components: TemplateComponent[]): string | null {
         }
         if (component.text.length > 60) {
           return 'FOOTER text must be 60 characters or less';
+        }
+        
+        // Footer typically doesn't support variables, but check anyway
+        const footerVariables = extractVariables(component.text);
+        if (footerVariables.length > 0) {
+          return 'FOOTER component does not support variables. Please remove variables from footer text.';
         }
         break;
 
