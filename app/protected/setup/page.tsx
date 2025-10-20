@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle2, AlertCircle, Loader2, Copy, Check, ExternalLink } from "lucide-react";
+import { CheckCircle2, AlertCircle, Loader2, Copy, Check, ExternalLink, Eye, EyeOff } from "lucide-react";
 import Link from "next/link";
 
 interface UserSettings {
@@ -19,6 +19,9 @@ interface UserSettings {
   has_phone_number_id: boolean;
   has_verify_token: boolean;
   webhook_token: string | null;
+  access_token?: string | null;
+  phone_number_id?: string | null;
+  verify_token?: string | null;
 }
 
 export default function SetupPage() {
@@ -43,6 +46,10 @@ export default function SetupPage() {
   // Copy states
   const [copiedWebhookUrl, setCopiedWebhookUrl] = useState(false);
   const [copiedVerifyToken, setCopiedVerifyToken] = useState(false);
+  const [copiedAccessToken, setCopiedAccessToken] = useState(false);
+  
+  // Show/hide states
+  const [showAccessToken, setShowAccessToken] = useState(false);
   
   // Get user and settings on mount
   useEffect(() => {
@@ -57,6 +64,17 @@ export default function SetupPage() {
       
       if (response.ok && data.settings) {
         setSettings(data.settings);
+        
+        // Populate form fields if data exists
+        if (data.settings.access_token) {
+          setAccessToken(data.settings.access_token);
+        }
+        if (data.settings.phone_number_id) {
+          setPhoneNumberId(data.settings.phone_number_id);
+        }
+        if (data.settings.verify_token) {
+          setVerifyToken(data.settings.verify_token);
+        }
         setApiVersion(data.settings.api_version || 'v23.0');
       }
     } catch (error) {
@@ -102,10 +120,8 @@ export default function SetupPage() {
       }
       
       setAccessTokenSuccess(true);
-      setAccessToken("");
-      setPhoneNumberId("");
       
-      // Reload settings
+      // Reload settings to get updated values
       await loadSettings();
       
       setTimeout(() => setAccessTokenSuccess(false), 3000);
@@ -156,15 +172,26 @@ export default function SetupPage() {
     }
   };
   
-  const copyToClipboard = (text: string, type: 'webhook' | 'verify') => {
+  const copyToClipboard = (text: string, type: 'webhook' | 'verify' | 'access') => {
     navigator.clipboard.writeText(text);
     if (type === 'webhook') {
       setCopiedWebhookUrl(true);
       setTimeout(() => setCopiedWebhookUrl(false), 2000);
-    } else {
+    } else if (type === 'verify') {
       setCopiedVerifyToken(true);
       setTimeout(() => setCopiedVerifyToken(false), 2000);
+    } else {
+      setCopiedAccessToken(true);
+      setTimeout(() => setCopiedAccessToken(false), 2000);
     }
+  };
+  
+  // Mask access token - show first 10 chars and rest as asterisks
+  const getMaskedAccessToken = (token: string) => {
+    if (!token || token.length <= 10) return token;
+    const visiblePart = token.substring(0, 10);
+    const maskedPart = '*'.repeat(Math.min(token.length - 10, 50)); // Cap asterisks at 50
+    return visiblePart + maskedPart;
   };
   
   const webhookUrl = typeof window !== 'undefined' && settings?.webhook_token
@@ -175,7 +202,7 @@ export default function SetupPage() {
   
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="h-full flex items-center justify-center">
         <div className="text-center">
           <Loader2 className="h-12 w-12 animate-spin mx-auto mb-4 text-primary" />
           <p className="text-muted-foreground">Loading settings...</p>
@@ -185,8 +212,8 @@ export default function SetupPage() {
   }
   
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/20">
-      <div className="container max-w-6xl mx-auto py-8 px-4">
+    <div className="h-full overflow-y-auto bg-gradient-to-br from-background via-background to-muted/20">
+      <div className="container max-w-6xl mx-auto py-8 px-4 pb-16">
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent">
@@ -262,22 +289,76 @@ export default function SetupPage() {
             <CardContent>
               <form onSubmit={handleSaveAccessToken} className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="access-token">Access Token *</Label>
-                  <Input
-                    id="access-token"
-                    type="password"
-                    placeholder="Enter your WhatsApp Access Token"
-                    value={accessToken}
-                    onChange={(e) => setAccessToken(e.target.value)}
-                    className="font-mono text-sm"
-                  />
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="access-token">Access Token *</Label>
+                    {settings?.has_access_token && (
+                      <Badge variant="secondary" className="text-xs">
+                        Configured
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="relative flex items-center gap-2">
+                    <Input
+                      id="access-token"
+                      type="text"
+                      placeholder="Enter your WhatsApp Access Token"
+                      value={accessToken && !showAccessToken ? getMaskedAccessToken(accessToken) : accessToken}
+                      onChange={(e) => {
+                        // Only allow editing if shown or if it's empty/being typed for first time
+                        if (showAccessToken || !settings?.access_token_added) {
+                          setAccessToken(e.target.value);
+                        }
+                      }}
+                      readOnly={!showAccessToken && settings?.access_token_added}
+                      className="font-mono text-sm pr-20"
+                    />
+                    {accessToken && (
+                      <div className="absolute right-2 flex items-center gap-1">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() => setShowAccessToken(!showAccessToken)}
+                          title={showAccessToken ? "Hide token" : "Show token"}
+                        >
+                          {showAccessToken ? (
+                            <EyeOff className="h-4 w-4" />
+                          ) : (
+                            <Eye className="h-4 w-4" />
+                          )}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() => copyToClipboard(accessToken, 'access')}
+                          title="Copy token"
+                        >
+                          {copiedAccessToken ? (
+                            <Check className="h-4 w-4 text-green-600" />
+                          ) : (
+                            <Copy className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </div>
+                    )}
+                  </div>
                   <p className="text-xs text-muted-foreground">
                     Get this from your Meta Business Suite
                   </p>
                 </div>
                 
                 <div className="space-y-2">
-                  <Label htmlFor="phone-number-id">Phone Number ID *</Label>
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="phone-number-id">Phone Number ID *</Label>
+                    {settings?.has_phone_number_id && (
+                      <Badge variant="secondary" className="text-xs">
+                        Configured
+                      </Badge>
+                    )}
+                  </div>
                   <Input
                     id="phone-number-id"
                     type="text"
@@ -285,6 +366,7 @@ export default function SetupPage() {
                     value={phoneNumberId}
                     onChange={(e) => setPhoneNumberId(e.target.value)}
                     className="font-mono text-sm"
+                    readOnly={settings?.access_token_added}
                   />
                   <p className="text-xs text-muted-foreground">
                     Found in WhatsApp Business API settings
@@ -404,7 +486,14 @@ export default function SetupPage() {
                 
                 {/* Verify Token */}
                 <div className="space-y-2">
-                  <Label htmlFor="verify-token">Verify Token *</Label>
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="verify-token">Verify Token *</Label>
+                    {settings?.has_verify_token && (
+                      <Badge variant="secondary" className="text-xs">
+                        Configured
+                      </Badge>
+                    )}
+                  </div>
                   <div className="flex gap-2">
                     <Input
                       id="verify-token"
@@ -413,6 +502,7 @@ export default function SetupPage() {
                       value={verifyToken}
                       onChange={(e) => setVerifyToken(e.target.value)}
                       className="font-mono text-sm"
+                      readOnly={settings?.webhook_verified}
                     />
                     {verifyToken && (
                       <Button

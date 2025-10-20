@@ -127,6 +127,10 @@ export async function POST(request: NextRequest) {
         has_phone_number_id: !!settings.phone_number_id,
         has_verify_token: !!settings.verify_token,
         webhook_token: settings.webhook_token,
+        // Include actual values for display in setup page
+        access_token: settings.access_token,
+        phone_number_id: settings.phone_number_id,
+        verify_token: settings.verify_token,
       },
     });
 
@@ -224,6 +228,10 @@ export async function GET(request: NextRequest) {
         has_phone_number_id: !!updatedSettings.phone_number_id,
         has_verify_token: !!updatedSettings.verify_token,
         webhook_token: updatedSettings.webhook_token,
+        // Include actual values for display in setup page
+        access_token: updatedSettings.access_token,
+        phone_number_id: updatedSettings.phone_number_id,
+        verify_token: updatedSettings.verify_token,
         created_at: updatedSettings.created_at,
         updated_at: updatedSettings.updated_at,
       } : null,

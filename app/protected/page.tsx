@@ -649,7 +649,7 @@ export default function ChatPage() {
   // Show loading state while checking setup
   if (!user || checkingSetup) {
     return (
-      <div className="h-screen flex items-center justify-center">
+      <div className="h-full flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600 mx-auto mb-4"></div>
           <p>Loading...</p>
@@ -661,7 +661,7 @@ export default function ChatPage() {
   // Show setup required message if setup is not complete
   if (isSetupComplete === false) {
     return (
-      <div className="h-screen flex items-center justify-center p-4">
+      <div className="h-full flex items-center justify-center p-4">
         <div className="max-w-md w-full text-center space-y-6">
           <div className="flex justify-center">
             <div className="bg-amber-100 dark:bg-amber-900/30 p-4 rounded-full">
@@ -695,7 +695,7 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="h-screen flex bg-background">
+    <div className="h-full flex bg-background">
       {/* Desktop Layout */}
       {!isMobile && (
         <>

@@ -193,7 +193,7 @@ export default function TemplatesPage() {
 
   if (isLoading) {
     return (
-      <div className="h-screen flex items-center justify-center bg-background">
+      <div className="h-full flex items-center justify-center bg-background">
         <div className="text-center">
           <Loader2 className="h-12 w-12 animate-spin text-green-600 mx-auto mb-4" />
           <p className="text-muted-foreground">Loading templates...</p>
@@ -203,7 +203,7 @@ export default function TemplatesPage() {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-background">
+    <div className="h-full flex flex-col bg-background">
       {/* Header */}
       <div className="border-b border-border bg-muted/50">
         <div className="flex items-center justify-between p-4">

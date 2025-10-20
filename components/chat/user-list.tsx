@@ -4,7 +4,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ThemeSwitcher } from "@/components/theme-switcher";
-import { Search, MessageCircle, LogOut, Plus, Edit3, Check, X, Phone, FileText } from "lucide-react";
+import { Search, MessageCircle, LogOut, Plus, Edit3, Check, X, Phone, FileText, Settings } from "lucide-react";
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
@@ -252,6 +252,16 @@ export function UserList({ users, selectedUser, onUserSelect, currentUserId, onU
                 title="Message Templates"
               >
                 <FileText className="h-5 w-5" />
+              </Button>
+            </Link>
+            <Link href="/protected/setup">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="p-2 text-white hover:bg-green-700 rounded-full transition-colors"
+                title="WhatsApp Setup"
+              >
+                <Settings className="h-5 w-5" />
               </Button>
             </Link>
             <div className="[&>button]:text-white [&>button]:hover:bg-green-700">

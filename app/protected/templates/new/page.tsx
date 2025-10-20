@@ -259,7 +259,7 @@ export default function NewTemplatePage() {
   };
 
   return (
-    <div className="h-screen flex flex-col bg-background">
+    <div className="h-full flex flex-col bg-background">
       {/* Header */}
       <div className="border-b border-border bg-muted/50">
         <div className="flex items-center justify-between p-4">
