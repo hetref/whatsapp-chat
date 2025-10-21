@@ -33,12 +33,13 @@ export async function POST(request: NextRequest) {
     const {
       access_token,
       phone_number_id,
+      business_account_id,
       api_version,
       verify_token,
     } = body;
 
     // Validate that at least one field is being updated
-    if (!access_token && !phone_number_id && !api_version && !verify_token) {
+    if (!access_token && !phone_number_id && !business_account_id && !api_version && !verify_token) {
       return NextResponse.json(
         { error: 'At least one setting must be provided' },
         { status: 400 }
@@ -51,6 +52,7 @@ export async function POST(request: NextRequest) {
       access_token?: string;
       access_token_added?: boolean;
       phone_number_id?: string;
+      business_account_id?: string;
       verify_token?: string;
       api_version?: string;
       webhook_verified?: boolean;
@@ -66,6 +68,10 @@ export async function POST(request: NextRequest) {
 
     if (phone_number_id !== undefined) {
       updateData.phone_number_id = phone_number_id;
+    }
+
+    if (business_account_id !== undefined) {
+      updateData.business_account_id = business_account_id;
     }
 
     if (api_version !== undefined) {
@@ -136,11 +142,13 @@ export async function POST(request: NextRequest) {
         webhook_verified: settings.webhook_verified,
         api_version: settings.api_version,
         has_phone_number_id: !!settings.phone_number_id,
+        has_business_account_id: !!settings.business_account_id,
         has_verify_token: !!settings.verify_token,
         webhook_token: settings.webhook_token,
         // Include actual values for display in setup page
         access_token: settings.access_token,
         phone_number_id: settings.phone_number_id,
+        business_account_id: settings.business_account_id,
         verify_token: settings.verify_token,
       },
     });
@@ -237,11 +245,13 @@ export async function GET() {
         full_name: updatedSettings.full_name,
         has_access_token: !!updatedSettings.access_token,
         has_phone_number_id: !!updatedSettings.phone_number_id,
+        has_business_account_id: !!updatedSettings.business_account_id,
         has_verify_token: !!updatedSettings.verify_token,
         webhook_token: updatedSettings.webhook_token,
         // Include actual values for display in setup page
         access_token: updatedSettings.access_token,
         phone_number_id: updatedSettings.phone_number_id,
+        business_account_id: updatedSettings.business_account_id,
         verify_token: updatedSettings.verify_token,
         created_at: updatedSettings.created_at,
         updated_at: updatedSettings.updated_at,

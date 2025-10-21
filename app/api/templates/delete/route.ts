@@ -1,15 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 
-const WHATSAPP_BUSINESS_ACCOUNT_ID = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID;
-const WHATSAPP_ACCESS_TOKEN = process.env.WHATSAPP_TOKEN;
-const WHATSAPP_API_VERSION = process.env.WHATSAPP_API_VERSION || 'v23.0';
-
 interface DeleteTemplateRequest {
   templateId: string;
   templateName: string;
 }
 
+/**
+ * DELETE handler for deleting message templates
+ * Now uses user-specific credentials from database
+ */
 export async function DELETE(request: NextRequest) {
   try {
     // Verify user authentication
@@ -20,10 +20,32 @@ export async function DELETE(request: NextRequest) {
       return new NextResponse('Unauthorized', { status: 401 });
     }
 
-    // Check if WhatsApp API is configured
-    if (!WHATSAPP_BUSINESS_ACCOUNT_ID || !WHATSAPP_ACCESS_TOKEN) {
-      return new NextResponse('WhatsApp Business API not configured', { status: 500 });
+    // Get user's WhatsApp API credentials
+    const { data: settings, error: settingsError } = await supabase
+      .from('user_settings')
+      .select('access_token, business_account_id, api_version, access_token_added')
+      .eq('id', user.id)
+      .single();
+
+    if (settingsError || !settings) {
+      console.error('User settings not found:', settingsError);
+      return NextResponse.json(
+        { error: 'WhatsApp credentials not configured. Please complete setup.' },
+        { status: 400 }
+      );
     }
+
+    if (!settings.access_token_added || !settings.access_token || !settings.business_account_id) {
+      console.error('WhatsApp API credentials not configured for user:', user.id);
+      return NextResponse.json(
+        { error: 'WhatsApp credentials not configured. Please complete setup in the Settings page.' },
+        { status: 400 }
+      );
+    }
+
+    const WHATSAPP_ACCESS_TOKEN = settings.access_token;
+    const WHATSAPP_BUSINESS_ACCOUNT_ID = settings.business_account_id;
+    const WHATSAPP_API_VERSION = settings.api_version || 'v23.0';
 
     // Parse request body
     const { templateId, templateName }: DeleteTemplateRequest = await request.json();

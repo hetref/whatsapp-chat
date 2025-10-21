@@ -1,11 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 
-// WhatsApp Business API configuration
-const WHATSAPP_BUSINESS_ACCOUNT_ID = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID;
-const WHATSAPP_ACCESS_TOKEN = process.env.WHATSAPP_TOKEN;
-const WHATSAPP_API_VERSION = process.env.WHATSAPP_API_VERSION || 'v23.0';
-
 // Type definitions for template creation
 interface CreateTemplateRequest {
   name: string;
@@ -35,6 +30,7 @@ interface ButtonComponent {
 
 /**
  * POST handler for creating new message templates
+ * Now uses user-specific credentials from database
  */
 export async function POST(request: NextRequest) {
   try {
@@ -47,10 +43,32 @@ export async function POST(request: NextRequest) {
       return new NextResponse('Unauthorized', { status: 401 });
     }
 
-    if (!WHATSAPP_BUSINESS_ACCOUNT_ID || !WHATSAPP_ACCESS_TOKEN) {
-      console.error('WhatsApp Business API credentials not configured');
-      return new NextResponse('WhatsApp Business API not configured', { status: 500 });
+    // Get user's WhatsApp API credentials
+    const { data: settings, error: settingsError } = await supabase
+      .from('user_settings')
+      .select('access_token, business_account_id, api_version, access_token_added')
+      .eq('id', user.id)
+      .single();
+
+    if (settingsError || !settings) {
+      console.error('User settings not found:', settingsError);
+      return NextResponse.json(
+        { error: 'WhatsApp credentials not configured. Please complete setup.' },
+        { status: 400 }
+      );
     }
+
+    if (!settings.access_token_added || !settings.access_token || !settings.business_account_id) {
+      console.error('WhatsApp API credentials not configured for user:', user.id);
+      return NextResponse.json(
+        { error: 'WhatsApp credentials not configured. Please complete setup in the Settings page.' },
+        { status: 400 }
+      );
+    }
+
+    const WHATSAPP_ACCESS_TOKEN = settings.access_token;
+    const WHATSAPP_BUSINESS_ACCOUNT_ID = settings.business_account_id;
+    const WHATSAPP_API_VERSION = settings.api_version || 'v23.0';
 
     // Parse request body
     const templateData: CreateTemplateRequest = await request.json();
@@ -327,15 +345,43 @@ function validateComponents(components: TemplateComponent[]): string | null {
 }
 
 /**
- * GET handler for checking API status
+ * GET handler for checking API status (now user-specific)
  */
 export async function GET() {
-  const isConfigured = !!(WHATSAPP_BUSINESS_ACCOUNT_ID && WHATSAPP_ACCESS_TOKEN);
-  
-  return NextResponse.json({
-    status: 'WhatsApp Template Creation API',
-    configured: isConfigured,
-    version: WHATSAPP_API_VERSION,
-    timestamp: new Date().toISOString()
-  });
+  try {
+    const supabase = await createClient();
+    
+    // Verify user authentication
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+
+    // Get user's WhatsApp API credentials
+    const { data: settings } = await supabase
+      .from('user_settings')
+      .select('access_token_added, api_version')
+      .eq('id', user.id)
+      .single();
+
+    const isConfigured = settings?.access_token_added || false;
+    const apiVersion = settings?.api_version || 'v23.0';
+    
+    return NextResponse.json({
+      status: 'WhatsApp Template Creation API',
+      configured: isConfigured,
+      version: apiVersion,
+      timestamp: new Date().toISOString()
+    });
+  } catch {
+    return NextResponse.json({
+      status: 'WhatsApp Template Creation API',
+      configured: false,
+      error: 'Failed to check configuration',
+      timestamp: new Date().toISOString()
+    });
+  }
 } 

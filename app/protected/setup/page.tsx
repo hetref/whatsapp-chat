@@ -17,10 +17,12 @@ interface UserSettings {
   full_name: string | null;
   has_access_token: boolean;
   has_phone_number_id: boolean;
+  has_business_account_id: boolean;
   has_verify_token: boolean;
   webhook_token: string | null;
   access_token?: string | null;
   phone_number_id?: string | null;
+  business_account_id?: string | null;
   verify_token?: string | null;
 }
 
@@ -32,6 +34,7 @@ export default function SetupPage() {
   // Access Token form
   const [accessToken, setAccessToken] = useState("");
   const [phoneNumberId, setPhoneNumberId] = useState("");
+  const [businessAccountId, setBusinessAccountId] = useState("");
   const [apiVersion, setApiVersion] = useState("v23.0");
   const [savingAccessToken, setSavingAccessToken] = useState(false);
   const [accessTokenError, setAccessTokenError] = useState<string | null>(null);
@@ -72,6 +75,9 @@ export default function SetupPage() {
         if (data.settings.phone_number_id) {
           setPhoneNumberId(data.settings.phone_number_id);
         }
+        if (data.settings.business_account_id) {
+          setBusinessAccountId(data.settings.business_account_id);
+        }
         if (data.settings.verify_token) {
           setVerifyToken(data.settings.verify_token);
         }
@@ -103,12 +109,19 @@ export default function SetupPage() {
         return;
       }
       
+      if (!businessAccountId.trim()) {
+        setAccessTokenError("Business Account ID is required");
+        setSavingAccessToken(false);
+        return;
+      }
+      
       const response = await fetch('/api/settings/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           access_token: accessToken,
           phone_number_id: phoneNumberId,
+          business_account_id: businessAccountId,
           api_version: apiVersion,
         }),
       });
@@ -309,7 +322,7 @@ export default function SetupPage() {
                           setAccessToken(e.target.value);
                         }
                       }}
-                      readOnly={!showAccessToken && settings?.access_token_added}
+                      // readOnly={!showAccessToken && settings?.access_token_added}
                       className="font-mono text-sm pr-20"
                     />
                     {accessToken && (
@@ -366,10 +379,33 @@ export default function SetupPage() {
                     value={phoneNumberId}
                     onChange={(e) => setPhoneNumberId(e.target.value)}
                     className="font-mono text-sm"
-                    readOnly={settings?.access_token_added}
+                    // readOnly={settings?.access_token_added}
                   />
                   <p className="text-xs text-muted-foreground">
                     Found in WhatsApp Business API settings
+                  </p>
+                </div>
+                
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="business-account-id">Business Account ID *</Label>
+                    {settings?.has_business_account_id && (
+                      <Badge variant="secondary" className="text-xs">
+                        Configured
+                      </Badge>
+                    )}
+                  </div>
+                  <Input
+                    id="business-account-id"
+                    type="text"
+                    placeholder="Enter your WhatsApp Business Account ID"
+                    value={businessAccountId}
+                    onChange={(e) => setBusinessAccountId(e.target.value)}
+                    className="font-mono text-sm"
+                    // readOnly={settings?.access_token_added}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Found in Meta Business Suite settings
                   </p>
                 </div>
                 
@@ -502,7 +538,7 @@ export default function SetupPage() {
                       value={verifyToken}
                       onChange={(e) => setVerifyToken(e.target.value)}
                       className="font-mono text-sm"
-                      readOnly={settings?.webhook_verified}
+                      // readOnly={settings?.webhook_verified}
                     />
                     {verifyToken && (
                       <Button
@@ -592,6 +628,9 @@ export default function SetupPage() {
             </p>
             <p>
               • <strong>Phone Number ID:</strong> The unique identifier for your WhatsApp Business phone number
+            </p>
+            <p>
+              • <strong>Business Account ID:</strong> Your WhatsApp Business Account ID from Meta Business Suite (used for managing templates)
             </p>
             <p>
               • <strong>Webhook URL:</strong> Each user gets a unique webhook URL with a secure token for enhanced security and multi-tenant support
