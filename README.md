@@ -381,13 +381,15 @@ CREATE TABLE IF NOT EXISTS group_members (
 );
 
 -- ============================================
--- USER SETTINGS TABLE
+-- USER SETTINGS TABLE (Multi-Tenant Support)
 -- ============================================
 CREATE TABLE IF NOT EXISTS user_settings (
   id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   access_token TEXT,
   phone_number_id TEXT,
+  business_account_id TEXT,
   verify_token TEXT,
+  webhook_token TEXT UNIQUE,
   api_version TEXT DEFAULT 'v23.0',
   webhook_verified BOOLEAN DEFAULT FALSE,
   access_token_added BOOLEAN DEFAULT FALSE,
@@ -407,6 +409,9 @@ CREATE INDEX IF NOT EXISTS idx_messages_media_data ON messages USING GIN (media_
 CREATE INDEX IF NOT EXISTS idx_group_members_group_id ON group_members(group_id);
 CREATE INDEX IF NOT EXISTS idx_group_members_user_id ON group_members(user_id);
 CREATE INDEX IF NOT EXISTS idx_chat_groups_owner_id ON chat_groups(owner_id);
+CREATE INDEX IF NOT EXISTS idx_user_settings_phone_number_id ON user_settings(phone_number_id);
+CREATE INDEX IF NOT EXISTS idx_user_settings_webhook_token ON user_settings(webhook_token);
+CREATE INDEX IF NOT EXISTS idx_user_settings_business_account_id ON user_settings(business_account_id);
 
 -- ============================================
 -- ENABLE REAL-TIME REPLICATION
@@ -804,21 +809,66 @@ ORDER BY has_unread DESC, last_message_time DESC NULLS LAST;
 2. Click **Create App** → Choose **Business** type
 3. Add **WhatsApp** product to your app
 
-#### 2.2 Get Credentials
+#### 2.2 Get Your Credentials
 
-1. **Phone Number ID**: WhatsApp → API Setup
-2. **Access Token**: Generate permanent token
-3. **Business Account ID**: WhatsApp Business settings
-4. **Verify Token**: Create your own secure random string
+You'll need these credentials from Meta Business Suite:
 
-#### 2.3 Configure Webhook
+1. **Access Token** (Permanent Token)
+   - Go to Meta Developers → Your App → WhatsApp → API Setup
+   - Click **Generate Access Token**
+   - Make it **permanent** (not test token)
+   - Copy and save securely
 
-1. In WhatsApp settings → **Configuration**
+2. **Phone Number ID**
+   - In the same API Setup page
+   - Under your test/production phone number
+   - Copy the numeric Phone Number ID
+
+3. **Business Account ID**
+   - Go to Meta Business Suite → Settings → Business Info
+   - Copy your Business Account ID
+   - OR check the URL in Developers Console: it contains your Business Account ID
+
+4. **Verify Token** (You Create This)
+   - Create a secure random string (e.g., `my-secure-webhook-token-2024`)
+   - You'll use this when setting up the webhook
+
+#### 2.3 Configure Credentials in App
+
+**🎯 NEW: User-Specific Configuration**
+
+Instead of using environment variables, each user configures their own WhatsApp credentials through the app:
+
+1. **After deployment**, sign up / log in to your app
+2. Navigate to **Setup** (`/protected/setup`) - you'll be redirected automatically
+3. Fill in the **Access Token Configuration** form:
+   - ✅ **Access Token** - Paste your permanent token from Meta
+   - ✅ **Phone Number ID** - Paste your Phone Number ID
+   - ✅ **Business Account ID** - Paste your Business Account ID
+   - ✅ **API Version** - Default: `v23.0` (leave as is unless you need specific version)
+4. Click **Save Access Token**
+
+5. Fill in the **Webhook Configuration** form:
+   - ✅ **Verify Token** - Enter your custom secure token
+   - ✅ Copy the automatically generated **Webhook URL** (unique to you)
+6. Click **Save Webhook Configuration**
+
+**Benefits of this approach:**
+- ✨ Multi-tenant: Multiple users can use different WhatsApp Business accounts
+- 🔒 Secure: Each user's credentials are isolated in the database
+- 🚀 Easy: No need to redeploy when changing credentials
+- 👥 Scalable: Support multiple businesses from one deployment
+
+#### 2.4 Configure Webhook in Meta
+
+1. Go to Meta Developers → Your App → WhatsApp → Configuration
 2. Click **Edit** on Webhook
-3. **Callback URL**: `https://yourdomain.com/api/webhook/YOUR_WEBHOOK_TOKEN`
-4. **Verify Token**: Your custom token
+3. **Callback URL**: Use the unique webhook URL from your setup page
+   - Format: `https://your-domain.com/api/webhook/[your-unique-token]`
+4. **Verify Token**: Enter the verify token you created in step 2.3
 5. Subscribe to **messages** field
 6. Click **Verify and Save**
+7. Return to your app - webhook should show as "✓ Verified"
 
 ### Step 3: AWS S3 Setup
 
@@ -868,6 +918,11 @@ Create `.env.local` in project root:
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_OR_ANON_KEY=your_supabase_anon_key
 
+# Supabase Service Role Key (CRITICAL for webhooks)
+# This bypasses Row Level Security for webhook operations
+# Get it from: Supabase Dashboard → Settings → API → service_role key
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
+
 # ============================================
 # AWS S3 CONFIGURATION
 # ============================================
@@ -875,7 +930,22 @@ AWS_ACCESS_KEY_ID=your_aws_access_key_id
 AWS_SECRET_ACCESS_KEY=your_aws_secret_access_key
 AWS_REGION=us-east-1
 AWS_BUCKET_NAME=wachat-media-bucket
+
+# ============================================
+# WHATSAPP CONFIGURATION (Optional - Legacy)
+# ============================================
+# NOTE: WhatsApp credentials are now configured per-user through the UI
+# You can optionally keep these for backward compatibility, but they're not required
+# The app will use user-specific credentials from the database
 ```
+
+**🔑 Important:** The `SUPABASE_SERVICE_ROLE_KEY` is **required** for webhooks to work. This key allows the webhook endpoint to bypass Row Level Security (RLS) since webhook requests come from WhatsApp (external source) without user authentication.
+
+**Where to find it:**
+1. Go to Supabase Dashboard
+2. Click **Settings** → **API**
+3. Under **Project API keys**, copy the **`service_role` secret** key
+4. ⚠️ **Never expose this key** to client-side code - it has admin privileges!
 
 ### Step 5: Run Application
 
@@ -893,6 +963,38 @@ Visit `http://localhost:3000` 🎉
 ---
 
 ## 📖 Features Documentation
+
+### ⚙️ Initial Setup (Multi-Tenant)
+
+**First Time Setup:**
+
+After deploying the application and creating your account, you'll be automatically redirected to the setup page (`/protected/setup`).
+
+**Setup Page Features:**
+
+1. **Access Token Configuration** (Required for sending messages)
+   - 🔑 Access Token - Your permanent WhatsApp Business API token
+   - 📱 Phone Number ID - Your WhatsApp Business phone number ID
+   - 🏢 Business Account ID - For template management
+   - 🔢 API Version - WhatsApp API version (default: v23.0)
+
+2. **Webhook Configuration** (Required for receiving messages)
+   - 🔐 Verify Token - Your custom security token
+   - 🔗 Webhook URL - Automatically generated unique URL for you
+   
+**Multi-User Support:**
+
+- Each user gets their own WhatsApp Business configuration
+- Users can manage different businesses independently
+- Credentials are securely stored in the database
+- No need to redeploy when changing credentials
+- Full data isolation between users
+
+**After Setup:**
+
+- ✅ Access token configured → You can send messages and templates
+- ✅ Webhook configured & verified → You can receive messages
+- 🎉 Both configured → Full bidirectional chat functionality
 
 ### 🚀 Real-time Messaging
 
@@ -1123,13 +1225,23 @@ Create new chat.
 
 ### Environment Variables Checklist
 
+**Required for Deployment:**
+
 - ✅ `NEXT_PUBLIC_SUPABASE_URL`
 - ✅ `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_OR_ANON_KEY`
-- ✅ `SUPABASE_SERVICE_ROLE_KEY`
+- ✅ `SUPABASE_SERVICE_ROLE_KEY` 🔑 **Critical for webhooks**
 - ✅ `AWS_ACCESS_KEY_ID`
 - ✅ `AWS_SECRET_ACCESS_KEY`
 - ✅ `AWS_REGION`
 - ✅ `AWS_BUCKET_NAME`
+
+**Not Required (Configured Through UI):**
+
+- ❌ ~~`WHATSAPP_TOKEN`~~ - Now set per-user in `/protected/setup`
+- ❌ ~~`WHATSAPP_PHONE_NUMBER_ID`~~ - Now set per-user in `/protected/setup`
+- ❌ ~~`WHATSAPP_BUSINESS_ACCOUNT_ID`~~ - Now set per-user in `/protected/setup`
+- ❌ ~~`WHATSAPP_API_VERSION`~~ - Now set per-user in `/protected/setup`
+- ❌ ~~`WHATSAPP_VERIFY_TOKEN`~~ - Now set per-user in `/protected/setup`
 
 ---
 
@@ -1137,19 +1249,41 @@ Create new chat.
 
 ### Common Issues
 
+#### "No user found for phone_number_id" in Webhook Logs
+
+**Problem:** Webhook receives messages but can't find user settings in database.
+
+**Root Cause:** Row Level Security (RLS) blocking webhook queries.
+
+**Solution:**
+1. **Check `SUPABASE_SERVICE_ROLE_KEY` is set** in environment variables
+2. Get it from: Supabase Dashboard → Settings → API → `service_role` key
+3. Add to `.env.local` or deployment environment variables
+4. Restart your application after adding the key
+
+**Why this happens:**
+- Webhooks come from WhatsApp (external source, no user auth)
+- Regular Supabase client requires authentication
+- RLS policies block unauthenticated queries
+- Service role key bypasses RLS for webhook operations
+
 #### Webhook Not Working
 **Solution:**
-1. Verify webhook URL is publicly accessible
-2. Check verify token matches
-3. Confirm subscribed to "messages" field
-4. Test with Meta's webhook test button
+1. Verify webhook URL is publicly accessible (test in browser)
+2. Check verify token matches between app and Meta settings
+3. Confirm subscribed to "messages" field in Meta webhook settings
+4. Check `SUPABASE_SERVICE_ROLE_KEY` is set (see above)
+5. Review webhook logs in your deployment platform
+6. Test with Meta's webhook test button
 
 #### Messages Not Sending
 **Solution:**
-1. Verify access token is permanent (not test token)
-2. Check phone number ID is correct
-3. Ensure recipient has WhatsApp
-4. Review API version compatibility
+1. **Complete Setup:** Go to `/protected/setup` and configure credentials
+2. Verify access token is **permanent** (not test token - expires in 24h)
+3. Check phone number ID is correct (numeric ID from Meta)
+4. Check business account ID is correct
+5. Ensure recipient has WhatsApp account
+6. Review API version compatibility (default v23.0 works)
 
 #### Real-time Not Working
 **Solution:**
@@ -1161,9 +1295,25 @@ Create new chat.
 #### Images Not Loading
 **Solution:**
 1. Verify S3 bucket configuration
-2. Check `next.config.ts` has S3 hostname
-3. Confirm pre-signed URLs not expired
-4. Test bucket permissions
+2. Check `next.config.ts` has S3 hostname in `remotePatterns`
+3. Confirm pre-signed URLs not expired (24-hour expiry)
+4. Test bucket permissions with IAM user
+5. Check AWS credentials are correct in environment variables
+
+#### Templates Not Loading
+**Solution:**
+1. **Complete Setup:** Ensure Business Account ID is configured in `/protected/setup`
+2. Check business account ID matches your Meta Business Suite
+3. Verify access token has template permissions
+4. Check templates exist in Meta Business Manager
+5. Review template status (must be APPROVED to send)
+
+#### Can't Access Chat After Signup
+**Solution:**
+1. You need to complete setup first
+2. Navigate to `/protected/setup`
+3. Configure at least one: Access Token **OR** Webhook
+4. After saving, you'll be able to access the chat interface
 
 ---
 
