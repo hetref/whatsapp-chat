@@ -173,12 +173,10 @@ function getWhatsAppMediaType(mimeType: string): string {
  */
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient();
-    
     // Verify user authentication
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
-      console.error('Authentication error:', authError);
+    const { userId } = await auth();
+    if (!userId) {
+      console.error('Authentication error: No user ID');
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
@@ -201,31 +199,59 @@ export async function POST(request: NextRequest) {
     }
 
     // Get user's WhatsApp API credentials
-    const { data: settings, error: settingsError } = await supabase
-      .from('user_settings')
-      .select('access_token, phone_number_id, api_version, access_token_added')
-      .eq('id', user.id)
-      .single();
+    const settings = await prisma.userSettings.findUnique({
+      where: { id: userId },
+      select: {
+        accessToken: true,
+        phoneNumberId: true,
+        apiVersion: true
+      }
+    });
 
-    if (settingsError || !settings) {
-      console.error('User settings not found:', settingsError);
+    if (!settings) {
+      console.error('User settings not found for user:', userId);
       return NextResponse.json(
         { error: 'WhatsApp credentials not configured. Please complete setup.' },
         { status: 400 }
       );
     }
 
-    if (!settings.access_token_added || !settings.access_token || !settings.phone_number_id) {
-      console.error('WhatsApp API credentials not configured for user:', user.id);
+    if (!settings.accessToken || !settings.phoneNumberId) {
+      console.error('WhatsApp API credentials not configured for user:', userId);
       return NextResponse.json(
         { error: 'WhatsApp Access Token not configured. Please complete setup.' },
         { status: 400 }
       );
     }
 
-    const accessToken = settings.access_token;
-    const phoneNumberId = settings.phone_number_id;
-    const apiVersion = settings.api_version || 'v23.0';
+    const accessToken = settings.accessToken;
+    const phoneNumberId = settings.phoneNumberId;
+    const apiVersion = settings.apiVersion || 'v23.0';
+
+    // Clean phone number for database consistency
+    const cleanPhoneNumber = to.replace(/\s+/g, '').replace(/[^\d]/g, '');
+    
+    // Check if user exists in our database
+    const existingUser = await prisma.user.findUnique({
+      where: { id: cleanPhoneNumber }
+    });
+
+    // Create user if they don't exist
+    if (!existingUser) {
+      console.log(`Creating new user: ${cleanPhoneNumber}`);
+      try {
+        await prisma.user.create({
+          data: {
+            id: cleanPhoneNumber,
+            name: cleanPhoneNumber, // Use phone number as default name
+            lastActive: new Date()
+          }
+        });
+      } catch (userError) {
+        console.error('Error creating user:', userError);
+        // Continue anyway as this shouldn't block media sending
+      }
+    }
 
     // Validate file types before processing
     const unsupportedFiles = files.filter(file => !isWhatsAppSupportedFileType(file.type));
@@ -263,7 +289,7 @@ export async function POST(request: NextRequest) {
 
         // Send media message using user-specific credentials
         const messageResponse = await sendMediaMessage(
-          to, 
+          cleanPhoneNumber, 
           mediaUpload.id, 
           mediaType, 
           accessToken, 
@@ -277,19 +303,19 @@ export async function POST(request: NextRequest) {
 
         // Upload to S3 for our records
         const mediaIdForS3 = `upload_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-        const s3Url = await uploadFileToS3(file, user.id, mediaIdForS3);
+        const s3Url = await uploadFileToS3(file, userId, mediaIdForS3);
 
         // Store in database
         const messageObject = {
           id: messageId || `outgoing_media_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-          sender_id: user.id, // Current authenticated user (sender)
-          receiver_id: to, // Recipient phone number (receiver)
+          senderId: userId, // Current authenticated user (sender)
+          receiverId: cleanPhoneNumber, // Recipient phone number (receiver)
           content: caption || `[${mediaType.charAt(0).toUpperCase() + mediaType.slice(1)}]`,
-          timestamp: timestamp,
-          is_sent_by_me: true,
-          is_read: true, // Outgoing messages are already "read" by the sender
-          message_type: mediaType,
-          media_data: JSON.stringify({
+          timestamp: new Date(timestamp),
+          isSentByMe: true,
+          isRead: true, // Outgoing messages are already "read" by the sender
+          messageType: mediaType,
+          mediaData: JSON.stringify({
             type: mediaType,
             id: mediaIdForS3,
             mime_type: file.type,
@@ -302,14 +328,13 @@ export async function POST(request: NextRequest) {
           }),
         };
 
-        const { error: dbError } = await supabase
-          .from('messages')
-          .insert([messageObject]);
-
-        if (dbError) {
-          console.error('Error storing message in database:', dbError);
-        } else {
+        try {
+          await prisma.message.create({
+            data: messageObject
+          });
           console.log('Message stored successfully in database:', messageObject.id);
+        } catch (dbError) {
+          console.error('Error storing message in database:', dbError);
         }
 
         results.push({
@@ -364,11 +389,9 @@ export async function POST(request: NextRequest) {
  */
 export async function GET() {
   try {
-    const supabase = await createClient();
-    
     // Verify user authentication
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
+    const { userId } = await auth();
+    if (!userId) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
@@ -376,14 +399,16 @@ export async function GET() {
     }
 
     // Get user's WhatsApp API credentials
-    const { data: settings } = await supabase
-      .from('user_settings')
-      .select('access_token_added, api_version')
-      .eq('id', user.id)
-      .single();
+    const settings = await prisma.userSettings.findUnique({
+      where: { id: userId },
+      select: {
+        accessToken: true,
+        apiVersion: true
+      }
+    });
 
-    const isConfigured = settings?.access_token_added || false;
-    const apiVersion = settings?.api_version || 'v23.0';
+    const isConfigured = settings?.accessToken || false;
+    const apiVersion = settings?.apiVersion || 'v23.0';
     
     return NextResponse.json({
       status: 'WhatsApp Send Media API',
