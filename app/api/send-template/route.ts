@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { auth } from '@clerk/nextjs/server';
+import { prisma } from '@/lib/db';
 
 interface SendTemplateRequest {
   to: string;
@@ -146,12 +147,10 @@ async function sendTemplateMessage(
  */
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient();
-    
     // Verify user authentication
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
-      console.error('Authentication error:', authError);
+    const { userId } = await auth();
+    if (!userId) {
+      console.error('Authentication error: No user ID');
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
@@ -171,37 +170,65 @@ export async function POST(request: NextRequest) {
     }
 
     // Get user's WhatsApp API credentials
-    const { data: settings, error: settingsError } = await supabase
-      .from('user_settings')
-      .select('access_token, phone_number_id, api_version, access_token_added')
-      .eq('id', user.id)
-      .single();
+    const settings = await prisma.userSettings.findUnique({
+      where: { id: userId },
+      select: {
+        accessToken: true,
+        phoneNumberId: true,
+        apiVersion: true
+      }
+    });
 
-    if (settingsError || !settings) {
-      console.error('User settings not found:', settingsError);
+    if (!settings) {
+      console.error('User settings not found for user:', userId);
       return NextResponse.json(
         { error: 'WhatsApp credentials not configured. Please complete setup.' },
         { status: 400 }
       );
     }
 
-    if (!settings.access_token_added || !settings.access_token || !settings.phone_number_id) {
-      console.error('WhatsApp API credentials not configured for user:', user.id);
+    if (!settings.accessToken || !settings.phoneNumberId) {
+      console.error('WhatsApp API credentials not configured for user:', userId);
       return NextResponse.json(
         { error: 'WhatsApp Access Token not configured. Please complete setup.' },
         { status: 400 }
       );
     }
 
-    const accessToken = settings.access_token;
-    const phoneNumberId = settings.phone_number_id;
-    const apiVersion = settings.api_version || 'v23.0';
+    const accessToken = settings.accessToken;
+    const phoneNumberId = settings.phoneNumberId;
+    const apiVersion = settings.apiVersion || 'v23.0';
+
+    // Clean phone number for database consistency
+    const cleanPhoneNumber = to.replace(/\s+/g, '').replace(/[^\d]/g, '');
+    
+    // Check if user exists in our database
+    const existingUser = await prisma.user.findUnique({
+      where: { id: cleanPhoneNumber }
+    });
+
+    // Create user if they don't exist
+    if (!existingUser) {
+      console.log(`Creating new user: ${cleanPhoneNumber}`);
+      try {
+        await prisma.user.create({
+          data: {
+            id: cleanPhoneNumber,
+            name: cleanPhoneNumber, // Use phone number as default name
+            lastActive: new Date()
+          }
+        });
+      } catch (userError) {
+        console.error('Error creating user:', userError);
+        // Continue anyway as this shouldn't block template sending
+      }
+    }
 
     console.log(`Sending template message: ${templateName} to ${to}`);
 
     // Send template message via WhatsApp using user-specific credentials
     const messageResponse = await sendTemplateMessage(
-      to, 
+      cleanPhoneNumber, 
       templateName, 
       templateData.language, 
       accessToken,
@@ -293,14 +320,14 @@ export async function POST(request: NextRequest) {
 
     const messageObject = {
       id: messageId,
-      sender_id: to, // Recipient phone number (sender in DB)
-      receiver_id: user.id, // Current authenticated user (receiver in DB)
+      senderId: userId, // Current authenticated user (sender)
+      receiverId: cleanPhoneNumber, // Recipient phone number (receiver)
       content: displayContent,
-      timestamp: timestamp,
-      is_sent_by_me: true,
-      is_read: true, // Outgoing messages are already "read" by the sender
-      message_type: 'template',
-      media_data: JSON.stringify({
+      timestamp: new Date(timestamp),
+      isSentByMe: true,
+      isRead: true, // Outgoing messages are already "read" by the sender
+      messageType: 'template',
+      mediaData: JSON.stringify({
         type: 'template',
         template_name: templateName,
         template_id: templateData.id,
@@ -312,18 +339,17 @@ export async function POST(request: NextRequest) {
         body: processedComponents.body,
         footer: processedComponents.footer,
         buttons: processedComponents.buttons
-      }),
+      })
     };
 
-    const { error: dbError } = await supabase
-      .from('messages')
-      .insert([messageObject]);
-
-    if (dbError) {
+    try {
+      await prisma.message.create({
+        data: messageObject
+      });
+      console.log('Template message stored successfully in database:', messageObject.id);
+    } catch (dbError) {
       console.error('Error storing template message in database:', dbError);
       // Don't fail the request if database storage fails
-    } else {
-      console.log('Template message stored successfully in database:', messageObject.id);
     }
 
     return NextResponse.json({
@@ -351,11 +377,9 @@ export async function POST(request: NextRequest) {
  */
 export async function GET() {
   try {
-    const supabase = await createClient();
-    
     // Verify user authentication
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
+    const { userId } = await auth();
+    if (!userId) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
@@ -363,14 +387,16 @@ export async function GET() {
     }
 
     // Get user's WhatsApp API credentials
-    const { data: settings } = await supabase
-      .from('user_settings')
-      .select('access_token_added, api_version')
-      .eq('id', user.id)
-      .single();
+    const settings = await prisma.userSettings.findUnique({
+      where: { id: userId },
+      select: {
+        accessToken: true,
+        apiVersion: true
+      }
+    });
 
-    const isConfigured = settings?.access_token_added || false;
-    const apiVersion = settings?.api_version || 'v23.0';
+    const isConfigured = settings?.accessToken || false;
+    const apiVersion = settings?.apiVersion || 'v23.0';
     
     return NextResponse.json({
       status: 'WhatsApp Send Template API',

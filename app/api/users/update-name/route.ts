@@ -1,17 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { auth } from '@clerk/nextjs/server';
+import { prisma } from '@/lib/db';
 
 /**
  * POST handler to update user custom name
  */
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient();
-    
     // Verify user authentication
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
-      console.error('Authentication error:', authError);
+    const { userId } = await auth();
+    if (!userId) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
@@ -19,9 +17,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Parse request body
-    const { userId, customName } = await request.json();
+    const { userId: targetUserId, customName } = await request.json();
 
-    if (!userId) {
+    if (!targetUserId) {
       return NextResponse.json(
         { error: 'Missing userId parameter' },
         { status: 400 }
@@ -39,26 +37,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log(`Updating custom name for user ${userId} to "${customName}"`);
+    console.log(`Updating custom name for user ${targetUserId} to "${customName}"`);
 
     // Update the user's custom name
-    const { data: updatedUser, error: updateError } = await supabase
-      .from('users')
-      .update({ 
-        custom_name: customName,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', userId)
-      .select()
-      .single();
-
-    if (updateError) {
-      console.error('Error updating user name:', updateError);
-      return NextResponse.json(
-        { error: 'Failed to update user name', details: updateError.message },
-        { status: 500 }
-      );
-    }
+    const updatedUser = await prisma.user.update({
+      where: { id: targetUserId },
+      data: { 
+        customName: customName || null
+      }
+    });
 
     if (!updatedUser) {
       return NextResponse.json(
@@ -74,9 +61,9 @@ export async function POST(request: NextRequest) {
       user: {
         id: updatedUser.id,
         name: updatedUser.name,
-        custom_name: updatedUser.custom_name,
-        whatsapp_name: updatedUser.name,
-        last_active: updatedUser.last_active
+        custom_name: updatedUser.customName,
+        whatsapp_name: updatedUser.whatsappName,
+        last_active: updatedUser.lastActive
       },
       timestamp: new Date().toISOString()
     });

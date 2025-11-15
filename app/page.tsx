@@ -1,5 +1,5 @@
 import { EnvVarWarning } from "@/components/env-var-warning";
-import { AuthButton } from "@/components/auth-button";
+import AuthButton from "@/components/auth-button";
 import { ThemeSwitcher } from "@/components/theme-switcher";
 import { GitHubStarButton } from "@/components/github-star-button";
 import { hasEnvVars } from "@/lib/utils";

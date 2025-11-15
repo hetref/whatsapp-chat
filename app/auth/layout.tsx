@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server";
+import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 
 export default async function AuthLayout({
@@ -6,19 +6,13 @@ export default async function AuthLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const supabase = await createClient();
-  
-  // Check if user is already authenticated
-  const { data: { user }, error } = await supabase.auth.getUser();
-  
-  // If user is authenticated, redirect to protected page
-  if (!error && user) {
+  const { userId } = await auth();
+
+  // If user is already authenticated, redirect to protected area
+  if (userId) {
     redirect("/protected");
   }
 
-  return (
-    <div className="min-h-screen bg-background">
-      {children}
-    </div>
-  );
-} 
+  // Redirect to Clerk's sign-in page since we're using Clerk's default UI
+  redirect("/sign-in");
+}

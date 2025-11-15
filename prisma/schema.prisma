@@ -1,0 +1,119 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// Application user/contact. Stores both business owners (Clerk users) and
+/// WhatsApp contacts (phone numbers) as string IDs.
+model User {
+  id           String   @id @db.Text
+  name         String
+  customName   String?  @map("custom_name")
+  whatsappName String?  @map("whatsapp_name")
+  lastActive   DateTime @map("last_active") @default(now())
+
+  // Relations
+  sentMessages     Message[]   @relation("sentMessages")
+  receivedMessages Message[]   @relation("receivedMessages")
+  groupsOwned      ChatGroup[] @relation("GroupOwner")
+  groupMemberships GroupMember[]
+  settings         UserSettings?
+
+  @@map("users")
+}
+
+/// Messages exchanged between a business owner (Clerk user) and WhatsApp contacts.
+model Message {
+  id         String   @id @db.Text
+  senderId   String   @map("sender_id")
+  receiverId String   @map("receiver_id")
+  content    String
+  timestamp  DateTime @default(now())
+  isSentByMe Boolean  @map("is_sent_by_me") @default(false)
+  messageType String  @map("message_type") @default("text")
+  mediaData   Json?   @map("media_data")
+  isRead      Boolean @map("is_read") @default(false)
+  readAt      DateTime? @map("read_at")
+
+  // Relations
+  sender   User @relation("sentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver User @relation("receivedMessages", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  @@index([senderId], name: "idx_messages_sender")
+  @@index([receiverId], name: "idx_messages_receiver")
+  @@index([timestamp(sort: Desc)], name: "idx_messages_timestamp")
+  @@index([isRead], name: "idx_messages_is_read")
+  @@index([senderId, receiverId, timestamp(sort: Desc)], name: "idx_messages_conversation")
+  @@map("messages")
+}
+
+/// Broadcast group owned by a business user.
+model ChatGroup {
+  id          String       @id @default(uuid()) @db.Uuid
+  ownerId     String       @map("owner_id")
+  name        String
+  description String?
+  createdAt   DateTime     @map("created_at") @default(now())
+  updatedAt   DateTime     @map("updated_at") @default(now())
+
+  // Relations
+  owner   User          @relation("GroupOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  members GroupMember[]
+
+  @@index([ownerId], name: "idx_chat_groups_owner_id")
+  @@map("chat_groups")
+}
+
+/// Member of a broadcast group, pointing to a WhatsApp contact in `users`.
+model GroupMember {
+  id      String   @id @default(uuid()) @db.Uuid
+  groupId String   @db.Uuid @map("group_id")
+  userId  String   @map("user_id")
+  addedAt DateTime @map("added_at") @default(now())
+
+  group ChatGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, userId], name: "group_members_group_id_user_id_key")
+  @@index([groupId], name: "idx_group_members_group_id")
+  @@index([userId], name: "idx_group_members_user_id")
+  @@map("group_members")
+}
+
+/// Per-business user WhatsApp and webhook configuration.
+model UserSettings {
+  id                String   @id @db.Text
+  accessToken       String?  @map("access_token")
+  phoneNumberId     String?  @map("phone_number_id")
+  businessAccountId String?  @map("business_account_id")
+  verifyToken       String?  @map("verify_token")
+  webhookToken      String?  @map("webhook_token")
+  apiVersion        String   @map("api_version") @default("v23.0")
+  webhookVerified   Boolean  @map("webhook_verified") @default(false)
+  accessTokenAdded  Boolean  @map("access_token_added") @default(false)
+  createdAt         DateTime @map("created_at") @default(now())
+  updatedAt         DateTime @map("updated_at") @default(now())
+
+  // Additional fields used by the UI
+  phoneNumber String? @map("phone_number")
+  fullName    String? @map("full_name")
+
+  // Relations
+  user User @relation(fields: [id], references: [id], onDelete: Cascade)
+
+  @@unique([webhookToken], name: "user_settings_webhook_token_key")
+  @@index([phoneNumberId], name: "idx_user_settings_phone_number_id")
+  @@index([webhookToken], name: "idx_user_settings_webhook_token")
+  @@index([businessAccountId], name: "idx_user_settings_business_account_id")
+  @@map("user_settings")
+}

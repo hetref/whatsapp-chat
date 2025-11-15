@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-
-import { createClient } from '@/lib/supabase/server';
+import { auth } from '@clerk/nextjs/server';
+import { prisma } from '@/lib/db';
 
 /**
  * POST handler for sending WhatsApp messages
@@ -9,12 +9,10 @@ import { createClient } from '@/lib/supabase/server';
  */
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient();
-    
     // Verify user authentication
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
-      console.error('Authentication error:', authError);
+    const { userId } = await auth();
+    if (!userId) {
+      console.error('Authentication error: No user ID');
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
@@ -33,6 +31,23 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Check if this is a template message (from ChatWindow template selector)
+    let isTemplateMessage = false;
+    let templateData = null;
+    let displayMessage = message;
+    
+    try {
+      const parsedMessage = JSON.parse(message);
+      if (parsedMessage.type === 'template') {
+        isTemplateMessage = true;
+        templateData = parsedMessage;
+        displayMessage = parsedMessage.displayMessage || parsedMessage.templateName;
+        console.log('Detected template message:', templateData.templateName);
+      }
+    } catch (e) {
+      // Not a JSON message, treat as regular text
+    }
+
     // Clean and validate phone number format for WhatsApp API
     // WhatsApp expects phone numbers without + prefix, with country code
     const cleanPhoneNumber = to.replace(/\s+/g, '').replace(/[^\d]/g, ''); // Remove all non-digits including +
@@ -49,50 +64,139 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get user's WhatsApp API credentials
-    const { data: settings, error: settingsError } = await supabase
-      .from('user_settings')
-      .select('access_token, phone_number_id, api_version, access_token_added, phone_number')
-      .eq('id', user.id)
-      .single();
+    // Get user settings for WhatsApp credentials
+    const userSettings = await prisma.userSettings.findUnique({
+      where: { id: userId },
+      select: {
+        accessToken: true,
+        phoneNumberId: true,
+        apiVersion: true
+      }
+    });
 
-    if (settingsError || !settings) {
-      console.error('User settings not found:', settingsError);
+    if (!userSettings) {
+      console.error('Settings not found for user:', userId);
       return NextResponse.json(
-        { error: 'WhatsApp credentials not configured. Please complete setup.' },
+        { error: 'User settings not found. Please configure your WhatsApp settings first.' },
         { status: 400 }
       );
     }
 
-    if (!settings.access_token_added || !settings.access_token || !settings.phone_number_id) {
-      console.error('WhatsApp API credentials not configured for user:', user.id);
-      return NextResponse.json(
-        { error: 'WhatsApp Access Token not configured. Please complete setup.' },
-        { status: 400 }
-      );
-    }
+    const accessToken = userSettings.accessToken;
+    const phoneNumberId = userSettings.phoneNumberId;
+    const apiVersion = userSettings.apiVersion || 'v23.0';
 
-    const accessToken = settings.access_token;
-    const phoneNumberId = settings.phone_number_id;
-    const apiVersion = settings.api_version || 'v23.0';
+    // Check if user exists in our database
+    const existingUser = await prisma.user.findUnique({
+      where: { id: cleanPhoneNumber }
+    });
+
+    // Create user if they don't exist
+    if (!existingUser) {
+      console.log(`Creating new user: ${cleanPhoneNumber}`);
+      try {
+        await prisma.user.create({
+          data: {
+            id: cleanPhoneNumber,
+            name: cleanPhoneNumber, // Use phone number as default name
+            lastActive: new Date()
+          }
+        });
+      } catch (userError) {
+        console.error('Error creating user:', userError);
+        return NextResponse.json(
+          { error: 'Failed to create user record' },
+          { status: 500 }
+        );
+      }
+    }
 
     // Prepare WhatsApp API request
     const whatsappApiUrl = `https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`;
     
-    const messageData = {
-      messaging_product: 'whatsapp',
-      to: cleanPhoneNumber, // Use cleaned phone number
-      type: 'text',
-      text: {
-        body: message
+    let messageData;
+    let responseData;
+
+    if (isTemplateMessage && templateData) {
+      // Handle template message
+      const templateComponents = [];
+      const variables = templateData.variables || {};
+
+      // Add header parameters if header variables exist
+      if (variables.header && Object.keys(variables.header).length > 0) {
+        const headerParams = Object.keys(variables.header)
+          .sort((a, b) => parseInt(a) - parseInt(b))
+          .map(key => ({
+            type: 'text',
+            text: variables.header[key]
+          }));
+        
+        templateComponents.push({
+          type: 'header',
+          parameters: headerParams
+        });
       }
-    };
+
+      // Add body parameters if body variables exist
+      if (variables.body && Object.keys(variables.body).length > 0) {
+        const bodyParams = Object.keys(variables.body)
+          .sort((a, b) => parseInt(a) - parseInt(b))
+          .map(key => ({
+            type: 'text',
+            text: variables.body[key]
+          }));
+        
+        templateComponents.push({
+          type: 'body',
+          parameters: bodyParams
+        });
+      }
+
+      // Add footer parameters if footer variables exist
+      if (variables.footer && Object.keys(variables.footer).length > 0) {
+        const footerParams = Object.keys(variables.footer)
+          .sort((a, b) => parseInt(a) - parseInt(b))
+          .map(key => ({
+            type: 'text',
+            text: variables.footer[key]
+          }));
+        
+        templateComponents.push({
+          type: 'footer',
+          parameters: footerParams
+        });
+      }
+
+      messageData = {
+        messaging_product: 'whatsapp',
+        to: cleanPhoneNumber,
+        type: 'template',
+        template: {
+          name: templateData.templateName,
+          language: {
+            code: templateData.templateData?.language || 'en'
+          },
+          ...(templateComponents.length > 0 && { components: templateComponents })
+        }
+      };
+    } else {
+      // Handle regular text message
+      messageData = {
+        messaging_product: 'whatsapp',
+        to: cleanPhoneNumber, // Use cleaned phone number
+        type: 'text',
+        text: {
+          body: message
+        }
+      };
+    }
 
     console.log('Sending message to WhatsApp API:', {
       to: cleanPhoneNumber,
       originalTo: to,
-      message: message.substring(0, 50) + (message.length > 50 ? '...' : ''),
-      userId: user.id
+      message: isTemplateMessage ? `Template: ${templateData?.templateName}` : message.substring(0, 50) + (message.length > 50 ? '...' : ''),
+      type: isTemplateMessage ? 'template' : 'text',
+      userId: userId
     });
 
     // Send message via WhatsApp Cloud API using user-specific access token
@@ -105,7 +209,7 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify(messageData),
     });
 
-    const responseData = await whatsappResponse.json();
+    responseData = await whatsappResponse.json();
 
     console.log('WhatsApp response:', responseData);
 
@@ -127,54 +231,71 @@ export async function POST(request: NextRequest) {
     console.log('Message sent successfully via WhatsApp API:', messageId);
 
     // Prepare message object for database insertion
-    // Note: sender_id is phone number (TEXT), receiver_id is auth user (UUID)
+    // sender_id is the authenticated user (who is sending the message)
+    // receiver_id is the phone number (who is receiving the message)
+    let mediaDataForDb = null;
+    
+    if (isTemplateMessage && templateData) {
+      // Store template metadata for proper display
+      mediaDataForDb = JSON.stringify({
+        type: 'template',
+        template_name: templateData.templateName,
+        template_id: templateData.templateData?.id,
+        language: templateData.templateData?.language || 'en',
+        variables: templateData.variables,
+        original_content: templateData.templateData?.components?.find(c => c.type === 'BODY')?.text || templateData.templateName
+      });
+    }
+    
     const messageObject = {
       id: messageId || `outgoing_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      sender_id: cleanPhoneNumber, // Recipient phone number (sender in DB)
-      receiver_id: user.id, // Current authenticated user (receiver in DB)
-      content: message,
+      sender_id: userId, // Current authenticated user (sender)
+      receiver_id: cleanPhoneNumber, // Recipient phone number (receiver)
+      content: displayMessage, // Use display message for templates
       timestamp: timestamp,
       is_sent_by_me: true,
       is_read: true, // Outgoing messages are already "read" by the sender
-      message_type: 'text', // For now, we only send text messages
-      media_data: null // No media data for text messages
+      message_type: isTemplateMessage ? 'template' : 'text',
+      media_data: mediaDataForDb
     };
 
     console.log('Storing message in database:', {
       id: messageObject.id,
-      sender_id: messageObject.sender_id,
-      receiver_id: messageObject.receiver_id,
+      sender_id: messageObject.sender_id, // Auth user
+      receiver_id: messageObject.receiver_id, // Phone number
       content: messageObject.content.substring(0, 50) + (messageObject.content.length > 50 ? '...' : ''),
       timestamp: messageObject.timestamp,
       message_type: messageObject.message_type
     });
 
     // Store the sent message in our database
-    const { data: insertedMessage, error: dbError } = await supabase
-      .from('messages')
-      .insert([messageObject])
-      .select()
-      .single();
-
-    if (dbError) {
+    try {
+      const insertedMessage = await prisma.message.create({
+        data: {
+          id: messageObject.id,
+          senderId: messageObject.sender_id,
+          receiverId: messageObject.receiver_id,
+          content: messageObject.content,
+          timestamp: new Date(messageObject.timestamp),
+          isSentByMe: messageObject.is_sent_by_me,
+          isRead: messageObject.is_read,
+          messageType: messageObject.message_type,
+          mediaData: messageObject.media_data
+        }
+      });
+      console.log('Message stored successfully in database:', insertedMessage.id);
+    } catch (dbError) {
       console.error('Error storing sent message in database:', dbError);
       // Don't fail the request if database storage fails, message was already sent
-    } else {
-      console.log('Message stored successfully in database:', insertedMessage?.id);
     }
 
     // Update last_active for the sender (current user)
-    const { error: userUpdateError } = await supabase
-      .from('users')
-      .upsert([{
-        id: user.id,
-        name: user.user_metadata?.full_name || user.email || 'Unknown User',
-        last_active: timestamp
-      }], {
-        onConflict: 'id'
+    try {
+      await prisma.user.update({
+        where: { id: userId },
+        data: { lastActive: new Date(timestamp) }
       });
-
-    if (userUpdateError) {
+    } catch (userUpdateError) {
       console.error('Error updating user last_active:', userUpdateError);
     }
 
@@ -184,7 +305,7 @@ export async function POST(request: NextRequest) {
       messageId: messageObject.id,
       timestamp: timestamp,
       whatsappResponse: responseData,
-      storedInDb: !dbError
+      storedInDb: true
     });
 
   } catch (error) {
@@ -204,26 +325,27 @@ export async function POST(request: NextRequest) {
  */
 export async function GET() {
   try {
-    const supabase = await createClient();
-    
     // Verify user authentication
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
+    const { userId } = await auth();
+    if (!userId) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
       );
     }
 
-    // Get user's WhatsApp API credentials
-    const { data: settings } = await supabase
-      .from('user_settings')
-      .select('access_token_added, api_version')
-      .eq('id', user.id)
-      .single();
+    // Get user settings for WhatsApp credentials
+    const userSettings = await prisma.userSettings.findUnique({
+      where: { id: userId },
+      select: {
+        accessToken: true,
+        phoneNumberId: true,
+        apiVersion: true
+      }
+    });
 
-    const isConfigured = settings?.access_token_added || false;
-    const apiVersion = settings?.api_version || 'v23.0';
+    const isConfigured = userSettings?.accessToken && userSettings?.phoneNumberId;
+    const apiVersion = userSettings?.apiVersion || 'v23.0';
     
     return NextResponse.json({
       status: 'WhatsApp Send Message API',

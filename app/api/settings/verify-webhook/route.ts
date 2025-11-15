@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { auth } from '@clerk/nextjs/server';
+import { prisma } from '@/lib/db';
 
 /**
  * POST handler for marking webhook as verified
@@ -7,12 +8,10 @@ import { createClient } from '@/lib/supabase/server';
  */
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient();
-    
     // Verify user authentication
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
-      console.error('Authentication error:', authError);
+    const { userId } = await auth();
+    if (!userId) {
+      console.error('Authentication error: No user ID');
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
@@ -30,33 +29,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log(`Setting webhook_verified to ${verified} for user:`, user.id);
+    console.log(`Setting webhook_verified to ${verified} for user:`, userId);
 
     // Update webhook_verified status
-    const { data: settings, error: dbError } = await supabase
-      .from('user_settings')
-      .update({
-        webhook_verified: verified,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', user.id)
-      .select()
-      .single();
+    const settings = await prisma.userSettings.update({
+      where: { id: userId },
+      data: {
+        webhookVerified: verified,
+        updatedAt: new Date(),
+      }
+    });
 
-    if (dbError) {
-      console.error('Database error:', dbError);
-      return NextResponse.json(
-        { error: 'Failed to update webhook status' },
-        { status: 500 }
-      );
-    }
 
     console.log('Webhook verification status updated successfully');
 
     return NextResponse.json({
       success: true,
       message: 'Webhook verification status updated',
-      webhook_verified: settings.webhook_verified,
+      webhook_verified: settings.webhookVerified,
     });
 
   } catch (error) {

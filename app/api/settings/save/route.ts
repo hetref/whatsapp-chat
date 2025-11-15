@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { auth } from '@clerk/nextjs/server';
+import { prisma } from '@/lib/db';
 import { randomBytes } from 'crypto';
 
 export const runtime = 'nodejs';
@@ -16,12 +17,10 @@ function generateWebhookToken(): string {
  */
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient();
-    
     // Verify user authentication
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
-      console.error('Authentication error:', authError);
+    const { userId } = await auth();
+    if (!userId) {
+      console.error('Authentication error: No user ID');
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
@@ -48,78 +47,84 @@ export async function POST(request: NextRequest) {
 
     // Build the update object
     const updateData: {
-      updated_at: string;
-      access_token?: string;
-      access_token_added?: boolean;
-      phone_number_id?: string;
-      business_account_id?: string;
-      verify_token?: string;
-      api_version?: string;
-      webhook_verified?: boolean;
-      webhook_token?: string;
+      updatedAt: Date;
+      accessToken?: string;
+      accessTokenAdded?: boolean;
+      phoneNumberId?: string;
+      businessAccountId?: string;
+      verifyToken?: string;
+      apiVersion?: string;
+      webhookVerified?: boolean;
+      webhookToken?: string;
     } = {
-      updated_at: new Date().toISOString(),
+      updatedAt: new Date(),
     };
 
     if (access_token !== undefined) {
-      updateData.access_token = access_token;
-      updateData.access_token_added = !!access_token;
+      updateData.accessToken = access_token;
+      updateData.accessTokenAdded = !!access_token;
     }
 
     if (phone_number_id !== undefined) {
-      updateData.phone_number_id = phone_number_id;
+      updateData.phoneNumberId = phone_number_id;
     }
 
     if (business_account_id !== undefined) {
-      updateData.business_account_id = business_account_id;
+      updateData.businessAccountId = business_account_id;
     }
 
     if (api_version !== undefined) {
-      updateData.api_version = api_version || 'v23.0';
+      updateData.apiVersion = api_version || 'v23.0';
     }
 
     if (verify_token !== undefined) {
-      updateData.verify_token = verify_token;
+      updateData.verifyToken = verify_token;
     }
 
-    console.log('Updating user settings for user:', user.id);
+    console.log('Updating user settings for user:', userId);
 
     // Check if user settings exist
-    const { data: existingSettings } = await supabase
-      .from('user_settings')
-      .select('id, webhook_token')
-      .eq('id', user.id)
-      .single();
+    const existingSettings = await prisma.userSettings.findUnique({
+      where: { id: userId },
+      select: { id: true, webhookToken: true }
+    });
 
     let result;
     if (existingSettings) {
       // Generate webhook token if it doesn't exist
-      if (!existingSettings.webhook_token) {
-        updateData.webhook_token = generateWebhookToken();
-        console.log('Generated new webhook token for user:', user.id);
+      if (!existingSettings.webhookToken) {
+        updateData.webhookToken = generateWebhookToken();
+        console.log('Generated new webhook token for user:', userId);
       }
       
       // Update existing settings
-      result = await supabase
-        .from('user_settings')
-        .update(updateData)
-        .eq('id', user.id)
-        .select()
-        .single();
+      const settings = await prisma.userSettings.update({
+        where: { id: userId },
+        data: updateData
+      });
+      result = { data: settings, error: null };
     } else {
       // Insert new settings with a webhook token
       const webhookToken = generateWebhookToken();
-      console.log('Generated webhook token for new user settings:', user.id);
-      
-      result = await supabase
-        .from('user_settings')
-        .insert([{
-          id: user.id,
-          webhook_token: webhookToken,
+      console.log('Generated webhook token for new user settings:', userId);
+
+      await prisma.user.upsert({
+        where: { id: userId },
+        update: {},
+        create: {
+          id: userId,
+          name: userId,
+        },
+      });
+
+      const settings = await prisma.userSettings.create({
+        data: {
+          id: userId,
+          webhookToken: webhookToken,
           ...updateData,
-        }])
-        .select()
-        .single();
+        }
+      });
+      result = { data: settings, error: null };
     }
 
     const { data: settings, error: dbError } = result;
@@ -127,29 +132,29 @@ export async function POST(request: NextRequest) {
     if (dbError) {
       console.error('Database error:', dbError);
       return NextResponse.json(
-        { error: 'Failed to save settings', details: dbError.message },
+        { error: 'Failed to save settings', details: String(dbError) },
         { status: 500 }
       );
     }
 
-    console.log('Settings saved successfully for user:', user.id);
+    console.log('Settings saved successfully for user:', userId);
 
     return NextResponse.json({
       success: true,
       message: 'Settings saved successfully',
       settings: {
-        access_token_added: settings.access_token_added,
-        webhook_verified: settings.webhook_verified,
-        api_version: settings.api_version,
-        has_phone_number_id: !!settings.phone_number_id,
-        has_business_account_id: !!settings.business_account_id,
-        has_verify_token: !!settings.verify_token,
-        webhook_token: settings.webhook_token,
+        access_token_added: settings.accessTokenAdded,
+        webhook_verified: settings.webhookVerified,
+        api_version: settings.apiVersion,
+        has_phone_number_id: !!settings.phoneNumberId,
+        has_business_account_id: !!settings.businessAccountId,
+        has_verify_token: !!settings.verifyToken,
+        webhook_token: settings.webhookToken,
         // Include actual values for display in setup page
-        access_token: settings.access_token,
-        phone_number_id: settings.phone_number_id,
-        business_account_id: settings.business_account_id,
-        verify_token: settings.verify_token,
+        access_token: settings.accessToken,
+        phone_number_id: settings.phoneNumberId,
+        business_account_id: settings.businessAccountId,
+        verify_token: settings.verifyToken,
       },
     });
 
@@ -170,11 +175,9 @@ export async function POST(request: NextRequest) {
  */
 export async function GET() {
   try {
-    const supabase = await createClient();
-    
     // Verify user authentication
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
+    const { userId } = await auth();
+    if (!userId) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
@@ -182,79 +185,75 @@ export async function GET() {
     }
 
     // Fetch user settings
-    const { data: settings, error: dbError } = await supabase
-      .from('user_settings')
-      .select('*')
-      .eq('id', user.id)
-      .single();
+    let settings = await prisma.userSettings.findUnique({
+      where: { id: userId }
+    });
+    let dbError = null;
 
-    if (dbError && dbError.code !== 'PGRST116') { // PGRST116 is "not found" error
-      console.error('Database error:', dbError);
-      return NextResponse.json(
-        { error: 'Failed to fetch settings' },
-        { status: 500 }
-      );
-    }
-
-    let updatedSettings = settings;
-    
     // If no settings exist at all, create them with a webhook token
-    if (!settings || dbError?.code === 'PGRST116') {
+    if (!settings) {
       const webhookToken = generateWebhookToken();
-      console.log('Creating initial settings with webhook token for new user:', user.id);
-      
-      const { data: newSettings, error: insertError } = await supabase
-        .from('user_settings')
-        .insert([{
-          id: user.id,
-          webhook_token: webhookToken,
-          api_version: 'v23.0'
-        }])
-        .select()
-        .single();
-      
-      if (insertError) {
+      console.log('Creating initial settings with webhook token for new user:', userId);
+
+      try {
+        await prisma.user.upsert({
+          where: { id: userId },
+          update: {},
+          create: {
+            id: userId,
+            name: userId,
+          },
+        });
+
+        settings = await prisma.userSettings.create({
+          data: {
+            id: userId,
+            webhookToken: webhookToken,
+            apiVersion: 'v23.0'
+          }
+        });
+      } catch (insertError) {
         console.error('Error creating settings:', insertError);
-      } else {
-        updatedSettings = newSettings;
+        return NextResponse.json(
+          { error: 'Failed to create settings' },
+          { status: 500 }
+        );
       }
     }
     // If settings exist but no webhook token, generate one
-    else if (settings && !settings.webhook_token) {
+    else if (settings && !settings.webhookToken) {
       const webhookToken = generateWebhookToken();
-      const { data: updated } = await supabase
-        .from('user_settings')
-        .update({ webhook_token: webhookToken })
-        .eq('id', user.id)
-        .select()
-        .single();
-      
-      if (updated) {
-        updatedSettings = updated;
-        console.log('Generated webhook token for existing user:', user.id);
+      try {
+        settings = await prisma.userSettings.update({
+          where: { id: userId },
+          data: { webhookToken: webhookToken }
+        });
+        console.log('Generated webhook token for existing user:', userId);
+      } catch (updateError) {
+        console.error('Error updating webhook token:', updateError);
       }
     }
 
     // Return settings (or null if not found)
     return NextResponse.json({
-      settings: updatedSettings ? {
-        access_token_added: updatedSettings.access_token_added,
-        webhook_verified: updatedSettings.webhook_verified,
-        api_version: updatedSettings.api_version,
-        phone_number: updatedSettings.phone_number,
-        full_name: updatedSettings.full_name,
-        has_access_token: !!updatedSettings.access_token,
-        has_phone_number_id: !!updatedSettings.phone_number_id,
-        has_business_account_id: !!updatedSettings.business_account_id,
-        has_verify_token: !!updatedSettings.verify_token,
-        webhook_token: updatedSettings.webhook_token,
+      settings: settings ? {
+        access_token_added: settings.accessTokenAdded,
+        webhook_verified: settings.webhookVerified,
+        api_version: settings.apiVersion,
+        phone_number: settings.phoneNumber,
+        full_name: settings.fullName,
+        has_access_token: !!settings.accessToken,
+        has_phone_number_id: !!settings.phoneNumberId,
+        has_business_account_id: !!settings.businessAccountId,
+        has_verify_token: !!settings.verifyToken,
+        webhook_token: settings.webhookToken,
         // Include actual values for display in setup page
-        access_token: updatedSettings.access_token,
-        phone_number_id: updatedSettings.phone_number_id,
-        business_account_id: updatedSettings.business_account_id,
-        verify_token: updatedSettings.verify_token,
-        created_at: updatedSettings.created_at,
-        updated_at: updatedSettings.updated_at,
+        access_token: settings.accessToken,
+        phone_number_id: settings.phoneNumberId,
+        business_account_id: settings.businessAccountId,
+        verify_token: settings.verifyToken,
+        created_at: settings.createdAt,
+        updated_at: settings.updatedAt,
       } : null,
     });
 

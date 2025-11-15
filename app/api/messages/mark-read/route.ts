@@ -1,17 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { auth } from '@clerk/nextjs/server';
+import { prisma } from '@/lib/db';
 
 /**
  * POST handler to mark messages as read
  */
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient();
-    
     // Verify user authentication
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
-      console.error('Authentication error:', authError);
+    const { userId } = await auth();
+    if (!userId) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
@@ -30,20 +28,20 @@ export async function POST(request: NextRequest) {
 
     console.log(`Marking messages as read for conversation with ${otherUserId}`);
 
-    // Call the database function to mark messages as read
-    const { data, error } = await supabase.rpc('mark_messages_as_read', {
-      other_user_id: otherUserId
+    // Mark messages as read where the current user is the receiver and sender is otherUserId
+    const updateResult = await prisma.message.updateMany({
+      where: {
+        senderId: otherUserId,
+        receiverId: userId,
+        isRead: false
+      },
+      data: {
+        isRead: true,
+        readAt: new Date()
+      }
     });
 
-    if (error) {
-      console.error('Error marking messages as read:', error);
-      return NextResponse.json(
-        { error: 'Failed to mark messages as read', details: error.message },
-        { status: 500 }
-      );
-    }
-
-    const markedCount = data || 0;
+    const markedCount = updateResult.count;
     console.log(`Marked ${markedCount} messages as read`);
 
     return NextResponse.json({

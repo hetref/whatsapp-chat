@@ -1,25 +1,34 @@
-import { updateSession } from "@/lib/supabase/middleware";
-import { type NextRequest } from "next/server";
+import { NextResponse } from 'next/server';
+import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
 
-export async function middleware(request: NextRequest) {
-  // Update the session for all routes except the webhook
-  if (request.nextUrl.pathname.startsWith("/api/webhook")) {
+const isPublicRoute = createRouteMatcher(['/']);
+
+export default clerkMiddleware(async (auth, req) => {
+  const path = req.nextUrl.pathname;
+
+  // Allow homepage without authentication
+  if (isPublicRoute(req)) {
     return;
   }
-  return await updateSession(request);
-}
+
+  // Allow webhook and flow endpoints to bypass auth
+  if (path.startsWith('/api/webhook') || path.startsWith('/api/flow-endpoint')) {
+    return;
+  }
+
+  const { userId } = await auth();
+
+  if (!userId) {
+    const signInUrl = new URL('/sign-in', req.url);
+    return NextResponse.redirect(signInUrl);
+  }
+});
 
 export const config = {
   matcher: [
-    /*
-     * Match all request paths except:
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     * - images - .svg, .png, .jpg, .jpeg, .gif, .webp
-     * - /api/webhook (exclude the webhook route from middleware)
-     * Feel free to modify this pattern to include more paths.
-     */
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)|api/webhook$).*)",
+    // Match all request paths except Next.js internals and static files
+    '/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)',
+    // Always run for API routes
+    '/(api|trpc)(.*)',
   ],
 };

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { auth } from '@clerk/nextjs/server';
+import { prisma } from '@/lib/db';
 
 /**
  * GET - Get all members of a group
@@ -9,10 +10,9 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const supabase = await createClient();
-    
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
+    // Verify user authentication
+    const { userId } = await auth();
+    if (!userId) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
@@ -22,12 +22,12 @@ export async function GET(
     const { id: groupId } = await params;
 
     // Verify group ownership
-    const { data: group } = await supabase
-      .from('chat_groups')
-      .select('id')
-      .eq('id', groupId)
-      .eq('owner_id', user.id)
-      .single();
+    const group = await prisma.chatGroup.findFirst({
+      where: {
+        id: groupId,
+        ownerId: userId
+      }
+    });
 
     if (!group) {
       return NextResponse.json(
@@ -37,20 +37,40 @@ export async function GET(
     }
 
     // Get members with details
-    const { data: members, error: membersError } = await supabase
-      .rpc('get_group_members_with_details', { p_group_id: groupId });
+    const members = await prisma.groupMember.findMany({
+      where: {
+        groupId: groupId
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            customName: true,
+            whatsappName: true,
+            lastActive: true
+          }
+        }
+      }
+    });
 
-    if (membersError) {
-      console.error('Error fetching members:', membersError);
-      return NextResponse.json(
-        { error: 'Failed to fetch members', details: membersError.message },
-        { status: 500 }
-      );
-    }
+    // Format the response to match expected structure
+    const formattedMembers = members.map(member => ({
+      id: member.id,
+      user_id: member.userId,
+      added_at: member.addedAt.toISOString(),
+      user: {
+        id: member.user.id,
+        name: member.user.name,
+        custom_name: member.user.customName,
+        whatsapp_name: member.user.whatsappName,
+        last_active: member.user.lastActive.toISOString()
+      }
+    }));
 
     return NextResponse.json({
       success: true,
-      members: members || [],
+      members: formattedMembers,
     });
 
   } catch (error) {
@@ -70,10 +90,9 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const supabase = await createClient();
-    
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
+    // Verify user authentication
+    const { userId } = await auth();
+    if (!userId) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
@@ -93,12 +112,12 @@ export async function POST(
     }
 
     // Verify group ownership
-    const { data: group } = await supabase
-      .from('chat_groups')
-      .select('id')
-      .eq('id', groupId)
-      .eq('owner_id', user.id)
-      .single();
+    const group = await prisma.chatGroup.findFirst({
+      where: {
+        id: groupId,
+        ownerId: userId
+      }
+    });
 
     if (!group) {
       return NextResponse.json(
@@ -109,28 +128,28 @@ export async function POST(
 
     // Add members (duplicates will be ignored due to unique constraint)
     const members = userIds.map(userId => ({
-      group_id: groupId,
-      user_id: userId,
+      groupId: groupId,
+      userId: userId,
     }));
 
-    const { data, error: insertError } = await supabase
-      .from('group_members')
-      .insert(members)
-      .select();
+    try {
+      const result = await prisma.groupMember.createMany({
+        data: members,
+        skipDuplicates: true
+      });
 
-    if (insertError) {
-      console.error('Error adding members:', insertError);
+      return NextResponse.json({
+        success: true,
+        message: `${result.count} member(s) added successfully`,
+        added: result.count,
+      });
+    } catch (dbError) {
+      console.error('Error adding members:', dbError);
       return NextResponse.json(
-        { error: 'Failed to add members', details: insertError.message },
+        { error: 'Failed to add members', details: dbError instanceof Error ? dbError.message : 'Database error' },
         { status: 500 }
       );
     }
-
-    return NextResponse.json({
-      success: true,
-      message: `${data?.length || 0} member(s) added successfully`,
-      added: data?.length || 0,
-    });
 
   } catch (error) {
     console.error('Error in add members API:', error);
@@ -149,10 +168,9 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const supabase = await createClient();
-    
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
+    // Verify user authentication
+    const { userId } = await auth();
+    if (!userId) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
@@ -161,9 +179,9 @@ export async function DELETE(
 
     const { id: groupId } = await params;
     const { searchParams } = new URL(request.url);
-    const userId = searchParams.get('userId');
+    const userIdToRemove = searchParams.get('userId');
 
-    if (!userId) {
+    if (!userIdToRemove) {
       return NextResponse.json(
         { error: 'User ID is required' },
         { status: 400 }
@@ -171,12 +189,12 @@ export async function DELETE(
     }
 
     // Verify group ownership
-    const { data: group } = await supabase
-      .from('chat_groups')
-      .select('id')
-      .eq('id', groupId)
-      .eq('owner_id', user.id)
-      .single();
+    const group = await prisma.chatGroup.findFirst({
+      where: {
+        id: groupId,
+        ownerId: userId
+      }
+    });
 
     if (!group) {
       return NextResponse.json(
@@ -186,17 +204,17 @@ export async function DELETE(
     }
 
     // Remove member
-    const { error: deleteError } = await supabase
-      .from('group_members')
-      .delete()
-      .eq('group_id', groupId)
-      .eq('user_id', userId);
+    const result = await prisma.groupMember.deleteMany({
+      where: {
+        groupId: groupId,
+        userId: userIdToRemove
+      }
+    });
 
-    if (deleteError) {
-      console.error('Error removing member:', deleteError);
+    if (result.count === 0) {
       return NextResponse.json(
-        { error: 'Failed to remove member', details: deleteError.message },
-        { status: 500 }
+        { error: 'Member not found in group' },
+        { status: 404 }
       );
     }
 

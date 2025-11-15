@@ -1,29 +1,33 @@
+import { auth, currentUser } from "@clerk/nextjs/server";
+import { SignOutButton, SignInButton } from "@clerk/nextjs";
 import Link from "next/link";
-import { Button } from "./ui/button";
-import { createClient } from "@/lib/supabase/server";
-import { LogoutButton } from "./logout-button";
 
-export async function AuthButton() {
-  const supabase = await createClient();
+export default async function AuthButton() {
+  const { userId } = await auth();
+  const user = await currentUser();
 
-  // You can also use getUser() which will be slower.
-  const { data } = await supabase.auth.getClaims();
-
-  const user = data?.claims;
-
-  return user ? (
+  return userId ? (
     <div className="flex items-center gap-4">
-      Hey, {user.email}!
-      <LogoutButton />
+      Hey, {user?.emailAddresses[0]?.emailAddress || user?.firstName || "User"}!
+      <SignOutButton>
+        <button className="py-2 px-3 flex rounded-md no-underline bg-btn-background hover:bg-btn-background-hover">
+          Sign out
+        </button>
+      </SignOutButton>
     </div>
   ) : (
     <div className="flex gap-2">
-      <Button asChild size="sm" variant={"outline"}>
-        <Link href="/auth/login">Sign in</Link>
-      </Button>
-      <Button asChild size="sm" variant={"default"}>
-        <Link href="/auth/sign-up">Sign up</Link>
-      </Button>
+      <SignInButton mode="redirect">
+        <button className="py-2 px-3 flex rounded-md no-underline bg-btn-background hover:bg-btn-background-hover">
+          Sign in
+        </button>
+      </SignInButton>
+      <Link
+        href="/sign-up"
+        className="py-2 px-4 flex rounded-md no-underline bg-btn-background hover:bg-btn-background-hover"
+      >
+        Sign up
+      </Link>
     </div>
   );
 }

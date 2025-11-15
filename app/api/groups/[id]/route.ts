@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { auth } from '@clerk/nextjs/server';
+import { prisma } from '@/lib/db';
 
 /**
  * PUT - Update a group
@@ -9,10 +10,9 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const supabase = await createClient();
-    
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
+    // Verify user authentication
+    const { userId } = await auth();
+    if (!userId) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
@@ -32,31 +32,16 @@ export async function PUT(
     }
 
     // Update the group
-    const { data: group, error: updateError } = await supabase
-      .from('chat_groups')
-      .update({
+    const group = await prisma.chatGroup.update({
+      where: {
+        id: groupId,
+        ownerId: userId, // Ensure user owns the group
+      },
+      data: {
         name: name.trim(),
         description: description?.trim() || null,
-      })
-      .eq('id', groupId)
-      .eq('owner_id', user.id) // Ensure user owns the group
-      .select()
-      .single();
-
-    if (updateError) {
-      console.error('Error updating group:', updateError);
-      return NextResponse.json(
-        { error: 'Failed to update group', details: updateError.message },
-        { status: 500 }
-      );
-    }
-
-    if (!group) {
-      return NextResponse.json(
-        { error: 'Group not found or unauthorized' },
-        { status: 404 }
-      );
-    }
+      },
+    });
 
     return NextResponse.json({
       success: true,
@@ -66,6 +51,15 @@ export async function PUT(
 
   } catch (error) {
     console.error('Error in update group API:', error);
+    
+    // Handle specific Prisma errors
+    if (error instanceof Error && error.message.includes('Record to update not found')) {
+      return NextResponse.json(
+        { error: 'Group not found or unauthorized' },
+        { status: 404 }
+      );
+    }
+    
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }
@@ -81,10 +75,9 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const supabase = await createClient();
-    
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
+    // Verify user authentication
+    const { userId } = await auth();
+    if (!userId) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
@@ -94,19 +87,12 @@ export async function DELETE(
     const { id: groupId } = await params;
 
     // Delete the group (cascade will delete members)
-    const { error: deleteError } = await supabase
-      .from('chat_groups')
-      .delete()
-      .eq('id', groupId)
-      .eq('owner_id', user.id); // Ensure user owns the group
-
-    if (deleteError) {
-      console.error('Error deleting group:', deleteError);
-      return NextResponse.json(
-        { error: 'Failed to delete group', details: deleteError.message },
-        { status: 500 }
-      );
-    }
+    await prisma.chatGroup.delete({
+      where: {
+        id: groupId,
+        ownerId: userId, // Ensure user owns the group
+      },
+    });
 
     return NextResponse.json({
       success: true,
@@ -115,6 +101,15 @@ export async function DELETE(
 
   } catch (error) {
     console.error('Error in delete group API:', error);
+    
+    // Handle specific Prisma errors
+    if (error instanceof Error && error.message.includes('Record to delete does not exist')) {
+      return NextResponse.json(
+        { error: 'Group not found or unauthorized' },
+        { status: 404 }
+      );
+    }
+    
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

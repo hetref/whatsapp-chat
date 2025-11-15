@@ -1,10 +1,9 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { createClient } from "@/lib/supabase/client";
+import { useUser } from "@clerk/nextjs";
 import { UserList } from "@/components/chat/user-list";
 import { ChatWindow } from "@/components/chat/chat-window";
-import { User } from "@supabase/supabase-js";
 import { Button } from "@/components/ui/button";
 import { AlertCircle, Settings } from "lucide-react";
 import Link from "next/link";
@@ -31,6 +30,7 @@ interface Message {
   is_sent_by_me: boolean;
   message_type?: string;
   media_data?: string | null;
+  isOptimistic?: boolean;
 }
 
 interface MessagePayload {
@@ -51,7 +51,7 @@ interface UnreadConversation {
 }
 
 export default function ChatPage() {
-  const [user, setUser] = useState<User | null>(null);
+  const { user, isLoaded } = useUser();
   const [users, setUsers] = useState<ChatUser[]>([]);
   const [selectedUser, setSelectedUser] = useState<ChatUser | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -62,7 +62,6 @@ export default function ChatPage() {
   const [checkingSetup, setCheckingSetup] = useState(true);
   const [broadcastGroupId, setBroadcastGroupId] = useState<string | null>(null);
   const [broadcastGroupName, setBroadcastGroupName] = useState<string | null>(null);
-  const supabase = createClient();
 
   // Define handleBackToUsers early so it can be used in useEffect
   const handleBackToUsers = useCallback(() => {
@@ -101,11 +100,10 @@ export default function ChatPage() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isMobile, showChat, selectedUser, handleBackToUsers]);
 
-  // Get current user and check setup
+  // Check setup when user is loaded
   useEffect(() => {
-    const getUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      setUser(user);
+    const checkSetup = async () => {
+      if (!isLoaded) return;
       
       if (user) {
         // Check if user has completed setup
@@ -115,180 +113,61 @@ export default function ChatPage() {
         const setupComplete = data.settings?.access_token_added || data.settings?.webhook_verified;
         setIsSetupComplete(setupComplete);
         setCheckingSetup(false);
+      } else {
+        setCheckingSetup(false);
       }
     };
-    getUser();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Only run once on mount
+    checkSetup();
+  }, [user, isLoaded]); // Run when user or loading state changes
 
-  // Subscribe to users table for real-time updates with optimized loading
+  // Fetch users using API instead of direct Supabase calls
   useEffect(() => {
     if (!user) return;
-
-    let isInitialLoad = true;
 
     const fetchUsers = async () => {
       console.log('Fetching user conversations...');
       
-      // Use the updated user_conversations view with enhanced name handling
-      const { data, error } = await supabase
-        .from('user_conversations')
-        .select('*')
-        .order('has_unread', { ascending: false })
-        .order('last_message_time', { ascending: false });
-      
-      if (error) {
-        console.error('Error fetching users:', error);
-        return;
-      }
-
-      if (data) {
-        console.log(`Fetched ${data.length} user conversations`);
-        
-        // Transform data to match ChatUser interface
-        const transformedUsers: ChatUser[] = data.map(user => ({
-          id: user.id,
-          name: user.display_name, // This now uses the priority logic from the view
-          custom_name: user.custom_name,
-          whatsapp_name: user.whatsapp_name,
-          last_active: user.last_active,
-          unread_count: user.unread_count || 0,
-          last_message_time: user.last_message_time,
-          last_message: user.last_message,
-          last_message_type: user.last_message_type,
-          last_message_sender: user.last_message_sender
-        }));
-
-        setUsers(transformedUsers);
-
-        // On initial load, preload top 10 unread conversations
-        if (isInitialLoad) {
-          isInitialLoad = false;
-          preloadUnreadConversations();
-        }
-      }
-    };
-
-    const preloadUnreadConversations = async () => {
       try {
-        console.log('Preloading unread conversations...');
+        const response = await fetch('/api/conversations');
+        const result = await response.json();
         
-        // Get top 10 unread conversations
-        const { data: unreadConversations, error } = await supabase.rpc('get_unread_conversations', {
-          limit_count: 10
-        });
-
-        if (error) {
-          console.error('Error preloading unread conversations:', error);
-          return;
-        }
-
-        if (unreadConversations && unreadConversations.length > 0) {
-          console.log(`Preloading messages for ${unreadConversations.length} unread conversations`);
+        if (response.ok && result.conversations) {
+          console.log(`Fetched ${result.conversations.length} user conversations`);
           
-          // Preload messages for each unread conversation (in parallel)
-          const preloadPromises = unreadConversations.map(async (conversation: UnreadConversation) => {
-            try {
-              const { data: messages, error: messagesError } = await supabase.rpc('get_conversation_messages', {
-                other_user_id: conversation.conversation_id
-              });
+          // Transform data to match ChatUser interface
+          const transformedUsers: ChatUser[] = result.conversations.map((conv: any) => ({
+            id: conv.id,
+            name: conv.name,
+            custom_name: conv.custom_name,
+            whatsapp_name: conv.whatsapp_name,
+            last_active: conv.last_active,
+            unread_count: conv.unread_count || 0,
+            last_message_time: conv.last_message_time,
+            last_message: conv.last_message,
+            last_message_type: conv.last_message_type,
+            last_message_sender: conv.last_message_sender
+          }));
 
-              if (messagesError) {
-                console.error(`Error preloading messages for ${conversation.conversation_id}:`, messagesError);
-              } else {
-                console.log(`Preloaded ${messages?.length || 0} messages for ${conversation.display_name}`);
-                // Store in a cache if needed (optional - for now just log)
-              }
-            } catch (error) {
-              console.error(`Error in preload for ${conversation.conversation_id}:`, error);
-            }
-          });
-
-          // Wait for all preload operations to complete
-          await Promise.allSettled(preloadPromises);
-          console.log('Preloading completed');
+          setUsers(transformedUsers);
+        } else {
+          console.error('Error fetching conversations:', result.error);
         }
       } catch (error) {
-        console.error('Error in preloadUnreadConversations:', error);
+        console.error('Error fetching conversations:', error);
       }
     };
+
 
     // Initial fetch
     fetchUsers();
 
-    // Set up real-time subscription for users table changes
-    const usersSubscription = supabase
-      .channel('users-channel-optimized')
-      .on('postgres_changes', { 
-        event: '*', 
-        schema: 'public', 
-        table: 'users' 
-      }, (payload) => {
-        console.log('Users table change:', payload.eventType);
-        // Debounce the refresh to avoid excessive calls
-        setTimeout(fetchUsers, 100);
-      })
-      .subscribe();
-
-    // Set up real-time subscription for messages table changes
-    const messagesSubscription = supabase
-      .channel('messages-global-channel-optimized')
-      .on('postgres_changes', { 
-        event: '*', 
-        schema: 'public', 
-        table: 'messages' 
-      }, (payload) => {
-        console.log('Messages table change:', payload.eventType);
-        
-        // Update specific user in list based on message change
-        const message = payload.new as MessagePayload;
-        if (message) {
-          const otherUserId = message.sender_id === user?.id ? message.receiver_id : message.sender_id;
-          
-          // Update the specific user's last message and unread count
-          setUsers((prevUsers) => {
-            const updatedUsers = prevUsers.map(u => {
-              if (u.id === otherUserId) {
-                const isFromMe = message.sender_id === user?.id;
-                // Don't increment unread count if this conversation is currently open
-                const isCurrentlyViewing = selectedUser?.id === otherUserId;
-                const shouldIncrementUnread = !isFromMe && !isCurrentlyViewing;
-                
-                return {
-                  ...u,
-                  last_message: message.content || '',
-                  last_message_time: message.timestamp,
-                  last_message_type: message.message_type || 'text',
-                  last_message_sender: message.sender_id,
-                  // Increment unread count only if message is from other user and not currently viewing
-                  unread_count: shouldIncrementUnread ? (u.unread_count || 0) + 1 : u.unread_count
-                };
-              }
-              return u;
-            });
-            
-            // Re-sort users after update (unread first, then by time)
-            return updatedUsers.sort((a, b) => {
-              if ((a.unread_count || 0) > 0 && (b.unread_count || 0) === 0) return -1;
-              if ((a.unread_count || 0) === 0 && (b.unread_count || 0) > 0) return 1;
-              const aTime = new Date(a.last_message_time || a.last_active).getTime();
-              const bTime = new Date(b.last_message_time || b.last_active).getTime();
-              return bTime - aTime;
-            });
-          });
-        }
-        
-        // Also debounce a full refresh as fallback
-        setTimeout(fetchUsers, 2000);
-      })
-      .subscribe();
+    // Set up polling for updates (since we removed realtime)
+    const interval = setInterval(fetchUsers, 10000); // Poll every 10 seconds
 
     return () => {
-      usersSubscription.unsubscribe();
-      messagesSubscription.unsubscribe();
+      clearInterval(interval);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]); // supabase and selectedUser are stable/controlled
+  }, [user]); // Poll for user conversations
 
   // Subscribe to messages for selected user with improved real-time handling
   useEffect(() => {
@@ -300,146 +179,56 @@ export default function ChatPage() {
     const fetchMessages = async () => {
       console.log(`Fetching messages between ${user.id} and ${selectedUser.id}`);
       
-      // Use the database function to get conversation messages
-      const { data, error } = await supabase.rpc('get_conversation_messages', {
-        other_user_id: selectedUser.id
-      });
-      
-      if (error) {
-        console.error('Error fetching messages:', error);
-        console.error('Error details:', JSON.stringify(error, null, 2));
-        console.error('Selected user ID:', selectedUser.id);
-        console.error('Current user ID:', user.id);
-      } else {
-        console.log(`Fetched ${data?.length || 0} messages`);
-        // Map message_timestamp back to timestamp for the interface and ensure is_sent_by_me is set
-        const mappedMessages = (data || []).map((msg: MessagePayload & { message_timestamp?: string; is_sent_by_me?: boolean }) => ({
-          ...msg,
-          timestamp: msg.message_timestamp || msg.timestamp,
-          // Ensure is_sent_by_me is always set correctly
-          is_sent_by_me: msg.is_sent_by_me !== undefined ? msg.is_sent_by_me : msg.sender_id === user.id
-        }));
-        setMessages(mappedMessages);
+      try {
+        const response = await fetch(`/api/messages?conversationId=${selectedUser.id}&limit=50`);
+        const result = await response.json();
         
-        // Debug: Log first few messages to check is_sent_by_me values
-        if (mappedMessages.length > 0) {
-          console.log('Sample messages with is_sent_by_me:', mappedMessages.slice(0, 3).map((m: Message) => ({
-            id: m.id,
-            sender_id: m.sender_id,
-            is_sent_by_me: m.is_sent_by_me,
-            content: m.content?.substring(0, 20)
-          })));
+        if (response.ok && result.messages) {
+          console.log(`Fetched ${result.messages.length} messages`);
+          
+          // Ensure is_sent_by_me is set correctly
+          const mappedMessages = result.messages.map((msg: Message) => ({
+            ...msg,
+            is_sent_by_me: msg.sender_id === user.id
+          }));
+          
+          // Preserve optimistic messages during polling updates
+          setMessages((prevMessages) => {
+            const optimisticMessages = prevMessages.filter(msg => msg.isOptimistic);
+            // No need to reverse - API now returns messages in chronological order (oldest to newest)
+            
+            // Combine real messages with optimistic ones, avoiding duplicates
+            return [...mappedMessages, ...optimisticMessages];
+          });
+          
+          // Debug: Log first few messages
+          if (mappedMessages.length > 0) {
+            console.log('Sample messages:', mappedMessages.slice(0, 3).map((m: Message) => ({
+              id: m.id,
+              sender_id: m.sender_id,
+              is_sent_by_me: m.is_sent_by_me,
+              content: m.content?.substring(0, 20)
+            })));
+          }
+        } else {
+          console.error('Error fetching messages:', result.error);
+          setMessages([]);
         }
+      } catch (error) {
+        console.error('Error fetching messages:', error);
+        setMessages([]);
       }
     };
 
     fetchMessages();
 
-    // Set up real-time subscription for messages with a unique channel name
-    const channelName = `messages-${user.id}-${selectedUser.id}-${Date.now()}`;
-    const messagesSubscription = supabase
-      .channel(channelName)
-      .on('postgres_changes', { 
-        event: 'INSERT', 
-        schema: 'public', 
-        table: 'messages'
-      }, (payload) => {
-        console.log('New message received via real-time:', payload);
-        
-        const newMessage = payload.new as MessagePayload;
-        
-        // Check if this message belongs to the current conversation
-        const isRelevantMessage = 
-          (newMessage.sender_id === user.id && newMessage.receiver_id === selectedUser.id) ||
-          (newMessage.sender_id === selectedUser.id && newMessage.receiver_id === user.id);
-        
-        if (isRelevantMessage) {
-          console.log('Adding message to conversation');
-          
-          // Determine if this message was sent by the current user
-          const messageWithFlag = {
-            ...newMessage,
-            is_sent_by_me: newMessage.sender_id === user.id,
-            timestamp: newMessage.timestamp || new Date().toISOString()
-          };
-          
-          console.log('Real-time message flags:', {
-            message_id: messageWithFlag.id,
-            sender_id: newMessage.sender_id,
-            current_user_id: user.id,
-            is_sent_by_me: messageWithFlag.is_sent_by_me,
-            content: messageWithFlag.content?.substring(0, 20)
-          });
-          
-          setMessages((prev) => {
-            // Avoid duplicates (check for both regular ID and optimistic ID)
-            const exists = prev.find(m => 
-              m.id === messageWithFlag.id || 
-              (m.id.startsWith('optimistic_') && m.content === messageWithFlag.content && m.timestamp === messageWithFlag.timestamp)
-            );
-            
-            if (exists) {
-              // Replace optimistic message with real one
-              if (exists.id.startsWith('optimistic_')) {
-                return prev.map(m => m.id === exists.id ? messageWithFlag : m);
-              }
-              return prev;
-            }
-            
-            // Insert message in correct chronological order
-            const newMessages = [...prev, messageWithFlag];
-            return newMessages.sort((a, b) => 
-              new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-            );
-          });
-
-          // Mark message as read if it's from the other user
-          if (newMessage.sender_id === selectedUser.id) {
-            setTimeout(() => {
-              fetch('/api/messages/mark-read', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ otherUserId: selectedUser.id })
-              }).catch(console.error);
-            }, 500);
-          }
-        }
-      })
-      .on('postgres_changes', { 
-        event: 'UPDATE', 
-        schema: 'public', 
-        table: 'messages'
-      }, (payload) => {
-        console.log('Message updated:', payload);
-        
-        const updatedMessage = payload.new as MessagePayload;
-        
-        // Check if this message belongs to the current conversation
-        const isRelevantMessage = 
-          (updatedMessage.sender_id === user.id && updatedMessage.receiver_id === selectedUser.id) ||
-          (updatedMessage.sender_id === selectedUser.id && updatedMessage.receiver_id === user.id);
-        
-        if (isRelevantMessage) {
-          const messageWithFlag = {
-            ...updatedMessage,
-            is_sent_by_me: updatedMessage.sender_id === user.id,
-            timestamp: updatedMessage.timestamp || new Date().toISOString()
-          };
-          
-          setMessages((prev) => 
-            prev.map(m => m.id === updatedMessage.id ? messageWithFlag : m)
-          );
-        }
-      })
-      .subscribe();
-
-    console.log(`Subscribed to messages channel: ${channelName}`);
+    // Set up polling for message updates
+    const interval = setInterval(fetchMessages, 5000); // Poll every 5 seconds
 
     return () => {
-      console.log(`Unsubscribing from messages channel: ${channelName}`);
-      messagesSubscription.unsubscribe();
+      clearInterval(interval);
     };
-  }, [selectedUser, user, supabase]);
+  }, [selectedUser, user]);
 
   // Fetch broadcast messages when broadcast group is selected
   useEffect(() => {
@@ -460,71 +249,36 @@ export default function ChatPage() {
         
         if (response.ok && result.success) {
           console.log(`Fetched ${result.messages?.length || 0} broadcast messages`);
-          setMessages(result.messages || []);
+          
+          // Preserve optimistic messages during polling updates
+          setMessages((prevMessages) => {
+            const optimisticMessages = prevMessages.filter(msg => msg.isOptimistic);
+            const fetchedMessages = result.messages || [];
+            
+            // Combine real messages with optimistic ones, avoiding duplicates
+            return [...fetchedMessages, ...optimisticMessages];
+          });
         } else {
           console.error('Failed to fetch broadcast messages:', result.error);
-          setMessages([]);
+          // Only clear messages if there are no optimistic ones
+          setMessages((prevMessages) => prevMessages.filter(msg => msg.isOptimistic));
         }
       } catch (error) {
         console.error('Error fetching broadcast messages:', error);
-        setMessages([]);
+        // Only clear messages if there are no optimistic ones
+        setMessages((prevMessages) => prevMessages.filter(msg => msg.isOptimistic));
       }
     };
 
     fetchBroadcastMessages();
 
-    // Set up real-time subscription for broadcast messages
-    const channelName = `broadcast-${broadcastGroupId}-${Date.now()}`;
-    const messagesSubscription = supabase
-      .channel(channelName)
-      .on('postgres_changes', { 
-        event: 'INSERT', 
-        schema: 'public', 
-        table: 'messages'
-      }, (payload) => {
-        console.log('New broadcast message received via real-time:', payload);
-        
-        const newMessage = payload.new as MessagePayload;
-        
-        // Check if this message belongs to the current broadcast group
-        try {
-          const mediaData = typeof newMessage.media_data === 'string'
-            ? JSON.parse(newMessage.media_data)
-            : newMessage.media_data;
-          
-          if (mediaData?.broadcast_group_id === broadcastGroupId) {
-            console.log('Adding broadcast message to window');
-            
-            const messageWithFlag = {
-              ...newMessage,
-              is_sent_by_me: true,
-              timestamp: newMessage.timestamp || new Date().toISOString()
-            };
-            
-            setMessages((prev) => {
-              // Avoid duplicates
-              const exists = prev.find(m => m.id === messageWithFlag.id);
-              if (exists) return prev;
-              
-              // Add message and sort by timestamp
-              return [...prev, messageWithFlag].sort((a, b) => 
-                new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-              );
-            });
-          }
-        } catch (error) {
-          console.error('Error parsing broadcast message:', error);
-        }
-      })
-      .subscribe();
-
-    console.log(`Subscribed to broadcast messages channel: ${channelName}`);
+    // Set up polling for broadcast message updates
+    const interval = setInterval(fetchBroadcastMessages, 5000); // Poll every 5 seconds
 
     return () => {
-      console.log(`Unsubscribing from broadcast messages channel: ${channelName}`);
-      messagesSubscription.unsubscribe();
+      clearInterval(interval);
     };
-  }, [broadcastGroupId, user, supabase, selectedUser]);
+  }, [broadcastGroupId, user, selectedUser]);
 
   // Handle user selection and mark messages as read
   const handleUserSelect = async (selectedUser: ChatUser) => {
@@ -591,35 +345,33 @@ export default function ChatPage() {
     
     console.log('Refreshing user conversations...');
     
-    const { data, error } = await supabase
-      .from('user_conversations')
-      .select('*')
-      .order('has_unread', { ascending: false })
-      .order('last_message_time', { ascending: false });
-    
-    if (error) {
+    try {
+      const response = await fetch('/api/conversations');
+      const result = await response.json();
+      
+      if (response.ok && result.conversations) {
+        const transformedUsers: ChatUser[] = result.conversations.map((conv: any) => ({
+          id: conv.id,
+          name: conv.name,
+          custom_name: conv.custom_name,
+          whatsapp_name: conv.whatsapp_name,
+          last_active: conv.last_active,
+          unread_count: conv.unread_count || 0,
+          last_message_time: conv.last_message_time,
+          last_message: conv.last_message,
+          last_message_type: conv.last_message_type,
+          last_message_sender: conv.last_message_sender
+        }));
+
+        setUsers(transformedUsers);
+        console.log(`Refreshed ${transformedUsers.length} user conversations`);
+      } else {
+        console.error('Error refreshing users:', result.error);
+      }
+    } catch (error) {
       console.error('Error refreshing users:', error);
-      return;
     }
-
-    if (data) {
-      const transformedUsers: ChatUser[] = data.map(user => ({
-        id: user.id,
-        name: user.display_name,
-        custom_name: user.custom_name,
-        whatsapp_name: user.whatsapp_name,
-        last_active: user.last_active,
-        unread_count: user.unread_count || 0,
-        last_message_time: user.last_message_time,
-        last_message: user.last_message,
-        last_message_type: user.last_message_type,
-        last_message_sender: user.last_message_sender
-      }));
-
-      setUsers(transformedUsers);
-      console.log(`Refreshed ${transformedUsers.length} user conversations`);
-    }
-  }, [user, supabase]);
+  }, [user]);
 
   const handleUpdateName = useCallback(async (userId: string, customName: string) => {
     try {
@@ -718,7 +470,8 @@ export default function ChatPage() {
       timestamp,
       is_sent_by_me: true,
       message_type: messageType,
-      media_data: isTemplate ? content : JSON.stringify({ broadcast_group_id: broadcastGroupId })
+      media_data: isTemplate ? content : JSON.stringify({ broadcast_group_id: broadcastGroupId }),
+      isOptimistic: true
     };
     
     // Add optimistic message to UI immediately
@@ -795,7 +548,8 @@ export default function ChatPage() {
       timestamp,
       is_sent_by_me: true,
       message_type: 'text',
-      media_data: null
+      media_data: null,
+      isOptimistic: true
     };
     
     // Add optimistic message to UI immediately
@@ -824,8 +578,35 @@ export default function ChatPage() {
 
       console.log('Message sent successfully:', result);
       
-      // The message will be replaced by the real one via real-time subscription
-      // The subscription handler will detect the optimistic ID and replace it
+      // Replace optimistic message with real message from API response
+      setMessages((prev) => prev.map(m => 
+        m.id === optimisticId 
+          ? {
+              id: result.messageId,
+              sender_id: user.id,
+              receiver_id: selectedUser.id,
+              content,
+              timestamp: result.timestamp || timestamp,
+              is_sent_by_me: true,
+              message_type: 'text',
+              media_data: null,
+              isOptimistic: false
+            }
+          : m
+      ));
+      
+      // Update the user list to show this as the latest message
+      setUsers(prev => prev.map(u => 
+        u.id === selectedUser.id 
+          ? { 
+              ...u, 
+              last_message: content,
+              last_message_time: result.timestamp || timestamp,
+              last_message_type: 'text',
+              last_message_sender: user.id
+            }
+          : u
+      ));
       
     } catch (error) {
       console.error('Error sending message:', error);
@@ -836,29 +617,7 @@ export default function ChatPage() {
       // Show error to user
       alert(`Failed to send message: ${error instanceof Error ? error.message : 'Unknown error'}`);
       
-      // Fallback: Store in database only if WhatsApp API fails
-      try {
-        const fallbackMessage = {
-          sender_id: user.id,
-          receiver_id: selectedUser.id,
-          content,
-          timestamp: new Date().toISOString(),
-          message_type: 'text',
-          media_data: null
-        };
-
-        const { error: dbError } = await supabase
-          .from('messages')
-          .insert([fallbackMessage]);
-
-        if (dbError) {
-          console.error('Fallback database storage also failed:', dbError);
-        } else {
-          console.log('Message stored in database as fallback');
-        }
-      } catch (fallbackError) {
-        console.error('Fallback storage failed:', fallbackError);
-      }
+      // Note: Fallback storage is handled by the send-message API endpoint
     } finally {
       setSendingMessage(false);
     }

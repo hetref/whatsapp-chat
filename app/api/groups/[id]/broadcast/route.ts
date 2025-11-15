@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { auth } from '@clerk/nextjs/server';
+import { prisma } from '@/lib/db';
 
 /**
  * POST - Broadcast a message to all group members
@@ -10,10 +11,9 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const supabase = await createClient();
-    
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
+    // Verify user authentication
+    const { userId } = await auth();
+    if (!userId) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
@@ -33,14 +33,14 @@ export async function POST(
     }
 
     // Verify group ownership and get group details
-    const { data: group, error: groupError } = await supabase
-      .from('chat_groups')
-      .select('id, name, owner_id')
-      .eq('id', groupId)
-      .eq('owner_id', user.id)
-      .single();
+    const group = await prisma.chatGroup.findFirst({
+      where: {
+        id: groupId,
+        ownerId: userId
+      }
+    });
 
-    if (groupError || !group) {
+    if (!group) {
       return NextResponse.json(
         { error: 'Group not found or unauthorized' },
         { status: 404 }
@@ -48,18 +48,14 @@ export async function POST(
     }
 
     // Get all group members
-    const { data: members, error: membersError } = await supabase
-      .from('group_members')
-      .select('user_id')
-      .eq('group_id', groupId);
-
-    if (membersError) {
-      console.error('Error fetching members:', membersError);
-      return NextResponse.json(
-        { error: 'Failed to fetch group members', details: membersError.message },
-        { status: 500 }
-      );
-    }
+    const members = await prisma.groupMember.findMany({
+      where: {
+        groupId: groupId
+      },
+      select: {
+        userId: true
+      }
+    });
 
     if (!members || members.length === 0) {
       return NextResponse.json(
@@ -69,22 +65,27 @@ export async function POST(
     }
 
     // Get user settings for WhatsApp credentials
-    const { data: settings } = await supabase
-      .from('user_settings')
-      .select('access_token, phone_number_id, api_version')
-      .eq('id', user.id)
-      .single();
+    const settings = await prisma.userSettings.findUnique({
+      where: {
+        id: userId
+      },
+      select: {
+        accessToken: true,
+        phoneNumberId: true,
+        apiVersion: true
+      }
+    });
 
-    if (!settings || !settings.access_token || !settings.phone_number_id) {
+    if (!settings || !settings.accessToken || !settings.phoneNumberId) {
       return NextResponse.json(
         { error: 'WhatsApp credentials not configured' },
         { status: 400 }
       );
     }
 
-    const accessToken = settings.access_token;
-    const phoneNumberId = settings.phone_number_id;
-    const apiVersion = settings.api_version || 'v23.0';
+    const accessToken = settings.accessToken;
+    const phoneNumberId = settings.phoneNumberId;
+    const apiVersion = settings.apiVersion || 'v23.0';
     const whatsappApiUrl = `https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`;
 
     const results = {
@@ -107,7 +108,7 @@ export async function POST(
     // Send message to each member individually
     for (const member of members) {
       try {
-        const cleanPhoneNumber = member.user_id.replace(/\s+/g, '').replace(/[^\d]/g, '');
+        const cleanPhoneNumber = member.userId.replace(/\s+/g, '').replace(/[^\d]/g, '');
         let whatsappResponse;
         let messageContent = message;
         let messageMediaData = null;
@@ -272,35 +273,34 @@ export async function POST(
           
           const messageObject = {
             id: messageId,
-            sender_id: cleanPhoneNumber, // The recipient's phone number
-            receiver_id: user.id, // The broadcaster (current user)
+            senderId: cleanPhoneNumber, // The recipient's phone number
+            receiverId: userId, // The broadcaster (current user)
             content: messageContent,
-            timestamp: timestamp,
-            is_sent_by_me: true, // Sent by the current user
-            is_read: true, // Outgoing messages are already "read"
-            message_type: templateName ? 'template' : 'text',
-            media_data: messageMediaData
+            timestamp: new Date(),
+            isSentByMe: true, // Sent by the current user
+            isRead: true, // Outgoing messages are already "read"
+            messageType: templateName ? 'template' : 'text',
+            mediaData: messageMediaData
           };
 
           // Store in database
-          const { error: dbError } = await supabase
-            .from('messages')
-            .insert([messageObject]);
-
-          if (dbError) {
-            console.error(`Error storing broadcast message for ${member.user_id}:`, dbError);
-          } else {
-            console.log(`Broadcast message stored for ${member.user_id}`);
+          try {
+            await prisma.message.create({
+              data: messageObject
+            });
+            console.log(`Broadcast message stored for ${member.userId}`);
+          } catch (dbError) {
+            console.error(`Error storing broadcast message for ${member.userId}:`, dbError);
           }
         } else {
           results.failed++;
-          results.errors.push(`${member.user_id}: ${responseData.error?.message || 'Unknown error'}`);
-          console.error(`WhatsApp API error for ${member.user_id}:`, responseData);
+          results.errors.push(`${member.userId}: ${responseData.error?.message || 'Unknown error'}`);
+          console.error(`WhatsApp API error for ${member.userId}:`, responseData);
         }
       } catch (error) {
         results.failed++;
-        results.errors.push(`${member.user_id}: ${error instanceof Error ? error.message : 'Unknown error'}`);
-        console.error(`Error sending to ${member.user_id}:`, error);
+        results.errors.push(`${member.userId}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        console.error(`Error sending to ${member.userId}:`, error);
       }
     }
 

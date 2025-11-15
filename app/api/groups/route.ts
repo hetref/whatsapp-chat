@@ -1,36 +1,70 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { auth } from '@clerk/nextjs/server';
+import { prisma } from '@/lib/db';
 
 /**
  * GET - Fetch all groups for the authenticated user
  */
 export async function GET() {
   try {
-    const supabase = await createClient();
-    
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
+    // Verify user authentication
+    const { userId } = await auth();
+    if (!userId) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
       );
     }
 
-    // Get groups with member counts using the database function
-    const { data: groups, error: groupsError } = await supabase
-      .rpc('get_user_groups_with_counts', { user_uuid: user.id });
+    // Get groups with member counts using Prisma
+    const groups = await prisma.chatGroup.findMany({
+      where: {
+        ownerId: userId,
+      },
+      include: {
+        _count: {
+          select: {
+            members: true,
+          },
+        },
+        members: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                customName: true,
+                whatsappName: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
 
-    if (groupsError) {
-      console.error('Error fetching groups:', groupsError);
-      return NextResponse.json(
-        { error: 'Failed to fetch groups', details: groupsError.message },
-        { status: 500 }
-      );
-    }
+    // Format the response to match the expected structure
+    const formattedGroups = groups.map(group => ({
+      id: group.id,
+      name: group.name,
+      description: group.description,
+      created_at: group.createdAt,
+      updated_at: group.updatedAt,
+      owner_id: group.ownerId,
+      member_count: group._count.members,
+      members: group.members.map(member => ({
+        id: member.id,
+        user_id: member.userId,
+        added_at: member.addedAt,
+        user: member.user,
+      })),
+    }));
 
     return NextResponse.json({
       success: true,
-      groups: groups || [],
+      groups: formattedGroups,
     });
 
   } catch (error) {
@@ -47,10 +81,9 @@ export async function GET() {
  */
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient();
-    
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
+    // Verify user authentication
+    const { userId } = await auth();
+    if (!userId) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
@@ -68,46 +101,35 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create the group
-    const { data: group, error: createError } = await supabase
-      .from('chat_groups')
-      .insert([{
-        owner_id: user.id,
-        name: name.trim(),
-        description: description?.trim() || null,
-      }])
-      .select()
-      .single();
+    // Create the group with members in a transaction
+    const result = await prisma.$transaction(async (tx) => {
+      // Create the group
+      const group = await tx.chatGroup.create({
+        data: {
+          ownerId: userId,
+          name: name.trim(),
+          description: description?.trim() || null,
+        },
+      });
 
-    if (createError) {
-      console.error('Error creating group:', createError);
-      return NextResponse.json(
-        { error: 'Failed to create group', details: createError.message },
-        { status: 500 }
-      );
-    }
-
-    // Add members if provided
-    if (memberIds && Array.isArray(memberIds) && memberIds.length > 0) {
-      const members = memberIds.map(userId => ({
-        group_id: group.id,
-        user_id: userId,
-      }));
-
-      const { error: membersError } = await supabase
-        .from('group_members')
-        .insert(members);
-
-      if (membersError) {
-        console.error('Error adding members:', membersError);
-        // Don't fail the entire request, just log the error
+      // Add members if provided
+      if (memberIds && Array.isArray(memberIds) && memberIds.length > 0) {
+        await tx.groupMember.createMany({
+          data: memberIds.map((memberId: string) => ({
+            groupId: group.id,
+            userId: memberId,
+          })),
+          skipDuplicates: true,
+        });
       }
-    }
+
+      return group;
+    });
 
     return NextResponse.json({
       success: true,
       message: 'Group created successfully',
-      group,
+      group: result,
     });
 
   } catch (error) {

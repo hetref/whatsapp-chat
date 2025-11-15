@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServiceRoleClient } from '@/lib/supabase/server';
+import { prisma } from '@/lib/db';
 import { downloadAndUploadToS3 } from '@/lib/aws-s3';
 
 export const runtime = 'nodejs';
@@ -71,13 +71,11 @@ export async function GET(
     }
 
     // Find user by webhook token
-    // Using service role client to bypass RLS since webhook requests have no auth
-    const supabase = createServiceRoleClient();
-    const { data: settings, error } = await supabase
-      .from('user_settings')
-      .select('id, verify_token, webhook_token')
-      .eq('webhook_token', webhookToken)
-      .single();
+    const settings = await prisma.userSettings.findFirst({
+      where: { webhookToken: webhookToken },
+      select: { id: true, verifyToken: true, webhookToken: true }
+    });
+    const error = null;
 
       console.log("SETTINGS:", settings, error, webhookToken);
 
@@ -86,20 +84,19 @@ export async function GET(
       console.error('Error details:', error);
       console.error('Looking for webhook_token:', webhookToken);
       
-      // Check if the column exists by trying to query all settings
-      const { data: allSettings, error: debugError } = await supabase
-        .from('user_settings')
-        .select('id, webhook_token')
-        .limit(1);
+      // Check if there are any settings for debugging
+      const allSettings = await prisma.userSettings.findMany({
+        select: { id: true, webhookToken: true },
+        take: 1
+      });
       
       console.error('Debug - Sample settings:', allSettings);
-      console.error('Debug - Query error:', debugError);
       
       return new NextResponse('Forbidden', { status: 403 });
     }
 
     // Verify the verify_token matches
-    if (settings.verify_token !== verifyToken) {
+    if (settings.verifyToken !== verifyToken) {
       console.log('Webhook verification failed: verify token mismatch');
       return new NextResponse('Forbidden', { status: 403 });
     }
@@ -107,13 +104,13 @@ export async function GET(
     console.log('Webhook verified successfully for user:', settings.id);
 
     // Mark webhook as verified for this user
-    await supabase
-      .from('user_settings')
-      .update({ 
-        webhook_verified: true,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', settings.id);
+    await prisma.userSettings.update({
+      where: { id: settings.id },
+      data: { 
+        webhookVerified: true,
+        updatedAt: new Date()
+      }
+    });
 
     return new NextResponse(challenge, { status: 200 });
   } catch (error) {
@@ -247,8 +244,6 @@ export async function POST(
 ) {
   try {
     const { token: webhookToken } = await params;
-    // Using service role client to bypass RLS since webhook requests have no auth
-    const supabase = createServiceRoleClient();
     const body = await request.json();
 
     console.log('Received webhook payload for token:', webhookToken?.substring(0, 8) + '...');
@@ -259,32 +254,30 @@ export async function POST(
     }
 
     // Find user by webhook token
-    const { data: userSettings, error: settingsError } = await supabase
-      .from('user_settings')
-      .select('id, access_token, api_version, phone_number_id')
-      .eq('webhook_token', webhookToken)
-      .single();
+    const userSettings = await prisma.userSettings.findFirst({
+      where: { webhookToken: webhookToken },
+      select: { id: true, accessToken: true, apiVersion: true, phoneNumberId: true }
+    });
+    const settingsError = null;
 
-    if (settingsError || !userSettings) {
+    if (!userSettings) {
       console.error('No user found for webhook token:', webhookToken?.substring(0, 8) + '...');
-      console.error('Settings error:', settingsError);
       
-      // Debug: Check if column exists
-      const { data: debugSettings, error: debugError } = await supabase
-        .from('user_settings')
-        .select('id, webhook_token')
-        .limit(1);
+      // Debug: Check if there are any settings
+      const debugSettings = await prisma.userSettings.findMany({
+        select: { id: true, webhookToken: true },
+        take: 1
+      });
       
       console.error('Debug - Sample settings:', debugSettings);
-      console.error('Debug - Error:', debugError);
       
       // Still acknowledge to avoid retries
       return new NextResponse('OK', { status: 200 });
     }
 
     const businessOwnerId = userSettings.id;
-    const accessToken = userSettings.access_token;
-    const apiVersion = userSettings.api_version || 'v23.0';
+    const accessToken = userSettings.accessToken;
+    const apiVersion = userSettings.apiVersion || 'v23.0';
 
     console.log('Found business owner:', businessOwnerId);
 
@@ -299,8 +292,8 @@ export async function POST(
     const phoneNumberId = value?.metadata?.phone_number_id;
     
     // Verify this message is for the correct user
-    if (phoneNumberId && userSettings.phone_number_id !== phoneNumberId) {
-      console.warn('Phone number ID mismatch. Expected:', userSettings.phone_number_id, 'Got:', phoneNumberId);
+    if (phoneNumberId && userSettings.phoneNumberId !== phoneNumberId) {
+      console.warn('Phone number ID mismatch. Expected:', userSettings.phoneNumberId, 'Got:', phoneNumberId);
       return new NextResponse('OK', { status: 200 });
     }
     
@@ -365,35 +358,33 @@ export async function POST(
       }
 
       // Check if user exists in our database
-      const { data: existingUser } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', phoneNumber)
-        .single();
+      const existingUser = await prisma.user.findUnique({
+        where: { id: phoneNumber }
+      });
 
       // Create user if they don't exist
       if (!existingUser) {
         console.log(`Creating new user: ${contactName}`);
-        const { error: userError } = await supabase
-          .from('users')
-          .insert([{
-            id: phoneNumber,
-            name: contactName,
-            last_active: messageTimestamp
-          }]);
-
-        if (userError) {
+        try {
+          await prisma.user.create({
+            data: {
+              id: phoneNumber,
+              name: contactName,
+              lastActive: new Date(messageTimestamp)
+            }
+          });
+        } catch (userError) {
           console.error('Error creating user:', userError);
           continue;
         }
       } else {
         // Update last_active timestamp
-        const { error: updateError } = await supabase
-          .from('users')
-          .update({ last_active: messageTimestamp })
-          .eq('id', phoneNumber);
-
-        if (updateError) {
+        try {
+          await prisma.user.update({
+            where: { id: phoneNumber },
+            data: { lastActive: new Date(messageTimestamp) }
+          });
+        } catch (updateError) {
           console.error('Error updating user last_active:', updateError);
         }
       }
@@ -423,14 +414,21 @@ export async function POST(
       };
 
       // Store the message
-      const { error: messageError } = await supabase
-        .from('messages')
-        .insert([messageObject]);
-
-      if (messageError) {
-        console.error('Error storing message:', messageError);
-      } else {
-        console.log(`${messageType} message stored successfully: ${message.id}`);
+      try {
+        await prisma.message.create({
+          data: {
+            id: messageObject.id,
+            senderId: messageObject.sender_id,
+            receiverId: messageObject.receiver_id,
+            content: messageObject.content,
+            timestamp: new Date(messageObject.timestamp),
+            isSentByMe: messageObject.is_sent_by_me,
+            isRead: messageObject.is_read,
+            messageType: messageObject.message_type,
+            mediaData: messageObject.media_data
+          }
+        });
+        console.log(`${messageType} message stored successfully: ${messageObject.id}`);
         if (mediaData) {
           console.log('Media data stored:', {
             type: mediaData.type,
@@ -439,6 +437,8 @@ export async function POST(
             has_s3_url: !!s3MediaUrl
           });
         }
+      } catch (messageError) {
+        console.error('Error storing message:', messageError);
       }
     }
 

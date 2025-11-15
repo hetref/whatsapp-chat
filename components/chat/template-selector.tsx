@@ -417,7 +417,7 @@ export function TemplateSelector({ isOpen, onClose, onSendTemplate, selectedUser
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-hidden">
+        <div className="flex-1 overflow-y-scroll">
           {!selectedTemplate ? (
             /* Template Selection */
             <div className="h-full flex flex-col">
@@ -435,7 +435,7 @@ export function TemplateSelector({ isOpen, onClose, onSendTemplate, selectedUser
               </div>
 
               {/* Templates List */}
-              <div className="flex-1 overflow-y-auto p-6">
+              <div className="flex-1 overflow-y-scroll p-6">
                 {isLoading ? (
                   <div className="flex items-center justify-center py-12">
                     <Loader2 className="h-8 w-8 animate-spin text-green-600" />
@@ -498,7 +498,7 @@ export function TemplateSelector({ isOpen, onClose, onSendTemplate, selectedUser
             /* Template Configuration */
             <div className="h-full flex">
               {/* Configuration Panel */}
-              <div className={`${showPreview ? 'w-1/2' : 'w-full'} overflow-y-auto p-6 border-r border-border`}>
+              <div className={`${showPreview ? 'w-1/2' : 'w-full'} overflow-y-scroll p-6 border-r border-border`}>
                 <div className="mb-6">
                   <div className="flex items-center justify-between mb-4">
                     <div>
@@ -617,7 +617,7 @@ export function TemplateSelector({ isOpen, onClose, onSendTemplate, selectedUser
 
               {/* Preview Panel */}
               {showPreview && (
-                <div className="w-1/2 overflow-y-auto p-6">
+                <div className="w-1/2 overflow-y-scroll p-6">
                   <h4 className="font-medium mb-4">Preview</h4>
                   {renderTemplatePreview(selectedTemplate, variables)}
                 </div>
