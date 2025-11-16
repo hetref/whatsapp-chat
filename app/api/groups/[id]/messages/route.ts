@@ -54,7 +54,7 @@ export async function GET(
 
     // Filter messages that belong to this broadcast group
     // Check if media_data contains broadcast_group_id matching our groupId
-    const broadcastMessages = messages.filter(msg => {
+    const broadcastMessages = messages.filter((msg: typeof messages[0]) => {
       if (!msg.mediaData) return false;
       try {
         const mediaData = typeof msg.mediaData === 'string'
@@ -69,7 +69,7 @@ export async function GET(
     // Group messages by their timestamp to identify unique broadcasts
     // (same broadcast sent to multiple people will have same timestamp)
     const uniqueBroadcasts = new Map();
-    broadcastMessages.forEach(msg => {
+    broadcastMessages.forEach((msg: typeof broadcastMessages[0]) => {
       const key = msg.timestamp.toISOString(); // Use timestamp as key to group same broadcast
       if (!uniqueBroadcasts.has(key) || msg.id < uniqueBroadcasts.get(key).id) {
         // Keep the first message (or the one with smallest ID) for each timestamp
@@ -78,7 +78,7 @@ export async function GET(
     });
 
     // Convert map to array and format for display
-    const formattedMessages = Array.from(uniqueBroadcasts.values()).map(msg => ({
+    const formattedMessages = Array.from(uniqueBroadcasts.values()).map((msg: typeof broadcastMessages[0]) => ({
       id: msg.id,
       sender_id: msg.senderId,
       receiver_id: msg.receiverId,
