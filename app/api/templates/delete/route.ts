@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { auth } from '@clerk/nextjs/server';
+import { prisma } from '@/lib/db';
 
 interface DeleteTemplateRequest {
   templateId: string;
@@ -13,39 +14,44 @@ interface DeleteTemplateRequest {
 export async function DELETE(request: NextRequest) {
   try {
     // Verify user authentication
-    const supabase = await createClient();
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      return new NextResponse('Unauthorized', { status: 401 });
+    const { userId } = await auth();
+    if (!userId) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
     }
 
     // Get user's WhatsApp API credentials
-    const { data: settings, error: settingsError } = await supabase
-      .from('user_settings')
-      .select('access_token, business_account_id, api_version, access_token_added')
-      .eq('id', user.id)
-      .single();
+    const settings = await prisma.userSettings.findUnique({
+      where: { id: userId },
+      select: {
+        accessToken: true,
+        businessAccountId: true,
+        apiVersion: true,
+        accessTokenAdded: true
+      }
+    });
 
-    if (settingsError || !settings) {
-      console.error('User settings not found:', settingsError);
+    if (!settings) {
+      console.error('User settings not found for user:', userId);
       return NextResponse.json(
         { error: 'WhatsApp credentials not configured. Please complete setup.' },
         { status: 400 }
       );
     }
 
-    if (!settings.access_token_added || !settings.access_token || !settings.business_account_id) {
-      console.error('WhatsApp API credentials not configured for user:', user.id);
+    if (!settings.accessTokenAdded || !settings.accessToken || !settings.businessAccountId) {
+      console.error('WhatsApp API credentials not configured for user:', userId);
       return NextResponse.json(
         { error: 'WhatsApp credentials not configured. Please complete setup in the Settings page.' },
         { status: 400 }
       );
     }
 
-    const WHATSAPP_ACCESS_TOKEN = settings.access_token;
-    const WHATSAPP_BUSINESS_ACCOUNT_ID = settings.business_account_id;
-    const WHATSAPP_API_VERSION = settings.api_version || 'v23.0';
+    const WHATSAPP_ACCESS_TOKEN = settings.accessToken;
+    const WHATSAPP_BUSINESS_ACCOUNT_ID = settings.businessAccountId;
+    const WHATSAPP_API_VERSION = settings.apiVersion || 'v23.0';
 
     // Parse request body
     const { templateId, templateName }: DeleteTemplateRequest = await request.json();
@@ -87,16 +93,36 @@ export async function DELETE(request: NextRequest) {
         templateName
       });
 
-      return new NextResponse(
-        JSON.stringify({
-          error: 'Failed to delete template',
-          details: responseData,
+      // Extract user-friendly error message from Meta API response
+      let userErrorMessage = 'Failed to delete template';
+      let userErrorTitle = '';
+
+      if (responseData?.error) {
+        // Check for Meta API specific error format
+        if (responseData.error.error_user_msg) {
+          userErrorMessage = responseData.error.error_user_msg;
+        } else if (responseData.error.message) {
+          userErrorMessage = responseData.error.message;
+        }
+
+        if (responseData.error.error_user_title) {
+          userErrorTitle = responseData.error.error_user_title;
+        }
+      }
+
+      return NextResponse.json({
+        success: false,
+        error: userErrorTitle || 'Template Deletion Failed',
+        message: userErrorMessage,
+        details: {
+          metaError: responseData,
           status: response.status,
           templateId,
-          templateName
-        }),
-        { status: response.status, headers: { 'Content-Type': 'application/json' } }
-      );
+          templateName,
+          code: responseData?.error?.code,
+          subcode: responseData?.error?.error_subcode
+        }
+      }, { status: response.status });
     }
 
     console.log(`Template deleted successfully: ${templateName} (ID: ${templateId})`);

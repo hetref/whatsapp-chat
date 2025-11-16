@@ -121,6 +121,8 @@ export function ChatWindow({
   const [playingAudio, setPlayingAudio] = useState<string | null>(null);
   const [refreshingUrls, setRefreshingUrls] = useState<Set<string>>(new Set());
   const [loadingMedia, setLoadingMedia] = useState<Set<string>>(new Set());
+  const [failedMedia, setFailedMedia] = useState<Set<string>>(new Set());
+  const [mediaUrls, setMediaUrls] = useState<{ [key: string]: string }>({});
   const [audioDurations, setAudioDurations] = useState<{ [key: string]: number }>({});
   const [audioCurrentTime, setAudioCurrentTime] = useState<{ [key: string]: number }>({});
   const [showMediaUpload, setShowMediaUpload] = useState(false);
@@ -183,6 +185,48 @@ export function ChatWindow({
     }
   };
 
+  // Auto-refresh failed media URLs when messages change
+  useEffect(() => {
+    if (messages.length === 0) return;
+
+    // Check for media messages that might need URL refresh
+    messages.forEach(message => {
+      if (message.message_type && ['image', 'video', 'audio', 'document'].includes(message.message_type)) {
+        try {
+          let mediaData;
+          if (typeof message.media_data === 'string') {
+            mediaData = JSON.parse(message.media_data);
+          } else {
+            mediaData = message.media_data;
+          }
+
+          // Check if media URL exists and is valid
+          if (mediaData && mediaData.s3_uploaded && mediaData.media_url) {
+            // Test if URL is still valid by checking if it's expired
+            const urlParams = new URLSearchParams(new URL(mediaData.media_url).search);
+            const expiresParam = urlParams.get('X-Amz-Date');
+
+            if (expiresParam) {
+              // Check if URL might be expired (AWS URLs expire after 1 hour by default)
+              const urlDate = new Date(expiresParam.replace(/(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z/, '$1-$2-$3T$4:$5:$6Z'));
+              const now = new Date();
+              const hoursSinceCreation = (now.getTime() - urlDate.getTime()) / (1000 * 60 * 60);
+
+              // If URL is older than 55 minutes, proactively refresh it
+              if (hoursSinceCreation > 0.9) {
+                console.log(`Proactively refreshing URL for message ${message.id} (${hoursSinceCreation.toFixed(1)} hours old)`);
+                setTimeout(() => refreshMediaUrl(message.id), Math.random() * 3000); // Stagger requests over 3 seconds
+              } else {
+                console.log(`URL for message ${message.id} is still fresh (${hoursSinceCreation.toFixed(1)} hours old)`);
+              }
+            }
+          }
+        } catch (error) {
+          console.error('Error checking media URL for message:', message.id, error);
+        }
+      }
+    });
+  }, [messages]);
   // Calculate unread messages
   const unreadMessages = messages.filter(msg =>
     !msg.is_sent_by_me && !msg.is_read
@@ -376,6 +420,9 @@ export function ChatWindow({
       }
     }
 
+    // Use updated URL if available
+    const currentAudioUrl = mediaUrls[messageId] || audioUrl;
+
     // Toggle play/pause for the clicked audio
     const audio = audioRefs.current[messageId];
     if (audio) {
@@ -383,16 +430,32 @@ export function ChatWindow({
         audio.pause();
         setPlayingAudio(null);
       } else {
-        audio.play();
+        // Update the source if URL has changed
+        if (audio.src !== currentAudioUrl) {
+          audio.src = currentAudioUrl;
+          console.log(`Updated audio source for message ${messageId}: ${currentAudioUrl}`);
+        }
+        audio.play().catch((error) => {
+          console.error('Error playing audio:', error);
+          setFailedMedia(prev => new Set(prev).add(messageId));
+          // Try to refresh URL if play fails
+          setTimeout(() => refreshMediaUrl(messageId), 1000);
+        });
         setPlayingAudio(messageId);
       }
     } else {
       // Create new audio element
-      const newAudio = new Audio(audioUrl);
+      const newAudio = new Audio(currentAudioUrl);
 
       // Set up audio event listeners
       newAudio.onloadedmetadata = () => {
         setAudioDurations(prev => ({ ...prev, [messageId]: newAudio.duration }));
+        setFailedMedia(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(messageId);
+          return newSet;
+        });
+        console.log(`Audio metadata loaded for message ${messageId}`);
       };
 
       newAudio.ontimeupdate = () => {
@@ -404,19 +467,38 @@ export function ChatWindow({
         setAudioCurrentTime(prev => ({ ...prev, [messageId]: 0 }));
       };
 
-      newAudio.onerror = () => {
-        console.error('Error playing audio');
+      newAudio.onerror = (e) => {
+        console.error('Error playing audio:', {
+          messageId,
+          url: currentAudioUrl,
+          error: e
+        });
         setPlayingAudio(null);
+        setFailedMedia(prev => new Set(prev).add(messageId));
+
+        // Auto-retry refresh if not already refreshing
+        if (!refreshingUrls.has(messageId)) {
+          setTimeout(() => {
+            refreshMediaUrl(messageId);
+          }, 2000);
+        }
       };
 
       audioRefs.current[messageId] = newAudio;
-      newAudio.play();
+      newAudio.play().catch((error) => {
+        console.error('Error starting audio playback:', error);
+        setFailedMedia(prev => new Set(prev).add(messageId));
+      });
       setPlayingAudio(messageId);
     }
   };
 
-  const downloadMedia = async (url: string, filename: string) => {
+  const downloadMedia = async (originalUrl: string, filename: string, messageId?: string) => {
     try {
+      // Use refreshed URL if available
+      const url = (messageId && mediaUrls[messageId]) || originalUrl;
+      console.log(`Downloading media from: ${url}`);
+
       // For S3 pre-signed URLs, we can download directly
       const response = await fetch(url, {
         method: 'GET',
@@ -425,6 +507,21 @@ export function ChatWindow({
       });
 
       if (!response.ok) {
+        // If download fails with refreshed URL, try refreshing it first
+        if (messageId && response.status === 403 && !refreshingUrls.has(messageId)) {
+          console.log('Download failed with 403, refreshing URL and retrying...');
+          await refreshMediaUrl(messageId);
+
+          // Wait a moment for URL refresh and retry
+          setTimeout(() => {
+            const newUrl = mediaUrls[messageId];
+            if (newUrl) {
+              downloadMedia(newUrl, filename, messageId);
+            }
+          }, 1000);
+          return;
+        }
+
         throw new Error(`Failed to download: ${response.status} ${response.statusText}`);
       }
 
@@ -451,7 +548,8 @@ export function ChatWindow({
 
       // Fallback: Open in new tab if direct download fails
       try {
-        const newWindow = window.open(url, '_blank');
+        const fallbackUrl = (messageId && mediaUrls[messageId]) || originalUrl;
+        const newWindow = window.open(fallbackUrl, '_blank');
         if (!newWindow) {
           throw new Error('Popup blocked');
         }
@@ -465,7 +563,13 @@ export function ChatWindow({
   const refreshMediaUrl = async (messageId: string) => {
     if (refreshingUrls.has(messageId)) return;
 
+    console.log(`Starting media URL refresh for message: ${messageId}`);
     setRefreshingUrls(prev => new Set(prev).add(messageId));
+    setFailedMedia(prev => {
+      const newSet = new Set(prev);
+      newSet.delete(messageId);
+      return newSet;
+    });
 
     try {
       const response = await fetch('/api/media/refresh-url', {
@@ -479,27 +583,63 @@ export function ChatWindow({
       const result = await response.json();
 
       if (response.ok && result.success) {
-        console.log('Media URL refreshed successfully:', result);
-        // Trigger a re-render by forcing the parent component to update
-        // You might want to implement a proper message refresh mechanism here
-        // For now, we'll let the component handle the updated state
+        console.log('Media URL refreshed successfully:', {
+          messageId,
+          newUrl: result.mediaUrl,
+          refreshedAt: result.refreshedAt
+        });
+
+        // Update the media URL in local state
+        if (result.mediaUrl) {
+          setMediaUrls(prev => {
+            const updated = {
+              ...prev,
+              [messageId]: result.mediaUrl
+            };
+            console.log('Updated mediaUrls state:', updated);
+            return updated;
+          });
+        }
+
+        // Clear any failed state for this message
+        setFailedMedia(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(messageId);
+          return newSet;
+        });
+
+        // Clear loading state
+        setLoadingMedia(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(messageId);
+          return newSet;
+        });
+
       } else {
         console.error('Failed to refresh media URL:', result.error || result.message);
+        setFailedMedia(prev => new Set(prev).add(messageId));
+
         // Show user-friendly error message only for non-404 errors
         if (response.status !== 404) {
-          alert(`Failed to load media: ${result.error || 'Please try again later'}`);
+          console.warn(`Failed to load media: ${result.error || 'Please try again later'}`);
         }
       }
     } catch (error) {
       console.error('Network error refreshing media URL:', error);
+      setFailedMedia(prev => new Set(prev).add(messageId));
+
       // Only show network error alerts for repeated failures
       if (!window.mediaRefreshErrorCount) window.mediaRefreshErrorCount = {};
       window.mediaRefreshErrorCount[messageId] = (window.mediaRefreshErrorCount[messageId] || 0) + 1;
 
       if (window.mediaRefreshErrorCount[messageId] <= 2) {
-        console.log('Retrying media refresh...');
+        console.log('Retrying media refresh for message:', messageId);
+        // Auto-retry after a short delay
+        setTimeout(() => {
+          refreshMediaUrl(messageId);
+        }, 3000); // Increased delay for retries
       } else {
-        alert('Network error: Unable to load media. Please check your connection.');
+        console.warn('Network error: Unable to load media after multiple attempts');
       }
     } finally {
       setRefreshingUrls(prev => {
@@ -541,8 +681,8 @@ export function ChatWindow({
     }
 
     const baseClasses = `max-w-[85%] px-4 py-3 rounded-2xl shadow-sm ${isOwn
-        ? 'bg-green-500 text-white ml-4'
-        : 'bg-white dark:bg-muted border border-border mr-4'
+      ? 'bg-green-500 text-white ml-4'
+      : 'bg-white dark:bg-muted border border-border mr-4'
       }`;
 
     const isRefreshing = refreshingUrls.has(message.id);
@@ -550,49 +690,68 @@ export function ChatWindow({
 
     switch (messageType) {
       case 'image':
+        const currentImageUrl = mediaUrls[message.id] || mediaData?.media_url;
+        const hasValidUrl = currentImageUrl && mediaData?.s3_uploaded;
+        const hasFailed = failedMedia.has(message.id);
+
         return (
           <div className={baseClasses}>
-            {mediaData?.media_url && mediaData.s3_uploaded ? (
+            {hasValidUrl && !hasFailed ? (
               <div className="mb-2 relative overflow-hidden rounded-xl">
-                {isMediaLoading && (
+                {/* Loading overlay */}
+                {(isMediaLoading || isRefreshing) && (
                   <div className="absolute inset-0 bg-gray-200 dark:bg-gray-700 flex items-center justify-center rounded-xl z-10">
                     <div className="flex flex-col items-center gap-2">
                       <Loader2 className="h-6 w-6 animate-spin text-gray-500" />
-                      <span className="text-xs text-gray-500">Loading image...</span>
+                      <span className="text-xs text-gray-500">
+                        {isRefreshing ? 'Refreshing...' : 'Loading image...'}
+                      </span>
                     </div>
                   </div>
                 )}
                 <Image
-                  src={mediaData.media_url}
-                  alt={mediaData.caption || "Shared image"}
+                  key={`${message.id}-${currentImageUrl}`} // Force re-render on URL change
+                  src={currentImageUrl}
+                  alt={mediaData?.caption || "Shared image"}
                   width={300}
                   height={200}
                   className="max-w-[300px] max-h-[400px] w-auto h-auto object-cover cursor-pointer rounded-xl"
                   style={{ maxWidth: '100%', height: 'auto' }}
-                  onClick={() => window.open(mediaData.media_url, '_blank')}
-                  onLoad={() => handleMediaLoad(message.id)}
-                  onLoadStart={() => handleMediaLoadStart(message.id)}
-                  onError={() => {
-                    console.log('Image failed to load, attempting to refresh URL for message:', message.id);
+                  onClick={() => window.open(currentImageUrl, '_blank')}
+                  onLoad={() => {
+                    console.log(`Image loaded successfully for message: ${message.id}`);
                     handleMediaLoad(message.id);
-                    // Only try to refresh if we haven't already tried
+                    setFailedMedia(prev => {
+                      const newSet = new Set(prev);
+                      newSet.delete(message.id);
+                      return newSet;
+                    });
+                  }}
+                  onLoadStart={() => {
+                    console.log(`Image loading started for message: ${message.id}`);
+                    handleMediaLoadStart(message.id);
+                  }}
+                  onError={(e) => {
+                    console.error('Image failed to load:', {
+                      messageId: message.id,
+                      url: currentImageUrl,
+                      error: e
+                    });
+                    handleMediaLoad(message.id);
+                    setFailedMedia(prev => new Set(prev).add(message.id));
+
+                    // Auto-retry refresh if not already refreshing
                     if (!refreshingUrls.has(message.id)) {
-                      refreshMediaUrl(message.id);
+                      setTimeout(() => {
+                        refreshMediaUrl(message.id);
+                      }, 2000); // Increased delay to avoid rapid retries
                     }
                   }}
                   priority={false}
                   placeholder="blur"
                   blurDataURL="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAhEAACAQMDBQAAAAAAAAAAAAABAgMABAUGIWGRkqGx0f/EABUBAQEAAAAAAAAAAAAAAAAAAAMF/8QAGhEAAgIDAAAAAAAAAAAAAAAAAAECEgMRkf/aAAwDAQACEQMRAD8AltJagyeH0AthI5xdrLcNM91BF5pX2HaH9bcfaSXWGaRmknyJckliyjqTzSlT54b6bk+h0R+Rq19G9D/Z"
-                  unoptimized={false}
+                  unoptimized={true} // Disable optimization for S3 pre-signed URLs
                 />
-                {isRefreshing && (
-                  <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center rounded-xl z-20">
-                    <div className="flex flex-col items-center gap-2">
-                      <RefreshCw className="h-6 w-6 text-white animate-spin" />
-                      <span className="text-xs text-white">Refreshing...</span>
-                    </div>
-                  </div>
-                )}
               </div>
             ) : (
               <div className="flex items-center gap-3 p-4 bg-gray-100 dark:bg-gray-800 rounded-xl mb-2">
@@ -600,7 +759,9 @@ export function ChatWindow({
                 <div className="flex-1">
                   <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Image</p>
                   <p className="text-xs text-gray-500">
-                    {mediaData?.s3_uploaded === false ? 'Preparing...' : 'Loading...'}
+                    {isRefreshing ? 'Refreshing...' :
+                      hasFailed ? 'Failed to load' :
+                        mediaData?.s3_uploaded === false ? 'Preparing...' : 'Loading...'}
                   </p>
                 </div>
                 <Button
@@ -653,7 +814,11 @@ export function ChatWindow({
                   size="sm"
                   variant="ghost"
                   className={`p-2 h-10 w-10 ${isOwn ? 'hover:bg-green-600' : 'hover:bg-gray-200'}`}
-                  onClick={() => downloadMedia(mediaData.media_url!, mediaData?.filename || 'document')}
+                  onClick={() => downloadMedia(
+                    mediaUrls[message.id] || mediaData.media_url!,
+                    mediaData?.filename || 'document',
+                    message.id
+                  )}
                   disabled={isRefreshing}
                 >
                   {isRefreshing ? (
@@ -685,6 +850,9 @@ export function ChatWindow({
         const duration = audioDurations[message.id] || 0;
         const currentTime = audioCurrentTime[message.id] || 0;
         const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
+        const currentAudioUrl = mediaUrls[message.id] || mediaData?.media_url;
+        const hasValidAudioUrl = currentAudioUrl && mediaData?.s3_uploaded;
+        const hasAudioFailed = failedMedia.has(message.id);
 
         return (
           <div className={baseClasses}>
@@ -693,8 +861,8 @@ export function ChatWindow({
                 size="sm"
                 variant="ghost"
                 className={`p-3 rounded-full ${isOwn ? 'bg-green-600 hover:bg-green-700' : 'bg-blue-500 hover:bg-blue-600'} text-white`}
-                onClick={() => mediaData?.media_url && handleAudioPlay(message.id, mediaData.media_url)}
-                disabled={!mediaData?.media_url || !mediaData.s3_uploaded || isRefreshing}
+                onClick={() => hasValidAudioUrl && handleAudioPlay(message.id, currentAudioUrl)}
+                disabled={!hasValidAudioUrl || isRefreshing || hasAudioFailed}
               >
                 {isRefreshing ? (
                   <RefreshCw className="h-5 w-5 animate-spin" />
@@ -711,7 +879,7 @@ export function ChatWindow({
                   <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
                     {mediaData?.voice ? 'Voice Message' : 'Audio'}
                   </span>
-                  {(!mediaData?.media_url || !mediaData.s3_uploaded) && (
+                  {(!hasValidAudioUrl || hasAudioFailed) && (
                     <Button
                       size="sm"
                       variant="ghost"
@@ -743,8 +911,13 @@ export function ChatWindow({
                   </div>
                 </div>
 
-                {isMediaLoading && (
-                  <p className="text-xs text-blue-500 mt-1">Loading audio...</p>
+                {(isMediaLoading || isRefreshing) && (
+                  <p className="text-xs text-blue-500 mt-1">
+                    {isRefreshing ? 'Refreshing audio...' : 'Loading audio...'}
+                  </p>
+                )}
+                {hasAudioFailed && (
+                  <p className="text-xs text-red-500 mt-1">Failed to load audio</p>
                 )}
               </div>
             </div>
@@ -755,44 +928,63 @@ export function ChatWindow({
         );
 
       case 'video':
+        const currentVideoUrl = mediaUrls[message.id] || mediaData?.media_url;
+        const hasValidVideoUrl = currentVideoUrl && mediaData?.s3_uploaded;
+        const hasVideoFailed = failedMedia.has(message.id);
+
         return (
           <div className={baseClasses}>
-            {mediaData?.media_url && mediaData.s3_uploaded ? (
+            {hasValidVideoUrl && !hasVideoFailed ? (
               <div className="mb-2 relative overflow-hidden rounded-xl max-w-[400px] max-h-[300px]">
-                {isMediaLoading && (
+                {/* Loading overlay */}
+                {(isMediaLoading || isRefreshing) && (
                   <div className="absolute inset-0 bg-gray-200 dark:bg-gray-700 flex items-center justify-center rounded-xl z-10">
                     <div className="flex flex-col items-center gap-2">
                       <Loader2 className="h-6 w-6 animate-spin text-gray-500" />
-                      <span className="text-xs text-gray-500">Loading video...</span>
+                      <span className="text-xs text-gray-500">
+                        {isRefreshing ? 'Refreshing...' : 'Loading video...'}
+                      </span>
                     </div>
                   </div>
                 )}
                 <video
+                  key={`${message.id}-${currentVideoUrl}`} // Force re-render on URL change
                   controls
                   className="max-w-[400px] max-h-[300px] w-auto h-auto rounded-xl"
                   preload="metadata"
-                  onLoadStart={() => handleMediaLoadStart(message.id)}
-                  onCanPlay={() => handleMediaLoad(message.id)}
-                  onError={() => {
-                    console.log('Video failed to load, attempting to refresh URL for message:', message.id);
+                  onLoadStart={() => {
+                    console.log(`Video loading started for message: ${message.id}`);
+                    handleMediaLoadStart(message.id);
+                  }}
+                  onCanPlay={() => {
+                    console.log(`Video loaded successfully for message: ${message.id}`);
                     handleMediaLoad(message.id);
-                    // Only try to refresh if we haven't already tried
+                    setFailedMedia(prev => {
+                      const newSet = new Set(prev);
+                      newSet.delete(message.id);
+                      return newSet;
+                    });
+                  }}
+                  onError={(e) => {
+                    console.error('Video failed to load:', {
+                      messageId: message.id,
+                      url: currentVideoUrl,
+                      error: e
+                    });
+                    handleMediaLoad(message.id);
+                    setFailedMedia(prev => new Set(prev).add(message.id));
+
+                    // Auto-retry refresh if not already refreshing
                     if (!refreshingUrls.has(message.id)) {
-                      refreshMediaUrl(message.id);
+                      setTimeout(() => {
+                        refreshMediaUrl(message.id);
+                      }, 2000); // Increased delay to avoid rapid retries
                     }
                   }}
                 >
-                  <source src={mediaData.media_url} type={mediaData.mime_type} />
+                  <source src={currentVideoUrl} type={mediaData?.mime_type || 'video/mp4'} />
                   Your browser does not support the video tag.
                 </video>
-                {isRefreshing && (
-                  <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center rounded-xl z-20">
-                    <div className="flex flex-col items-center gap-2">
-                      <RefreshCw className="h-6 w-6 text-white animate-spin" />
-                      <span className="text-xs text-white">Refreshing...</span>
-                    </div>
-                  </div>
-                )}
               </div>
             ) : (
               <div className="flex items-center gap-3 p-4 bg-gray-100 dark:bg-gray-800 rounded-xl mb-2">
@@ -800,7 +992,9 @@ export function ChatWindow({
                 <div className="flex-1">
                   <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Video</p>
                   <p className="text-xs text-gray-500">
-                    {mediaData?.s3_uploaded === false ? 'Preparing...' : 'Loading...'}
+                    {isRefreshing ? 'Refreshing...' :
+                      hasVideoFailed ? 'Failed to load' :
+                        mediaData?.s3_uploaded === false ? 'Preparing...' : 'Loading...'}
                   </p>
                 </div>
                 <Button

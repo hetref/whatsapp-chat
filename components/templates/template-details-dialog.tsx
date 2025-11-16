@@ -92,14 +92,31 @@ export function TemplateDetailsDialog({ template, isOpen, onClose, onRefresh }: 
       const result = await response.json();
 
       if (!response.ok) {
-        throw new Error(result.message || result.error || 'Failed to delete template');
+        // Extract detailed error information from the API response
+        let errorMessage = 'Failed to delete template';
+
+        if (result.error && result.message) {
+          // Use the title and message from our improved API response
+          errorMessage = `${result.error}: ${result.message}`;
+        } else if (result.message) {
+          errorMessage = result.message;
+        } else if (result.error) {
+          errorMessage = result.error;
+        }
+
+        // Add additional context if available
+        if (result.details?.code && result.details?.subcode) {
+          errorMessage += `\n\nError Code: ${result.details.code}.${result.details.subcode}`;
+        }
+
+        throw new Error(errorMessage);
       }
 
       console.log('Template deleted successfully:', result);
-      
+
       // Close the main dialog
       onClose();
-      
+
       // Refresh the templates list
       onRefresh();
 
@@ -160,7 +177,7 @@ export function TemplateDetailsDialog({ template, isOpen, onClose, onRefresh }: 
             </span>
           )}
         </div>
-        
+
         {component.text && (
           <div className="space-y-2">
             <p className="text-sm font-mono bg-background p-3 rounded border">
@@ -212,12 +229,12 @@ export function TemplateDetailsDialog({ template, isOpen, onClose, onRefresh }: 
   return (
     <>
       {/* Backdrop */}
-      <div 
+      <div
         className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4"
         onClick={onClose}
       >
         {/* Dialog */}
-        <div 
+        <div
           className="bg-background rounded-lg shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto"
           onClick={(e) => e.stopPropagation()}
         >
@@ -262,7 +279,7 @@ export function TemplateDetailsDialog({ template, isOpen, onClose, onRefresh }: 
                       </span>
                     </div>
                   </div>
-                  
+
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-muted-foreground">Template ID:</span>
                     <div className="flex items-center gap-2">
@@ -301,7 +318,7 @@ export function TemplateDetailsDialog({ template, isOpen, onClose, onRefresh }: 
                     <span className="text-sm text-muted-foreground">Created:</span>
                     <p className="text-sm font-medium">{formatDate(template.created_at)}</p>
                   </div>
-                  
+
                   <div>
                     <span className="text-sm text-muted-foreground">Last Updated:</span>
                     <p className="text-sm font-medium">{formatDate(template.updated_at)}</p>
@@ -324,9 +341,9 @@ export function TemplateDetailsDialog({ template, isOpen, onClose, onRefresh }: 
             {/* Template Components */}
             <div className="space-y-6">
               <h3 className="text-lg font-semibold">Template Components</h3>
-              
+
               <div className="grid grid-cols-1 gap-4">
-                {template.components.map((component, index) => 
+                {template.components.map((component, index) =>
                   renderComponent(component, index)
                 )}
               </div>

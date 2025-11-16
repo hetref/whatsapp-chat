@@ -116,7 +116,7 @@ export default function ChatPage() {
     checkSetup();
   }, [user, isLoaded]); // Run when user or loading state changes
 
-  // Fetch users using API instead of direct Supabase calls
+  // Fetch users using API and set up polling for updates
   useEffect(() => {
     if (!user) return;
 

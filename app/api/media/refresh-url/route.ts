@@ -132,7 +132,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       messageId: messageId,
-      newUrl: newUrl,
+      mediaUrl: newUrl, // Changed from newUrl to mediaUrl for consistency
       refreshedAt: updatedMediaData.url_refreshed_at
     });
 

@@ -6,13 +6,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ThemeSwitcher } from "@/components/theme-switcher";
-import { 
-  ArrowLeft, 
-  Plus, 
-  Minus, 
-  Save, 
-  Eye, 
-  FileText, 
+import {
+  ArrowLeft,
+  Plus,
+  Minus,
+  Save,
+  Eye,
+  FileText,
   Loader2,
   AlertCircle,
   Info
@@ -89,28 +89,28 @@ export default function NewTemplatePage() {
     const variableRegex = /\{\{(\d+)\}\}/g;
     const variables: number[] = [];
     let match;
-    
+
     while ((match = variableRegex.exec(text)) !== null) {
       const varNum = parseInt(match[1], 10);
       if (!variables.includes(varNum)) {
         variables.push(varNum);
       }
     }
-    
+
     return variables.sort((a, b) => a - b);
   };
 
   // Replace variables with example values for preview
   const replaceVariablesWithExamples = (text: string, examples?: string[]): string => {
     if (!text || !examples || examples.length === 0) return text;
-    
+
     let result = text;
     examples.forEach((example, index) => {
       const varNum = index + 1;
       const regex = new RegExp(`\\{\\{${varNum}\\}\\}`, 'g');
       result = result.replace(regex, example || `{{${varNum}}}`);
     });
-    
+
     return result;
   };
 
@@ -145,11 +145,11 @@ export default function NewTemplatePage() {
       if (component.type === 'BODY' && !component.text?.trim()) {
         errors.push(`Body component is required and cannot be empty`);
       }
-      
+
       if (component.type === 'HEADER' && component.format === 'TEXT' && !component.text?.trim()) {
         errors.push(`Header text is required when format is TEXT`);
       }
-      
+
       if (component.type === 'FOOTER' && !component.text?.trim()) {
         errors.push(`Footer text cannot be empty`);
       }
@@ -182,7 +182,7 @@ export default function NewTemplatePage() {
   // Add component
   const addComponent = (type: TemplateComponent['type']) => {
     const newComponent: TemplateComponent = { type };
-    
+
     if (type === 'HEADER') {
       newComponent.format = 'TEXT';
       newComponent.text = '';
@@ -208,7 +208,7 @@ export default function NewTemplatePage() {
   const addButton = (componentIndex: number) => {
     const newComponents = [...templateData.components];
     const component = newComponents[componentIndex];
-    
+
     if (component.type === 'BUTTONS') {
       component.buttons = [...(component.buttons || []), { type: 'QUICK_REPLY', text: '' }];
       setTemplateData({ ...templateData, components: newComponents });
@@ -219,7 +219,7 @@ export default function NewTemplatePage() {
   const removeButton = (componentIndex: number, buttonIndex: number) => {
     const newComponents = [...templateData.components];
     const component = newComponents[componentIndex];
-    
+
     if (component.type === 'BUTTONS' && component.buttons) {
       component.buttons = component.buttons.filter((_, i) => i !== buttonIndex);
       setTemplateData({ ...templateData, components: newComponents });
@@ -230,7 +230,7 @@ export default function NewTemplatePage() {
   const updateButton = (componentIndex: number, buttonIndex: number, updates: Partial<ButtonComponent>) => {
     const newComponents = [...templateData.components];
     const component = newComponents[componentIndex];
-    
+
     if (component.type === 'BUTTONS' && component.buttons) {
       component.buttons[buttonIndex] = { ...component.buttons[buttonIndex], ...updates };
       setTemplateData({ ...templateData, components: newComponents });
@@ -262,11 +262,28 @@ export default function NewTemplatePage() {
       const result = await response.json();
 
       if (!response.ok) {
-        throw new Error(result.message || result.error || 'Failed to create template');
+        // Extract detailed error information from the API response
+        let errorMessage = 'Failed to create template';
+
+        if (result.error && result.message) {
+          // Use the title and message from our improved API response
+          errorMessage = `${result.error}: ${result.message}`;
+        } else if (result.message) {
+          errorMessage = result.message;
+        } else if (result.error) {
+          errorMessage = result.error;
+        }
+
+        // Add additional context if available
+        if (result.details?.code && result.details?.subcode) {
+          errorMessage += `\n\nError Code: ${result.details.code}.${result.details.subcode}`;
+        }
+
+        throw new Error(errorMessage);
       }
 
       console.log('Template created successfully:', result);
-      
+
       // Redirect to templates page
       router.push('/protected/templates');
 
@@ -314,7 +331,7 @@ export default function NewTemplatePage() {
               </div>
             </div>
           </div>
-          
+
           <div className="flex items-center gap-3">
             <Button
               onClick={() => setShowPreview(!showPreview)}
@@ -325,7 +342,7 @@ export default function NewTemplatePage() {
               <Eye className="h-4 w-4" />
               {showPreview ? 'Hide Preview' : 'Show Preview'}
             </Button>
-            
+
             <Button
               onClick={handleCreateTemplate}
               disabled={isCreating}
@@ -338,7 +355,7 @@ export default function NewTemplatePage() {
               )}
               {isCreating ? 'Creating...' : 'Create Template'}
             </Button>
-            
+
             <ThemeSwitcher />
           </div>
         </div>
@@ -368,7 +385,7 @@ export default function NewTemplatePage() {
             <div className="space-y-6 mb-8">
               <div className="bg-card border border-border rounded-lg p-6">
                 <h2 className="text-lg font-semibold mb-4">Template Information</h2>
-                
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <Label htmlFor="name">Template Name *</Label>
@@ -420,9 +437,9 @@ export default function NewTemplatePage() {
                       id="ttl"
                       type="number"
                       value={templateData.message_send_ttl_seconds || ''}
-                      onChange={(e) => setTemplateData({ 
-                        ...templateData, 
-                        message_send_ttl_seconds: e.target.value ? parseInt(e.target.value) : undefined 
+                      onChange={(e) => setTemplateData({
+                        ...templateData,
+                        message_send_ttl_seconds: e.target.value ? parseInt(e.target.value) : undefined
                       })}
                       placeholder="Optional"
                       className="mt-1"
@@ -482,16 +499,15 @@ export default function NewTemplatePage() {
                   <div key={index} className="bg-card border border-border rounded-lg p-6">
                     <div className="flex items-center justify-between mb-4">
                       <h3 className="font-medium flex items-center gap-2">
-                        <div className={`w-3 h-3 rounded-full ${
-                          component.type === 'HEADER' ? 'bg-blue-500' :
-                          component.type === 'BODY' ? 'bg-green-500' :
-                          component.type === 'FOOTER' ? 'bg-purple-500' :
-                          'bg-orange-500'
-                        }`} />
+                        <div className={`w-3 h-3 rounded-full ${component.type === 'HEADER' ? 'bg-blue-500' :
+                            component.type === 'BODY' ? 'bg-green-500' :
+                              component.type === 'FOOTER' ? 'bg-purple-500' :
+                                'bg-orange-500'
+                          }`} />
                         {getComponentTypeName(component.type)}
                         {component.type === 'BODY' && <span className="text-red-500">*</span>}
                       </h3>
-                      
+
                       {component.type !== 'BODY' && (
                         <Button
                           onClick={() => removeComponent(index)}
@@ -511,7 +527,7 @@ export default function NewTemplatePage() {
                           <Label>Format</Label>
                           <select
                             value={component.format || 'TEXT'}
-                            onChange={(e) => updateComponent(index, { 
+                            onChange={(e) => updateComponent(index, {
                               format: e.target.value as TemplateComponent['format'],
                               text: e.target.value === 'TEXT' ? component.text : undefined
                             })}
@@ -523,7 +539,7 @@ export default function NewTemplatePage() {
                             <option value="DOCUMENT">Document</option>
                           </select>
                         </div>
-                        
+
                         {component.format === 'TEXT' && (
                           <div className="space-y-3">
                             <div>
@@ -538,7 +554,7 @@ export default function NewTemplatePage() {
                                 Use {`{{1}}, {{2}}`} for variables
                               </p>
                             </div>
-                            
+
                             {/* Show example inputs if variables detected */}
                             {(() => {
                               const vars = extractVariables(component.text || '');
@@ -604,7 +620,7 @@ export default function NewTemplatePage() {
                             Maximum 1024 characters. Use {`{{1}}, {{2}}`} for variables.
                           </p>
                         </div>
-                        
+
                         {/* Show example inputs if variables detected */}
                         {(() => {
                           const vars = extractVariables(component.text || '');
@@ -685,13 +701,13 @@ export default function NewTemplatePage() {
                                 <Minus className="h-3 w-3" />
                               </Button>
                             </div>
-                            
+
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                               <div>
                                 <Label>Button Type</Label>
                                 <select
                                   value={button.type}
-                                  onChange={(e) => updateButton(index, buttonIndex, { 
+                                  onChange={(e) => updateButton(index, buttonIndex, {
                                     type: e.target.value as ButtonComponent['type'],
                                     url: e.target.value === 'URL' ? button.url : undefined,
                                     phone_number: e.target.value === 'PHONE_NUMBER' ? button.phone_number : undefined
@@ -704,7 +720,7 @@ export default function NewTemplatePage() {
                                   <option value="CATALOG">Catalog</option>
                                 </select>
                               </div>
-                              
+
                               <div>
                                 <Label>Button Text</Label>
                                 <Input
@@ -742,7 +758,7 @@ export default function NewTemplatePage() {
                             )}
                           </div>
                         ))}
-                        
+
                         {(component.buttons?.length || 0) < 10 && (
                           <Button
                             onClick={() => addButton(index)}
@@ -767,7 +783,7 @@ export default function NewTemplatePage() {
             <div className="w-1/2 overflow-y-auto p-6 bg-gradient-to-br from-green-50 to-blue-50 dark:from-green-950/20 dark:to-blue-950/20">
               <div className="sticky top-0 mb-6">
                 <h2 className="text-lg font-semibold mb-4">Template Preview</h2>
-                
+
                 <div className="max-w-sm mx-auto bg-white dark:bg-gray-800 rounded-2xl shadow-lg overflow-hidden">
                   {/* WhatsApp-like message bubble */}
                   <div className="bg-green-500 text-white p-4 rounded-2xl m-4">
@@ -776,7 +792,7 @@ export default function NewTemplatePage() {
                       const headerComp = templateData.components.find(c => c.type === 'HEADER');
                       if (headerComp && headerComp.text) {
                         const displayText = replaceVariablesWithExamples(
-                          headerComp.text, 
+                          headerComp.text,
                           headerComp.example?.header_text
                         );
                         return (
@@ -792,11 +808,11 @@ export default function NewTemplatePage() {
                     {(() => {
                       const bodyComp = templateData.components.find(c => c.type === 'BODY');
                       if (bodyComp) {
-                        const displayText = bodyComp.text 
+                        const displayText = bodyComp.text
                           ? replaceVariablesWithExamples(
-                              bodyComp.text, 
-                              bodyComp.example?.body_text?.[0]
-                            )
+                            bodyComp.text,
+                            bodyComp.example?.body_text?.[0]
+                          )
                           : 'Enter your message body...';
                         return (
                           <div className="mb-2">

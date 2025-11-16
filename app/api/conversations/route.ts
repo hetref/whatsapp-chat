@@ -27,7 +27,7 @@ export async function GET() {
     }
 
     // Get conversations for the authenticated user
-    // This replaces the Supabase user_conversations view
+    // This replaces the user_conversations view
     const conversationsRaw = await prisma.$queryRaw`
       WITH user_messages AS (
         SELECT

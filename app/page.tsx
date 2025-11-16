@@ -80,7 +80,7 @@ export default function Home() {
 
             <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
               <Link
-                href="/auth/login"
+                href="/protected"
                 className="inline-flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-8 py-4 rounded-full font-semibold text-lg transition-colors shadow-lg shadow-green-600/30"
               >
                 Get Started
@@ -691,7 +691,7 @@ export default function Home() {
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
             <Link
-              href="/auth/sign-up"
+              href="/protected"
               className="inline-flex items-center gap-2 bg-white text-green-600 hover:bg-green-50 px-8 py-4 rounded-full font-semibold text-lg transition-colors shadow-lg"
             >
               Start Building Now
@@ -730,7 +730,7 @@ export default function Home() {
                 <li><a href="#features" className="hover:text-foreground transition-colors">Features</a></li>
                 <li><a href="#tech-stack" className="hover:text-foreground transition-colors">Tech Stack</a></li>
                 <li><a href="#self-hosting" className="hover:text-foreground transition-colors">Self-Hosting</a></li>
-                <li><a href="/auth/login" className="hover:text-foreground transition-colors">Get Started</a></li>
+                <li><a href="/protected" className="hover:text-foreground transition-colors">Get Started</a></li>
               </ul>
             </div>
 
