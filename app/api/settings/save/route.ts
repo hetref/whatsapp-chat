@@ -188,7 +188,6 @@ export async function GET() {
     let settings = await prisma.userSettings.findUnique({
       where: { id: userId }
     });
-    let dbError = null;
 
     // If no settings exist at all, create them with a webhook token
     if (!settings) {

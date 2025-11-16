@@ -230,7 +230,7 @@ export async function POST(request: NextRequest) {
 
     // Clean phone number for database consistency
     const cleanPhoneNumber = to.replace(/\s+/g, '').replace(/[^\d]/g, '');
-    
+
     // Check if user exists in our database
     const existingUser = await prisma.user.findUnique({
       where: { id: cleanPhoneNumber }
@@ -258,11 +258,11 @@ export async function POST(request: NextRequest) {
     if (unsupportedFiles.length > 0) {
       console.error('Unsupported file types detected:', unsupportedFiles.map(f => ({ name: f.name, type: f.type })));
       return new NextResponse(
-        JSON.stringify({ 
-          error: 'Unsupported file types', 
+        JSON.stringify({
+          error: 'Unsupported file types',
           message: `WhatsApp does not support the following file types: ${unsupportedFiles.map(f => f.type).join(', ')}`,
           unsupportedFiles: unsupportedFiles.map(f => ({ name: f.name, type: f.type }))
-        }), 
+        }),
         { status: 400, headers: { 'Content-Type': 'application/json' } }
       );
     }
@@ -289,12 +289,12 @@ export async function POST(request: NextRequest) {
 
         // Send media message using user-specific credentials
         const messageResponse = await sendMediaMessage(
-          cleanPhoneNumber, 
-          mediaUpload.id, 
-          mediaType, 
-          accessToken, 
-          phoneNumberId, 
-          apiVersion, 
+          cleanPhoneNumber,
+          mediaUpload.id,
+          mediaType,
+          accessToken,
+          phoneNumberId,
+          apiVersion,
           caption
         );
         const messageId = messageResponse.messages?.[0]?.id;
@@ -375,10 +375,10 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('Error in send-media API:', error);
     return NextResponse.json(
-      { 
-        error: 'Internal server error', 
-        message: error instanceof Error ? error.message : 'Unknown error' 
-      }, 
+      {
+        error: 'Internal server error',
+        message: error instanceof Error ? error.message : 'Unknown error'
+      },
       { status: 500 }
     );
   }
@@ -409,7 +409,7 @@ export async function GET() {
 
     const isConfigured = settings?.accessToken || false;
     const apiVersion = settings?.apiVersion || 'v23.0';
-    
+
     return NextResponse.json({
       status: 'WhatsApp Send Media API',
       configured: isConfigured,

@@ -1,11 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 
-export default async function AuthLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default async function AuthLayout() {
   const { userId } = await auth();
 
   // If user is already authenticated, redirect to protected area

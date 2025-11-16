@@ -258,7 +258,6 @@ export async function POST(
       where: { webhookToken: webhookToken },
       select: { id: true, accessToken: true, apiVersion: true, phoneNumberId: true }
     });
-    const settingsError = null;
 
     if (!userSettings) {
       console.error('No user found for webhook token:', webhookToken?.substring(0, 8) + '...');

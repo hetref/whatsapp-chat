@@ -33,21 +33,17 @@ interface Message {
   isOptimistic?: boolean;
 }
 
-interface MessagePayload {
+interface ConversationApi {
   id: string;
-  sender_id: string;
-  receiver_id: string;
-  content: string;
-  timestamp: string;
-  message_type?: string;
-  media_data?: string | null;
-}
-
-interface UnreadConversation {
-  conversation_id: string;
-  display_name: string;
-  unread_count: number;
-  last_message_time: string;
+  name: string;
+  custom_name?: string;
+  whatsapp_name?: string;
+  last_active: string;
+  unread_count?: number;
+  last_message_time?: string;
+  last_message?: string;
+  last_message_type?: string;
+  last_message_sender?: string;
 }
 
 export default function ChatPage() {
@@ -135,7 +131,7 @@ export default function ChatPage() {
           console.log(`Fetched ${result.conversations.length} user conversations`);
           
           // Transform data to match ChatUser interface
-          const transformedUsers: ChatUser[] = result.conversations.map((conv: any) => ({
+          const transformedUsers: ChatUser[] = result.conversations.map((conv: ConversationApi) => ({
             id: conv.id,
             name: conv.name,
             custom_name: conv.custom_name,
@@ -350,7 +346,7 @@ export default function ChatPage() {
       const result = await response.json();
       
       if (response.ok && result.conversations) {
-        const transformedUsers: ChatUser[] = result.conversations.map((conv: any) => ({
+        const transformedUsers: ChatUser[] = result.conversations.map((conv: ConversationApi) => ({
           id: conv.id,
           name: conv.name,
           custom_name: conv.custom_name,

@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
         displayMessage = parsedMessage.displayMessage || parsedMessage.templateName;
         console.log('Detected template message:', templateData.templateName);
       }
-    } catch (e) {
+    } catch {
       // Not a JSON message, treat as regular text
     }
 
@@ -115,7 +115,6 @@ export async function POST(request: NextRequest) {
     const whatsappApiUrl = `https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`;
     
     let messageData;
-    let responseData;
 
     if (isTemplateMessage && templateData) {
       // Handle template message
@@ -209,7 +208,7 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify(messageData),
     });
 
-    responseData = await whatsappResponse.json();
+    const responseData = await whatsappResponse.json();
 
     console.log('WhatsApp response:', responseData);
 
