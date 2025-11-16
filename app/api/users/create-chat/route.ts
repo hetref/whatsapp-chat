@@ -32,14 +32,11 @@ export async function POST(request: NextRequest) {
 
     return handleSingleUserCreation(supabase, user, phoneNumber, customName);
 
-  } catch (error) {
-    console.error('Error in create-chat API:', error);
-    return new NextResponse(
-      JSON.stringify({ 
-        error: 'Internal server error', 
-        message: error instanceof Error ? error.message : 'Unknown error' 
-      }), 
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
+  } catch (error: unknown) {
+    console.error('Error in create-chat API (POST):', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
     );
   }
 }
@@ -268,7 +265,7 @@ async function handleBulkUserCreation(
       });
       results.successCount++;
 
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Error processing user:', error);
       results.failed.push({
         phoneNumber: userInput.phoneNumber,

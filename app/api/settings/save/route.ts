@@ -158,7 +158,7 @@ export async function POST(request: NextRequest) {
       },
     });
 
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Error in save settings API:', error);
     return NextResponse.json(
       {
@@ -211,7 +211,7 @@ export async function GET() {
             apiVersion: 'v23.0'
           }
         });
-      } catch (insertError) {
+      } catch (insertError: unknown) {
         console.error('Error creating settings:', insertError);
         return NextResponse.json(
           { error: 'Failed to create settings' },
@@ -228,7 +228,7 @@ export async function GET() {
           data: { webhookToken: webhookToken }
         });
         console.log('Generated webhook token for existing user:', userId);
-      } catch (updateError) {
+      } catch (updateError: unknown) {
         console.error('Error updating webhook token:', updateError);
       }
     }
@@ -256,8 +256,8 @@ export async function GET() {
       } : null,
     });
 
-  } catch (error) {
-    console.error('Error in get settings API:', error);
+  } catch (error: unknown) {
+    console.error('Unexpected error in save settings API:', error);
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

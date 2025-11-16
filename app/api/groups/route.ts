@@ -67,7 +67,7 @@ export async function GET() {
       groups: formattedGroups,
     });
 
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Error in groups API:', error);
     return NextResponse.json(
       { error: 'Internal server error' },
@@ -132,10 +132,10 @@ export async function POST(request: NextRequest) {
       group: result,
     });
 
-  } catch (error) {
-    console.error('Error in create group API:', error);
+  } catch (error: unknown) {
+    console.error('Error creating broadcast group:', error);
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: 'Failed to create broadcast group' },
       { status: 500 }
     );
   }

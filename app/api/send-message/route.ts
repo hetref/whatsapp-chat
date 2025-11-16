@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { prisma } from '@/lib/db';
 
+interface TemplateComponent {
+  type: string;
+  text?: string;
+  format?: string;
+}
+
 /**
  * POST handler for sending WhatsApp messages
  * Accepts message data and sends it via WhatsApp Cloud API
@@ -102,7 +108,7 @@ export async function POST(request: NextRequest) {
             lastActive: new Date()
           }
         });
-      } catch (userError) {
+      } catch (userError: unknown) {
         console.error('Error creating user:', userError);
         return NextResponse.json(
           { error: 'Failed to create user record' },
@@ -242,7 +248,7 @@ export async function POST(request: NextRequest) {
         template_id: templateData.templateData?.id,
         language: templateData.templateData?.language || 'en',
         variables: templateData.variables,
-        original_content: templateData.templateData?.components?.find(c => c.type === 'BODY')?.text || templateData.templateName
+        original_content: templateData.templateData?.components?.find((c: TemplateComponent) => c.type === 'BODY')?.text || templateData.templateName
       });
     }
 
@@ -279,12 +285,12 @@ export async function POST(request: NextRequest) {
           isSentByMe: messageObject.is_sent_by_me,
           isRead: messageObject.is_read,
           messageType: messageObject.message_type,
-          mediaData: messageObject.media_data
+          mediaData: messageObject.media_data || undefined
         }
       });
       console.log('Message stored successfully in database:', insertedMessage.id);
-    } catch (dbError) {
-      console.error('Error storing sent message in database:', dbError);
+    } catch (dbError: unknown) {
+      console.error('Error storing message in database:', dbError);
       // Don't fail the request if database storage fails, message was already sent
     }
 
@@ -294,8 +300,8 @@ export async function POST(request: NextRequest) {
         where: { id: userId },
         data: { lastActive: new Date(timestamp) }
       });
-    } catch (userUpdateError) {
-      console.error('Error updating user last_active:', userUpdateError);
+    } catch (userUpdateError: unknown) {
+      console.error('Error updating user lastActive:', userUpdateError);
     }
 
     // Return success response
@@ -307,13 +313,13 @@ export async function POST(request: NextRequest) {
       storedInDb: true
     });
 
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Error in send-message API:', error);
     return NextResponse.json(
-      {
-        error: 'Internal server error',
-        message: error instanceof Error ? error.message : 'Unknown error'
-      },
+      { 
+        error: 'Internal server error', 
+        message: error instanceof Error ? error.message : 'Unknown error' 
+      }, 
       { status: 500 }
     );
   }

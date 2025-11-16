@@ -113,7 +113,7 @@ export async function GET(
     });
 
     return new NextResponse(challenge, { status: 200 });
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Error in webhook verification:', error);
     return new NextResponse('Internal Server Error', { status: 500 });
   }
@@ -152,7 +152,7 @@ async function getWhatsAppMediaUrl(
     console.log('WhatsApp media info retrieved:', { id: mediaId, url: mediaInfo.url });
 
     return mediaInfo.url;
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Error getting WhatsApp media URL:', error);
     return null;
   }
@@ -383,8 +383,8 @@ export async function POST(
             where: { id: phoneNumber },
             data: { lastActive: new Date(messageTimestamp) }
           });
-        } catch (updateError) {
-          console.error('Error updating user last_active:', updateError);
+        } catch (updateError: unknown) {
+          console.error('Error updating user last_seen:', updateError);
         }
       }
 
@@ -424,7 +424,7 @@ export async function POST(
             isSentByMe: messageObject.is_sent_by_me,
             isRead: messageObject.is_read,
             messageType: messageObject.message_type,
-            mediaData: messageObject.media_data
+            mediaData: messageObject.media_data || undefined
           }
         });
         console.log(`${messageType} message stored successfully: ${messageObject.id}`);

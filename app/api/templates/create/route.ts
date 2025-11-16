@@ -188,7 +188,7 @@ export async function POST(request: NextRequest) {
       timestamp: new Date().toISOString(),
     });
 
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Error in create template API:', error);
     return new NextResponse(
       JSON.stringify({ 

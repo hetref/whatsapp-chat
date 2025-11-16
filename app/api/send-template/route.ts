@@ -218,7 +218,7 @@ export async function POST(request: NextRequest) {
             lastActive: new Date()
           }
         });
-      } catch (userError) {
+      } catch (userError: unknown) {
         console.error('Error creating user:', userError);
         // Continue anyway as this shouldn't block template sending
       }
@@ -347,7 +347,7 @@ export async function POST(request: NextRequest) {
         data: messageObject
       });
       console.log('Template message stored successfully in database:', messageObject.id);
-    } catch (dbError) {
+    } catch (dbError: unknown) {
       console.error('Error storing template message in database:', dbError);
       // Don't fail the request if database storage fails
     }
@@ -360,7 +360,7 @@ export async function POST(request: NextRequest) {
       timestamp: timestamp,
     });
 
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Error in send-template API:', error);
     return NextResponse.json(
       { 

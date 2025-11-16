@@ -67,91 +67,89 @@ async function uploadMediaToWhatsApp(
       id: result.id,
       url: `https://graph.facebook.com/${apiVersion}/${result.id}`,
     };
-  } catch (error) {
-    console.error('Error uploading media to WhatsApp:', {
-      error: error instanceof Error ? error.message : 'Unknown error',
-      fileName: file.name,
-      fileType: file.type,
-      fileSize: file.size
-    });
+  } catch (error: unknown) {
+    console.error('Error uploading media:', error);
     return null;
   }
 }
 
 /**
- * Send media message via WhatsApp using user-specific credentials
+ * Send WhatsApp media message after uploading
  */
 async function sendMediaMessage(
   to: string,
   mediaId: string,
   mediaType: string,
+  caption: string | null,
   accessToken: string,
   phoneNumberId: string,
-  apiVersion: string,
-  caption?: string
-): Promise<{ messages: { id: string }[] }> {
+  apiVersion: string
+): Promise<{ messages: Array<{ id: string }> }> {
+  const messageData: {
+    messaging_product: string;
+    to: string;
+    type: string;
+    image?: { id: string; caption?: string };
+    video?: { id: string; caption?: string };
+    audio?: { id: string };
+    document?: { id: string; filename?: string };
+  } = {
+    messaging_product: 'whatsapp',
+    to: to,
+    type: mediaType,
+  };
+
+  // Configure message based on media type
+  switch (mediaType) {
+    case 'image':
+      messageData.image = {
+        id: mediaId,
+        ...(caption && { caption }),
+      };
+      break;
+    case 'video':
+      messageData.video = {
+        id: mediaId,
+        ...(caption && { caption }),
+      };
+      break;
+    case 'audio':
+      messageData.audio = {
+        id: mediaId,
+      };
+      break;
+    case 'document':
+      messageData.document = {
+        id: mediaId,
+      };
+      break;
+  }
+
   try {
-    const whatsappApiUrl = `https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`;
-
-    const messageData: {
-      messaging_product: string;
-      to: string;
-      type: string;
-      image?: { id: string; caption?: string };
-      video?: { id: string; caption?: string };
-      audio?: { id: string };
-      document?: { id: string; filename?: string };
-    } = {
-      messaging_product: 'whatsapp',
-      to: to,
-      type: mediaType,
-    };
-
-    // Configure message based on media type
-    switch (mediaType) {
-      case 'image':
-        messageData.image = {
-          id: mediaId,
-          ...(caption && { caption }),
-        };
-        break;
-      case 'video':
-        messageData.video = {
-          id: mediaId,
-          ...(caption && { caption }),
-        };
-        break;
-      case 'audio':
-        messageData.audio = {
-          id: mediaId,
-        };
-        break;
-      case 'document':
-        messageData.document = {
-          id: mediaId,
-        };
-        break;
-      default:
-        throw new Error(`Unsupported media type: ${mediaType}`);
-    }
-
-    const response = await fetch(whatsappApiUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(messageData),
-    });
+    const response = await fetch(
+      `https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(messageData),
+      }
+    );
 
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error('WhatsApp message send failed:', errorText);
-      throw new Error(`Failed to send message: ${errorText}`);
-    }
+    const errorText = await response.text();
+    console.error('WhatsApp API error:', {
+      status: response.status,
+      statusText: response.statusText,
+      error: errorText
+    });
+    throw new Error(`WhatsApp API error: ${response.status} - ${errorText}`);
+  }
 
     return await response.json();
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Error sending media message:', error);
     throw error;
   }
@@ -247,8 +245,8 @@ export async function POST(request: NextRequest) {
             lastActive: new Date()
           }
         });
-      } catch (userError) {
-        console.error('Error creating user:', userError);
+      } catch (userError: unknown) {
+        console.error('Failed to create user:', userError);
         // Continue anyway as this shouldn't block media sending
       }
     }
@@ -292,10 +290,10 @@ export async function POST(request: NextRequest) {
           cleanPhoneNumber,
           mediaUpload.id,
           mediaType,
+          caption,
           accessToken,
           phoneNumberId,
-          apiVersion,
-          caption
+          apiVersion
         );
         const messageId = messageResponse.messages?.[0]?.id;
 
@@ -333,7 +331,7 @@ export async function POST(request: NextRequest) {
             data: messageObject
           });
           console.log('Message stored successfully in database:', messageObject.id);
-        } catch (dbError) {
+        } catch (dbError: unknown) {
           console.error('Error storing message in database:', dbError);
         }
 
@@ -345,7 +343,7 @@ export async function POST(request: NextRequest) {
           s3Uploaded: !!s3Url,
         });
 
-      } catch (error) {
+      } catch (error: unknown) {
         console.error(`Error processing file ${file.name}:`, error);
         results.push({
           success: false,
@@ -372,7 +370,7 @@ export async function POST(request: NextRequest) {
       timestamp,
     });
 
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Error in send-media API:', error);
     return NextResponse.json(
       {

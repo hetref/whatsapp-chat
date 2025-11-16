@@ -68,7 +68,7 @@ export async function POST(request: NextRequest) {
       timestamp: new Date().toISOString()
     });
 
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Error in update-name API:', error);
     return NextResponse.json(
       { 

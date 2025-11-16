@@ -83,7 +83,7 @@ export async function GET() {
     }));
 
     return NextResponse.json({ conversations });
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Error fetching conversations:', error);
     return NextResponse.json(
       { error: 'Internal server error' },

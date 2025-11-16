@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
       webhook_verified: settings.webhookVerified,
     });
 
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Error in verify webhook API:', error);
     return NextResponse.json(
       { error: 'Internal server error' },

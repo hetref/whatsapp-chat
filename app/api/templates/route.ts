@@ -160,7 +160,7 @@ export async function GET(request: NextRequest) {
       timestamp: new Date().toISOString(),
     });
 
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Error in templates API:', error);
     return new NextResponse(
       JSON.stringify({ 

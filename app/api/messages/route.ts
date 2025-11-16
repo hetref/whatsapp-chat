@@ -67,7 +67,7 @@ export async function GET(request: NextRequest) {
     })).reverse(); // Reverse to display chronologically (oldest first)
 
     return NextResponse.json({ messages: formattedMessages });
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Error fetching messages:', error);
     return NextResponse.json(
       { error: 'Internal server error' },
