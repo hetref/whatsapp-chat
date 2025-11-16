@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
     let isTemplateMessage = false;
     let templateData = null;
     let displayMessage = message;
-    
+
     try {
       const parsedMessage = JSON.parse(message);
       if (parsedMessage.type === 'template') {
@@ -51,14 +51,14 @@ export async function POST(request: NextRequest) {
     // Clean and validate phone number format for WhatsApp API
     // WhatsApp expects phone numbers without + prefix, with country code
     const cleanPhoneNumber = to.replace(/\s+/g, '').replace(/[^\d]/g, ''); // Remove all non-digits including +
-    
+
     // Validate phone number format (10-15 digits without + prefix)
     const phoneRegex = /^\d{10,15}$/;
     if (!phoneRegex.test(cleanPhoneNumber)) {
       return NextResponse.json(
-        { 
-          error: 'Invalid phone number format', 
-          message: 'Phone number must contain 10-15 digits (e.g., 918097296453)' 
+        {
+          error: 'Invalid phone number format',
+          message: 'Phone number must contain 10-15 digits (e.g., 918097296453)'
         },
         { status: 400 }
       );
@@ -113,7 +113,7 @@ export async function POST(request: NextRequest) {
 
     // Prepare WhatsApp API request
     const whatsappApiUrl = `https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`;
-    
+
     let messageData;
 
     if (isTemplateMessage && templateData) {
@@ -129,7 +129,7 @@ export async function POST(request: NextRequest) {
             type: 'text',
             text: variables.header[key]
           }));
-        
+
         templateComponents.push({
           type: 'header',
           parameters: headerParams
@@ -144,7 +144,7 @@ export async function POST(request: NextRequest) {
             type: 'text',
             text: variables.body[key]
           }));
-        
+
         templateComponents.push({
           type: 'body',
           parameters: bodyParams
@@ -159,7 +159,7 @@ export async function POST(request: NextRequest) {
             type: 'text',
             text: variables.footer[key]
           }));
-        
+
         templateComponents.push({
           type: 'footer',
           parameters: footerParams
@@ -215,10 +215,10 @@ export async function POST(request: NextRequest) {
     if (!whatsappResponse.ok) {
       console.error('WhatsApp API error:', responseData);
       return NextResponse.json(
-        { 
-          error: 'Failed to send message via WhatsApp API', 
-          details: responseData 
-        }, 
+        {
+          error: 'Failed to send message via WhatsApp API',
+          details: responseData
+        },
         { status: whatsappResponse.status }
       );
     }
@@ -233,7 +233,7 @@ export async function POST(request: NextRequest) {
     // sender_id is the authenticated user (who is sending the message)
     // receiver_id is the phone number (who is receiving the message)
     let mediaDataForDb = null;
-    
+
     if (isTemplateMessage && templateData) {
       // Store template metadata for proper display
       mediaDataForDb = JSON.stringify({
@@ -245,7 +245,7 @@ export async function POST(request: NextRequest) {
         original_content: templateData.templateData?.components?.find(c => c.type === 'BODY')?.text || templateData.templateName
       });
     }
-    
+
     const messageObject = {
       id: messageId || `outgoing_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       sender_id: userId, // Current authenticated user (sender)
@@ -310,10 +310,10 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('Error in send-message API:', error);
     return NextResponse.json(
-      { 
-        error: 'Internal server error', 
-        message: error instanceof Error ? error.message : 'Unknown error' 
-      }, 
+      {
+        error: 'Internal server error',
+        message: error instanceof Error ? error.message : 'Unknown error'
+      },
       { status: 500 }
     );
   }
@@ -345,7 +345,7 @@ export async function GET() {
 
     const isConfigured = userSettings?.accessToken && userSettings?.phoneNumberId;
     const apiVersion = userSettings?.apiVersion || 'v23.0';
-    
+
     return NextResponse.json({
       status: 'WhatsApp Send Message API',
       configured: isConfigured,

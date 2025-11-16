@@ -77,21 +77,21 @@ export async function GET(
     });
     const error = null;
 
-      console.log("SETTINGS:", settings, error, webhookToken);
+    console.log("SETTINGS:", settings, error, webhookToken);
 
     if (error || !settings) {
       console.error('Webhook verification failed: webhook token not found');
       console.error('Error details:', error);
       console.error('Looking for webhook_token:', webhookToken);
-      
+
       // Check if there are any settings for debugging
       const allSettings = await prisma.userSettings.findMany({
         select: { id: true, webhookToken: true },
         take: 1
       });
-      
+
       console.error('Debug - Sample settings:', allSettings);
-      
+
       return new NextResponse('Forbidden', { status: 403 });
     }
 
@@ -106,7 +106,7 @@ export async function GET(
     // Mark webhook as verified for this user
     await prisma.userSettings.update({
       where: { id: settings.id },
-      data: { 
+      data: {
         webhookVerified: true,
         updatedAt: new Date()
       }
@@ -123,8 +123,8 @@ export async function GET(
  * Get media URL from WhatsApp API using user-specific access token
  */
 async function getWhatsAppMediaUrl(
-  mediaId: string, 
-  accessToken: string, 
+  mediaId: string,
+  accessToken: string,
   apiVersion: string
 ): Promise<string | null> {
   try {
@@ -150,7 +150,7 @@ async function getWhatsAppMediaUrl(
 
     const mediaInfo = await mediaInfoResponse.json();
     console.log('WhatsApp media info retrieved:', { id: mediaId, url: mediaInfo.url });
-    
+
     return mediaInfo.url;
   } catch (error) {
     console.error('Error getting WhatsApp media URL:', error);
@@ -170,7 +170,7 @@ function processMessageContent(message: WhatsAppMessage) {
     case 'text':
       content = message.text?.body || '';
       break;
-      
+
     case 'image':
       content = message.image?.caption || '[Image]';
       mediaData = {
@@ -181,7 +181,7 @@ function processMessageContent(message: WhatsAppMessage) {
         caption: message.image?.caption,
       };
       break;
-      
+
     case 'document':
       content = `[Document: ${message.document?.filename || 'Unknown'}]`;
       mediaData = {
@@ -192,7 +192,7 @@ function processMessageContent(message: WhatsAppMessage) {
         filename: message.document?.filename,
       };
       break;
-      
+
     case 'audio':
       content = message.audio?.voice ? '[Voice Message]' : '[Audio]';
       mediaData = {
@@ -203,7 +203,7 @@ function processMessageContent(message: WhatsAppMessage) {
         voice: message.audio?.voice,
       };
       break;
-      
+
     case 'video':
       content = message.video?.caption || '[Video]';
       mediaData = {
@@ -214,7 +214,7 @@ function processMessageContent(message: WhatsAppMessage) {
         caption: message.video?.caption,
       };
       break;
-      
+
     case 'sticker':
       content = '[Sticker]';
       mediaData = {
@@ -224,7 +224,7 @@ function processMessageContent(message: WhatsAppMessage) {
         sha256: message.sticker?.sha256,
       };
       break;
-      
+
     default:
       content = `[Unsupported message type: ${message.type}]`;
       console.warn('Unsupported message type:', message.type);
@@ -261,15 +261,15 @@ export async function POST(
 
     if (!userSettings) {
       console.error('No user found for webhook token:', webhookToken?.substring(0, 8) + '...');
-      
+
       // Debug: Check if there are any settings
       const debugSettings = await prisma.userSettings.findMany({
         select: { id: true, webhookToken: true },
         take: 1
       });
-      
+
       console.error('Debug - Sample settings:', debugSettings);
-      
+
       // Still acknowledge to avoid retries
       return new NextResponse('OK', { status: 200 });
     }
@@ -286,16 +286,16 @@ export async function POST(
     const value = changes?.value;
     const messages: WhatsAppMessage[] = value?.messages || [];
     const contacts: WhatsAppContact[] = value?.contacts || [];
-    
+
     // Extract the phone number ID that received the message
     const phoneNumberId = value?.metadata?.phone_number_id;
-    
+
     // Verify this message is for the correct user
     if (phoneNumberId && userSettings.phoneNumberId !== phoneNumberId) {
       console.warn('Phone number ID mismatch. Expected:', userSettings.phoneNumberId, 'Got:', phoneNumberId);
       return new NextResponse('OK', { status: 200 });
     }
-    
+
     // Process each incoming message
     for (const message of messages) {
       const phoneNumber = message.from;
@@ -313,26 +313,26 @@ export async function POST(
       // Handle media upload to S3 if it's a media message
       let s3MediaUrl = null;
       let s3UploadSuccess = false;
-      
+
       if (mediaData && mediaData.id && accessToken) {
         console.log(`Processing media upload for ${messageType}: ${mediaData.id}`);
-        
+
         try {
           // Get WhatsApp media URL first
           const whatsappMediaUrl = await getWhatsAppMediaUrl(
-            mediaData.id, 
-            accessToken, 
+            mediaData.id,
+            accessToken,
             apiVersion
           );
-          
+
           if (whatsappMediaUrl) {
             console.log(`Downloading and uploading ${messageType} to S3...`);
-            
+
             // Validate media ID format
             if (!/^\d+$/.test(mediaData.id)) {
               throw new Error(`Invalid media ID format: ${mediaData.id}`);
             }
-            
+
             // Download from WhatsApp and upload to S3
             s3MediaUrl = await downloadAndUploadToS3(
               whatsappMediaUrl,
@@ -341,7 +341,7 @@ export async function POST(
               mediaData.mime_type || 'application/octet-stream',
               accessToken
             );
-            
+
             if (s3MediaUrl) {
               console.log(`Successfully uploaded ${messageType} to S3: ${s3MediaUrl}`);
               s3UploadSuccess = true;

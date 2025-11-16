@@ -71,7 +71,7 @@ export default function ChatPage() {
     const checkScreenSize = () => {
       setIsMobile(window.innerWidth < 768);
     };
-    
+
     checkScreenSize();
     window.addEventListener('resize', checkScreenSize);
     return () => window.removeEventListener('resize', checkScreenSize);
@@ -100,12 +100,12 @@ export default function ChatPage() {
   useEffect(() => {
     const checkSetup = async () => {
       if (!isLoaded) return;
-      
+
       if (user) {
         // Check if user has completed setup
         const response = await fetch('/api/settings/save');
         const data = await response.json();
-        
+
         const setupComplete = data.settings?.access_token_added || data.settings?.webhook_verified;
         setIsSetupComplete(setupComplete);
         setCheckingSetup(false);
@@ -122,14 +122,14 @@ export default function ChatPage() {
 
     const fetchUsers = async () => {
       console.log('Fetching user conversations...');
-      
+
       try {
         const response = await fetch('/api/conversations');
         const result = await response.json();
-        
+
         if (response.ok && result.conversations) {
           console.log(`Fetched ${result.conversations.length} user conversations`);
-          
+
           // Transform data to match ChatUser interface
           const transformedUsers: ChatUser[] = result.conversations.map((conv: ConversationApi) => ({
             id: conv.id,
@@ -174,29 +174,29 @@ export default function ChatPage() {
 
     const fetchMessages = async () => {
       console.log(`Fetching messages between ${user.id} and ${selectedUser.id}`);
-      
+
       try {
         const response = await fetch(`/api/messages?conversationId=${selectedUser.id}&limit=50`);
         const result = await response.json();
-        
+
         if (response.ok && result.messages) {
           console.log(`Fetched ${result.messages.length} messages`);
-          
+
           // Ensure is_sent_by_me is set correctly
           const mappedMessages = result.messages.map((msg: Message) => ({
             ...msg,
             is_sent_by_me: msg.sender_id === user.id
           }));
-          
+
           // Preserve optimistic messages during polling updates
           setMessages((prevMessages) => {
             const optimisticMessages = prevMessages.filter(msg => msg.isOptimistic);
             // No need to reverse - API now returns messages in chronological order (oldest to newest)
-            
+
             // Combine real messages with optimistic ones, avoiding duplicates
             return [...mappedMessages, ...optimisticMessages];
           });
-          
+
           // Debug: Log first few messages
           if (mappedMessages.length > 0) {
             console.log('Sample messages:', mappedMessages.slice(0, 3).map((m: Message) => ({
@@ -238,19 +238,19 @@ export default function ChatPage() {
 
     const fetchBroadcastMessages = async () => {
       console.log(`Fetching broadcast messages for group ${broadcastGroupId}`);
-      
+
       try {
         const response = await fetch(`/api/groups/${broadcastGroupId}/messages`);
         const result = await response.json();
-        
+
         if (response.ok && result.success) {
           console.log(`Fetched ${result.messages?.length || 0} broadcast messages`);
-          
+
           // Preserve optimistic messages during polling updates
           setMessages((prevMessages) => {
             const optimisticMessages = prevMessages.filter(msg => msg.isOptimistic);
             const fetchedMessages = result.messages || [];
-            
+
             // Combine real messages with optimistic ones, avoiding duplicates
             return [...fetchedMessages, ...optimisticMessages];
           });
@@ -279,21 +279,21 @@ export default function ChatPage() {
   // Handle user selection and mark messages as read
   const handleUserSelect = async (selectedUser: ChatUser) => {
     console.log('User selected:', selectedUser);
-    
+
     // Clear broadcast group state when selecting an individual user
     setBroadcastGroupId(null);
     setBroadcastGroupName(null);
-    
+
     setSelectedUser(selectedUser);
-    
+
     // Immediately clear unread count in UI for better UX
     if (selectedUser.unread_count && selectedUser.unread_count > 0) {
-      setUsers(prev => prev.map(u => 
-        u.id === selectedUser.id 
+      setUsers(prev => prev.map(u =>
+        u.id === selectedUser.id
           ? { ...u, unread_count: 0 }
           : u
       ));
-      
+
       // Mark messages as read in the background
       try {
         const response = await fetch('/api/messages/mark-read', {
@@ -312,8 +312,8 @@ export default function ChatPage() {
         } else {
           console.error('Failed to mark messages as read');
           // Revert unread count if API fails
-          setUsers(prev => prev.map(u => 
-            u.id === selectedUser.id 
+          setUsers(prev => prev.map(u =>
+            u.id === selectedUser.id
               ? { ...u, unread_count: selectedUser.unread_count }
               : u
           ));
@@ -321,8 +321,8 @@ export default function ChatPage() {
       } catch (error) {
         console.error('Error marking messages as read:', error);
         // Revert unread count if API fails
-        setUsers(prev => prev.map(u => 
-          u.id === selectedUser.id 
+        setUsers(prev => prev.map(u =>
+          u.id === selectedUser.id
             ? { ...u, unread_count: selectedUser.unread_count }
             : u
         ));
@@ -338,13 +338,13 @@ export default function ChatPage() {
 
   const refreshUsers = useCallback(async () => {
     if (!user) return;
-    
+
     console.log('Refreshing user conversations...');
-    
+
     try {
       const response = await fetch('/api/conversations');
       const result = await response.json();
-      
+
       if (response.ok && result.conversations) {
         const transformedUsers: ChatUser[] = result.conversations.map((conv: ConversationApi) => ({
           id: conv.id,
@@ -389,7 +389,7 @@ export default function ChatPage() {
       }
 
       console.log('Name updated successfully:', result);
-      
+
       // Refresh users list to show updated name
       await refreshUsers();
 
@@ -401,15 +401,15 @@ export default function ChatPage() {
 
   const handleBroadcastToGroup = useCallback((groupId: string, groupName: string) => {
     console.log('Broadcasting to group:', groupName);
-    
+
     // Clear individual user state
     setSelectedUser(null);
     setMessages([]);
-    
+
     // Set broadcast group state
     setBroadcastGroupId(groupId);
     setBroadcastGroupName(groupName);
-    
+
     // Show chat window on mobile
     setShowChat(true);
   }, []);
@@ -418,17 +418,17 @@ export default function ChatPage() {
     if (!broadcastGroupId || !user || sendingMessage) return;
 
     setSendingMessage(true);
-    
+
     // Generate optimistic message ID
     const optimisticId = `optimistic_broadcast_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     const timestamp = new Date().toISOString();
-    
+
     // Check if content is a template (JSON format)
     let requestBody;
     let messageContent = content;
     let messageType = 'text';
     let isTemplate = false;
-    
+
     try {
       const parsedContent = JSON.parse(content);
       if (parsedContent.type === 'template') {
@@ -456,7 +456,7 @@ export default function ChatPage() {
         messageType: 'text',
       };
     }
-    
+
     // Create optimistic message for instant UI feedback
     const optimisticMessage: Message = {
       id: optimisticId,
@@ -469,13 +469,13 @@ export default function ChatPage() {
       media_data: isTemplate ? content : JSON.stringify({ broadcast_group_id: broadcastGroupId }),
       isOptimistic: true
     };
-    
+
     // Add optimistic message to UI immediately
     setMessages((prev) => [...prev, optimisticMessage]);
-    
+
     try {
       console.log(`Broadcasting message to group ${broadcastGroupId}`);
-      
+
       const response = await fetch(`/api/groups/${broadcastGroupId}/broadcast`, {
         method: 'POST',
         headers: {
@@ -491,29 +491,29 @@ export default function ChatPage() {
       }
 
       console.log('Broadcast sent successfully:', result);
-      
+
       // Remove optimistic message and refresh to get real messages
       setMessages((prev) => prev.filter(m => m.id !== optimisticId));
-      
+
       // Refresh broadcast messages to show the real ones
       const messagesResponse = await fetch(`/api/groups/${broadcastGroupId}/messages`);
       const messagesResult = await messagesResponse.json();
       if (messagesResponse.ok && messagesResult.success) {
         setMessages(messagesResult.messages || []);
       }
-      
+
       // Show success message
       alert(`Broadcast sent to ${result.results.success}/${result.results.total} members`);
-      
+
       // Refresh users list to show the broadcast messages
       await refreshUsers();
-      
+
     } catch (error) {
       console.error('Error sending broadcast:', error);
-      
+
       // Remove optimistic message on error
       setMessages((prev) => prev.filter(m => m.id !== optimisticId));
-      
+
       alert(`Failed to send broadcast: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setSendingMessage(false);
@@ -526,15 +526,15 @@ export default function ChatPage() {
       await handleSendBroadcast(content);
       return;
     }
-    
+
     if (!selectedUser || !user || sendingMessage) return;
 
     setSendingMessage(true);
-    
+
     // Generate optimistic message ID
     const optimisticId = `optimistic_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     const timestamp = new Date().toISOString();
-    
+
     // Create optimistic message for instant UI feedback
     const optimisticMessage: Message = {
       id: optimisticId,
@@ -547,13 +547,13 @@ export default function ChatPage() {
       media_data: null,
       isOptimistic: true
     };
-    
+
     // Add optimistic message to UI immediately
     setMessages((prev) => [...prev, optimisticMessage]);
-    
+
     try {
       console.log(`Sending message to ${selectedUser.id}: ${content}`);
-      
+
       // Call the WhatsApp API endpoint which handles both WhatsApp sending and database storage
       const response = await fetch('/api/send-message', {
         method: 'POST',
@@ -573,46 +573,46 @@ export default function ChatPage() {
       }
 
       console.log('Message sent successfully:', result);
-      
+
       // Replace optimistic message with real message from API response
-      setMessages((prev) => prev.map(m => 
-        m.id === optimisticId 
+      setMessages((prev) => prev.map(m =>
+        m.id === optimisticId
           ? {
-              id: result.messageId,
-              sender_id: user.id,
-              receiver_id: selectedUser.id,
-              content,
-              timestamp: result.timestamp || timestamp,
-              is_sent_by_me: true,
-              message_type: 'text',
-              media_data: null,
-              isOptimistic: false
-            }
+            id: result.messageId,
+            sender_id: user.id,
+            receiver_id: selectedUser.id,
+            content,
+            timestamp: result.timestamp || timestamp,
+            is_sent_by_me: true,
+            message_type: 'text',
+            media_data: null,
+            isOptimistic: false
+          }
           : m
       ));
-      
+
       // Update the user list to show this as the latest message
-      setUsers(prev => prev.map(u => 
-        u.id === selectedUser.id 
-          ? { 
-              ...u, 
-              last_message: content,
-              last_message_time: result.timestamp || timestamp,
-              last_message_type: 'text',
-              last_message_sender: user.id
-            }
+      setUsers(prev => prev.map(u =>
+        u.id === selectedUser.id
+          ? {
+            ...u,
+            last_message: content,
+            last_message_time: result.timestamp || timestamp,
+            last_message_type: 'text',
+            last_message_sender: user.id
+          }
           : u
       ));
-      
+
     } catch (error) {
       console.error('Error sending message:', error);
-      
+
       // Remove optimistic message on error
       setMessages((prev) => prev.filter(m => m.id !== optimisticId));
-      
+
       // Show error to user
       alert(`Failed to send message: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      
+
       // Note: Fallback storage is handled by the send-message API endpoint
     } finally {
       setSendingMessage(false);
@@ -630,7 +630,7 @@ export default function ChatPage() {
       </div>
     );
   }
-  
+
   // Show setup required message if setup is not complete
   if (isSetupComplete === false) {
     return (
@@ -641,15 +641,15 @@ export default function ChatPage() {
               <AlertCircle className="h-12 w-12 text-amber-600 dark:text-amber-400" />
             </div>
           </div>
-          
+
           <div className="space-y-2">
             <h2 className="text-2xl font-bold">Setup Required</h2>
             <p className="text-muted-foreground">
-              Please complete the WhatsApp setup to access the chat interface. 
+              Please complete the WhatsApp setup to access the chat interface.
               You need to configure either the Access Token or Webhook to continue.
             </p>
           </div>
-          
+
           <div className="space-y-3">
             <Link href="/protected/setup">
               <Button className="w-full" size="lg">
@@ -657,7 +657,7 @@ export default function ChatPage() {
                 Go to Setup
               </Button>
             </Link>
-            
+
             <p className="text-xs text-muted-foreground">
               This will only take a few minutes
             </p>
@@ -674,7 +674,7 @@ export default function ChatPage() {
         <>
           {/* User List - Desktop */}
           <div className="w-1/3 border-r border-border">
-            <UserList 
+            <UserList
               users={users}
               selectedUser={selectedUser}
               onUserSelect={handleUserSelect}
@@ -683,7 +683,7 @@ export default function ChatPage() {
               onBroadcastToGroup={handleBroadcastToGroup}
             />
           </div>
-          
+
           {/* Chat Window - Desktop */}
           <div className="flex-1">
             <ChatWindow
@@ -710,7 +710,7 @@ export default function ChatPage() {
           {!showChat ? (
             // User List - Mobile
             <div className="w-full">
-              <UserList 
+              <UserList
                 users={users}
                 selectedUser={selectedUser}
                 onUserSelect={handleUserSelect}
@@ -718,7 +718,7 @@ export default function ChatPage() {
                 onUsersUpdate={refreshUsers}
                 onBroadcastToGroup={handleBroadcastToGroup}
               />
-      </div>
+            </div>
           ) : (
             // Chat Window - Mobile
             <div className="w-full">
@@ -736,7 +736,7 @@ export default function ChatPage() {
                 onUpdateName={handleUpdateName}
                 broadcastGroupName={broadcastGroupName}
               />
-      </div>
+            </div>
           )}
         </>
       )}

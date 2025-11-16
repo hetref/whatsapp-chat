@@ -96,7 +96,7 @@ export async function POST(request: NextRequest) {
         updateData.webhookToken = generateWebhookToken();
         console.log('Generated new webhook token for user:', userId);
       }
-      
+
       // Update existing settings
       const settings = await prisma.userSettings.update({
         where: { id: userId },
@@ -161,10 +161,10 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('Error in save settings API:', error);
     return NextResponse.json(
-      { 
-        error: 'Internal server error', 
-        message: error instanceof Error ? error.message : 'Unknown error' 
-      }, 
+      {
+        error: 'Internal server error',
+        message: error instanceof Error ? error.message : 'Unknown error'
+      },
       { status: 500 }
     );
   }
