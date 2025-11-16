@@ -46,7 +46,7 @@ export async function GET() {
     });
 
     // Format the response to match the expected structure
-    const formattedGroups = groups.map(group => ({
+    const formattedGroups = groups.map((group: typeof groups[0]) => ({
       id: group.id,
       name: group.name,
       description: group.description,
@@ -54,7 +54,7 @@ export async function GET() {
       updated_at: group.updatedAt,
       owner_id: group.ownerId,
       member_count: group._count.members,
-      members: group.members.map(member => ({
+      members: group.members.map((member: typeof group.members[0]) => ({
         id: member.id,
         user_id: member.userId,
         added_at: member.addedAt,
