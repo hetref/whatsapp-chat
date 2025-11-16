@@ -106,11 +106,11 @@ interface ChatWindowProps {
   broadcastGroupName?: string | null;
 }
 
-export function ChatWindow({ 
-  selectedUser, 
-  messages, 
-  onSendMessage, 
-  onBack, 
+export function ChatWindow({
+  selectedUser,
+  messages,
+  onSendMessage,
+  onBack,
   onClose,
   isMobile = false,
   isLoading = false,
@@ -153,7 +153,7 @@ export function ChatWindow({
       }));
       return;
     }
-    
+
     if (!selectedUser) return;
 
     try {
@@ -184,10 +184,10 @@ export function ChatWindow({
   };
 
   // Calculate unread messages
-  const unreadMessages = messages.filter(msg => 
+  const unreadMessages = messages.filter(msg =>
     !msg.is_sent_by_me && !msg.is_read
   );
-  const firstUnreadIndex = messages.findIndex(msg => 
+  const firstUnreadIndex = messages.findIndex(msg =>
     !msg.is_sent_by_me && !msg.is_read
   );
   const hasUnreadMessages = unreadMessages.length > 0;
@@ -196,7 +196,7 @@ export function ChatWindow({
   useEffect(() => {
     // Only scroll if we have messages
     if (messages.length === 0) return;
-    
+
     // Small delay to ensure DOM is updated
     const scrollTimer = setTimeout(() => {
       if (hasUnreadMessages && firstUnreadIndex !== -1) {
@@ -252,7 +252,7 @@ export function ChatWindow({
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    
+
     const files = e.dataTransfer.files;
     if (files.length > 0 && selectedUser) {
       setShowMediaUpload(true);
@@ -272,7 +272,7 @@ export function ChatWindow({
   const handleSendMedia = async (mediaFiles: MediaFile[]) => {
     // Don't allow media upload in broadcast mode for now
     if ((!selectedUser && !broadcastGroupName) || sendingMedia) return;
-    
+
     if (broadcastGroupName) {
       alert('Media upload to broadcast groups is not yet supported. Please send text messages only.');
       return;
@@ -280,13 +280,13 @@ export function ChatWindow({
 
     // TypeScript safety check
     if (!selectedUser) return;
-    
+
     setSendingMedia(true);
-    
+
     try {
       const formData = new FormData();
       formData.append('to', selectedUser.id);
-      
+
       mediaFiles.forEach((mediaFile) => {
         formData.append('files', mediaFile.file);
         formData.append('captions', mediaFile.caption || '');
@@ -304,13 +304,13 @@ export function ChatWindow({
       }
 
       console.log('Media sent successfully:', result);
-      
+
       // Show success message
       if (result.successCount > 0) {
         // You might want to show a toast notification here
         console.log(`Successfully sent ${result.successCount} of ${result.totalFiles} files`);
       }
-      
+
       if (result.failureCount > 0) {
         alert(`Failed to send ${result.failureCount} files. Please try again.`);
       }
@@ -334,9 +334,9 @@ export function ChatWindow({
   };
 
   const formatTime = (timestamp: string) => {
-    return new Date(timestamp).toLocaleTimeString([], { 
-      hour: '2-digit', 
-      minute: '2-digit' 
+    return new Date(timestamp).toLocaleTimeString([], {
+      hour: '2-digit',
+      minute: '2-digit'
     });
   };
 
@@ -351,11 +351,11 @@ export function ChatWindow({
     } else if (date.toDateString() === yesterday.toDateString()) {
       return "Yesterday";
     } else {
-      return date.toLocaleDateString([], { 
-        weekday: 'long', 
-        year: 'numeric', 
-        month: 'long', 
-        day: 'numeric' 
+      return date.toLocaleDateString([], {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
       });
     }
   };
@@ -389,26 +389,26 @@ export function ChatWindow({
     } else {
       // Create new audio element
       const newAudio = new Audio(audioUrl);
-      
+
       // Set up audio event listeners
       newAudio.onloadedmetadata = () => {
         setAudioDurations(prev => ({ ...prev, [messageId]: newAudio.duration }));
       };
-      
+
       newAudio.ontimeupdate = () => {
         setAudioCurrentTime(prev => ({ ...prev, [messageId]: newAudio.currentTime }));
       };
-      
+
       newAudio.onended = () => {
         setPlayingAudio(null);
         setAudioCurrentTime(prev => ({ ...prev, [messageId]: 0 }));
       };
-      
+
       newAudio.onerror = () => {
         console.error('Error playing audio');
         setPlayingAudio(null);
       };
-      
+
       audioRefs.current[messageId] = newAudio;
       newAudio.play();
       setPlayingAudio(messageId);
@@ -429,26 +429,26 @@ export function ChatWindow({
       }
 
       const blob = await response.blob();
-      
+
       // Create download link
       const downloadUrl = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = downloadUrl;
       link.download = filename || 'download';
       link.style.display = 'none';
-      
+
       // Trigger download
       document.body.appendChild(link);
       link.click();
-      
+
       // Cleanup
       document.body.removeChild(link);
       window.URL.revokeObjectURL(downloadUrl);
-      
+
       console.log('File downloaded successfully:', filename);
     } catch (error) {
       console.error('Error downloading media:', error);
-      
+
       // Fallback: Open in new tab if direct download fails
       try {
         const newWindow = window.open(url, '_blank');
@@ -495,7 +495,7 @@ export function ChatWindow({
       // Only show network error alerts for repeated failures
       if (!window.mediaRefreshErrorCount) window.mediaRefreshErrorCount = {};
       window.mediaRefreshErrorCount[messageId] = (window.mediaRefreshErrorCount[messageId] || 0) + 1;
-      
+
       if (window.mediaRefreshErrorCount[messageId] <= 2) {
         console.log('Retrying media refresh...');
       } else {
@@ -540,11 +540,10 @@ export function ChatWindow({
       }
     }
 
-    const baseClasses = `max-w-[85%] px-4 py-3 rounded-2xl shadow-sm ${
-      isOwn
+    const baseClasses = `max-w-[85%] px-4 py-3 rounded-2xl shadow-sm ${isOwn
         ? 'bg-green-500 text-white ml-4'
         : 'bg-white dark:bg-muted border border-border mr-4'
-    }`;
+      }`;
 
     const isRefreshing = refreshingUrls.has(message.id);
     const isMediaLoading = loadingMedia.has(message.id);
@@ -686,7 +685,7 @@ export function ChatWindow({
         const duration = audioDurations[message.id] || 0;
         const currentTime = audioCurrentTime[message.id] || 0;
         const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
-        
+
         return (
           <div className={baseClasses}>
             <div className="flex items-center gap-4 p-4 bg-gray-50 dark:bg-gray-800 rounded-xl mb-2 min-w-[300px] max-w-[400px]">
@@ -705,7 +704,7 @@ export function ChatWindow({
                   <Play className="h-5 w-5" />
                 )}
               </Button>
-              
+
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-2">
                   <Volume2 className="h-4 w-4 text-gray-600 dark:text-gray-400" />
@@ -724,14 +723,13 @@ export function ChatWindow({
                     </Button>
                   )}
                 </div>
-                
+
                 {/* Audio Progress Bar */}
                 <div className="relative">
                   <div className="h-2 bg-gray-200 dark:bg-gray-600 rounded-full overflow-hidden">
-                    <div 
-                      className={`h-full transition-all duration-300 ${
-                        isOwn ? 'bg-green-300' : 'bg-blue-400'
-                      }`}
+                    <div
+                      className={`h-full transition-all duration-300 ${isOwn ? 'bg-green-300' : 'bg-blue-400'
+                        }`}
                       style={{ width: `${progress}%` }}
                     />
                   </div>
@@ -744,7 +742,7 @@ export function ChatWindow({
                     </span>
                   </div>
                 </div>
-                
+
                 {isMediaLoading && (
                   <p className="text-xs text-blue-500 mt-1">Loading audio...</p>
                 )}
@@ -769,7 +767,7 @@ export function ChatWindow({
                     </div>
                   </div>
                 )}
-                <video 
+                <video
                   controls
                   className="max-w-[400px] max-h-[300px] w-auto h-auto rounded-xl"
                   preload="metadata"
@@ -854,7 +852,7 @@ export function ChatWindow({
                     </div>
                   ) : mediaData.header.format === 'VIDEO' && mediaData.header.media_url ? (
                     <div className="mb-3 rounded-lg overflow-hidden">
-                      <video 
+                      <video
                         controls
                         className="max-w-full h-auto rounded-lg"
                         preload="metadata"
@@ -917,8 +915,8 @@ export function ChatWindow({
                         key={index}
                         className={`
                           px-4 py-3 rounded-lg border border-opacity-30 border-current text-center font-medium
-                          ${isOwn 
-                            ? 'bg-white bg-opacity-20 hover:bg-opacity-30' 
+                          ${isOwn
+                            ? 'bg-white bg-opacity-20 hover:bg-opacity-30'
                             : 'bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600'
                           }
                           cursor-pointer transition-colors
@@ -981,7 +979,7 @@ export function ChatWindow({
       default:
         // Text message or fallback
         const isOptimistic = message.id.startsWith('optimistic_');
-        
+
         return (
           <div className={`${baseClasses} ${isOptimistic ? 'opacity-70' : ''} transition-opacity duration-300`}>
             <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
@@ -1032,7 +1030,7 @@ export function ChatWindow({
   }
 
   return (
-    <div 
+    <div
       className="h-full flex flex-col bg-background relative"
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
@@ -1041,7 +1039,7 @@ export function ChatWindow({
       {/* Chat Header */}
       <div className="p-4 border-b border-border bg-muted/50 flex items-center gap-3">
         {isMobile && onBack && (
-          <button 
+          <button
             onClick={onBack}
             className="p-2 hover:bg-muted rounded-full transition-colors"
             title="Back to contacts"
@@ -1084,7 +1082,7 @@ export function ChatWindow({
                 {selectedUser.name.substring(0, 2).toUpperCase()}
               </AvatarFallback>
             </Avatar>
-            <div 
+            <div
               className="flex-1 cursor-pointer hover:bg-muted/50 rounded-lg p-2 -m-2 transition-colors"
               onClick={() => setShowUserInfo(true)}
               title="View contact info"
@@ -1104,7 +1102,7 @@ export function ChatWindow({
           </>
         ) : null}
         {!isMobile && onClose && (
-          <button 
+          <button
             onClick={onClose}
             className="p-2 hover:bg-muted rounded-full transition-colors"
             title="Close chat (ESC)"
@@ -1115,7 +1113,7 @@ export function ChatWindow({
       </div>
 
       {/* Messages Area */}
-      <div 
+      <div
         ref={messagesContainerRef}
         className="flex-1 overflow-y-auto p-4 bg-gradient-to-b from-green-50/30 to-blue-50/30 dark:from-green-950/10 dark:to-blue-950/10"
       >
@@ -1157,7 +1155,7 @@ export function ChatWindow({
                   {dayMessages.map((message, index) => {
                     // Use is_sent_by_me field instead of comparing IDs to determine message ownership
                     const isOwn = message.is_sent_by_me;
-                    
+
                     // Debug logging to help identify the issue
                     if (!isOwn && message.content && !message.content.startsWith('[')) {
                       console.log('Message alignment check:', {
@@ -1168,19 +1166,19 @@ export function ChatWindow({
                         content: message.content.substring(0, 30)
                       });
                     }
-                    
+
                     const globalIndex = messages.findIndex(m => m.id === message.id);
                     const isFirstUnread = globalIndex === firstUnreadIndex;
                     const isNewMessage = index === dayMessages.length - 1 && dayMessages.length > 0;
-                    
+
                     return (
-                      <div 
+                      <div
                         key={message.id}
                         className={`${isNewMessage ? 'animate-fade-in-up' : ''}`}
                       >
                         {/* Unread messages indicator */}
                         {isFirstUnread && hasUnreadMessages && (
-                          <div 
+                          <div
                             ref={unreadIndicatorRef}
                             className="flex items-center justify-center my-4 animate-fade-in"
                           >
@@ -1191,7 +1189,7 @@ export function ChatWindow({
                             <div className="flex-1 h-px bg-red-500"></div>
                           </div>
                         )}
-                        
+
                         <div className={`flex ${isOwn ? 'justify-end' : 'justify-start'}`}>
                           {renderMessageContent(message, isOwn)}
                         </div>
@@ -1237,10 +1235,10 @@ export function ChatWindow({
             value={messageInput}
             onChange={(e) => setMessageInput(e.target.value)}
             placeholder={
-              isLoading || sendingMedia 
-                ? "Sending..." 
-                : broadcastGroupName 
-                  ? "Type broadcast message..." 
+              isLoading || sendingMedia
+                ? "Sending..."
+                : broadcastGroupName
+                  ? "Type broadcast message..."
                   : "Type a message..."
             }
             className="flex-1 border-border focus:ring-green-500 rounded-full px-4 py-2"
@@ -1248,8 +1246,8 @@ export function ChatWindow({
             disabled={isLoading || sendingMedia}
             autoFocus
           />
-          <Button 
-            type="submit" 
+          <Button
+            type="submit"
             disabled={!messageInput.trim() || isLoading || sendingMedia}
             className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-full disabled:opacity-50 disabled:cursor-not-allowed transition-all"
           >
@@ -1293,8 +1291,8 @@ export function ChatWindow({
           isOpen={showTemplateSelector}
           onClose={() => setShowTemplateSelector(false)}
           onSendTemplate={handleSendTemplate}
-          selectedUser={selectedUser || { 
-            id: 'broadcast', 
+          selectedUser={selectedUser || {
+            id: 'broadcast',
             name: broadcastGroupName || 'Broadcast Group',
             last_active: new Date().toISOString()
           }}
