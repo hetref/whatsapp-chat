@@ -55,7 +55,7 @@ export async function GET(
     });
 
     // Format the response to match expected structure
-    const formattedMembers = members.map(member => ({
+    const formattedMembers = members.map((member: typeof members[0]) => ({
       id: member.id,
       user_id: member.userId,
       added_at: member.addedAt.toISOString(),
