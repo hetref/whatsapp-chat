@@ -4,11 +4,11 @@ import { ThemeSwitcher } from "@/components/theme-switcher";
 import { GitHubStarButton } from "@/components/github-star-button";
 import { hasEnvVars } from "@/lib/utils";
 import Link from "next/link";
-import { 
-  MessageCircle, 
-  Users, 
-  Zap, 
-  Shield, 
+import {
+  MessageCircle,
+  Users,
+  Zap,
+  Shield,
   Radio,
   MessageSquare,
   Upload,
@@ -68,25 +68,25 @@ export default function Home() {
               <Rocket className="h-4 w-4 text-green-600" />
               <span className="text-sm font-medium text-green-700 dark:text-green-400">Production-Ready WhatsApp Business Platform</span>
             </div>
-            
+
             <h1 className="text-5xl md:text-7xl font-bold tracking-tight">
               Enterprise WhatsApp
               <span className="block text-green-600">Business Integration</span>
             </h1>
-            
+
             <p className="text-xl md:text-2xl text-muted-foreground max-w-3xl mx-auto">
               A fully functional, production-ready WhatsApp Business platform built with Next.js 15, Clerk Auth, NeonDB, and WhatsApp Cloud API. Real-time messaging, broadcast groups, template management, and more.
             </p>
 
             <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
-              <Link 
+              <Link
                 href="/auth/login"
                 className="inline-flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-8 py-4 rounded-full font-semibold text-lg transition-colors shadow-lg shadow-green-600/30"
               >
                 Get Started
                 <ArrowRight className="h-5 w-5" />
               </Link>
-              <Link 
+              <Link
                 href="https://github.com/hetref/whatsapp-chat"
                 target="_blank"
                 rel="noopener noreferrer"
@@ -593,7 +593,7 @@ export default function Home() {
                 <p className="text-muted-foreground mb-4">
                   Detailed setup guide with database migrations, environment variables, WhatsApp API configuration, and deployment instructions available in the README.
                 </p>
-                <Link 
+                <Link
                   href="https://github.com/hetref/whatsapp-chat#readme"
                   target="_blank"
                   rel="noopener noreferrer"
@@ -690,14 +690,14 @@ export default function Home() {
             Deploy your own WhatsApp Business platform in minutes. Star the project on GitHub and join the community!
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
-            <Link 
+            <Link
               href="/auth/sign-up"
               className="inline-flex items-center gap-2 bg-white text-green-600 hover:bg-green-50 px-8 py-4 rounded-full font-semibold text-lg transition-colors shadow-lg"
             >
               Start Building Now
               <ArrowRight className="h-5 w-5" />
             </Link>
-            <Link 
+            <Link
               href="https://github.com/hetref/whatsapp-chat"
               target="_blank"
               rel="noopener noreferrer"
@@ -723,7 +723,7 @@ export default function Home() {
                 Enterprise WhatsApp Business integration platform built with Next.js, Clerk Auth, and NeonDB.
               </p>
             </div>
-            
+
             <div>
               <h3 className="font-semibold mb-4">Product</h3>
               <ul className="space-y-2 text-sm text-muted-foreground">
@@ -733,7 +733,7 @@ export default function Home() {
                 <li><a href="/auth/login" className="hover:text-foreground transition-colors">Get Started</a></li>
               </ul>
             </div>
-            
+
             <div>
               <h3 className="font-semibold mb-4">Resources</h3>
               <ul className="space-y-2 text-sm text-muted-foreground">
@@ -754,7 +754,7 @@ export default function Home() {
                 </li>
               </ul>
             </div>
-            
+
             <div>
               <h3 className="font-semibold mb-4">Community</h3>
               <ul className="space-y-2 text-sm text-muted-foreground">
@@ -776,9 +776,9 @@ export default function Home() {
               </ul>
             </div>
           </div>
-          
+
           <Separator className="my-8" />
-          
+
           <div className="flex flex-col md:flex-row justify-between items-center gap-4 text-sm text-muted-foreground">
             <p>
               © 2025 WaChat. Built with ❤️ using{" "}
@@ -796,9 +796,9 @@ export default function Home() {
             </p>
             <p className="flex items-center gap-2">
               <Github className="h-4 w-4" />
-              <a 
-                href="https://github.com/hetref/whatsapp-chat" 
-                target="_blank" 
+              <a
+                href="https://github.com/hetref/whatsapp-chat"
+                target="_blank"
                 rel="noopener noreferrer"
                 className="hover:text-foreground transition-colors"
               >

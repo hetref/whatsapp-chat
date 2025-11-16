@@ -476,14 +476,31 @@ export function ChatWindow({
         body: JSON.stringify({ messageId }),
       });
 
-      if (response.ok) {
-        const result = await response.json();
-        console.log('Media URL refreshed:', result);
+      const result = await response.json();
+
+      if (response.ok && result.success) {
+        console.log('Media URL refreshed successfully:', result);
+        // Trigger a re-render by forcing the parent component to update
+        // You might want to implement a proper message refresh mechanism here
+        // For now, we'll let the component handle the updated state
       } else {
-        console.error('Failed to refresh media URL:', await response.text());
+        console.error('Failed to refresh media URL:', result.error || result.message);
+        // Show user-friendly error message only for non-404 errors
+        if (response.status !== 404) {
+          alert(`Failed to load media: ${result.error || 'Please try again later'}`);
+        }
       }
     } catch (error) {
-      console.error('Error refreshing media URL:', error);
+      console.error('Network error refreshing media URL:', error);
+      // Only show network error alerts for repeated failures
+      if (!window.mediaRefreshErrorCount) window.mediaRefreshErrorCount = {};
+      window.mediaRefreshErrorCount[messageId] = (window.mediaRefreshErrorCount[messageId] || 0) + 1;
+      
+      if (window.mediaRefreshErrorCount[messageId] <= 2) {
+        console.log('Retrying media refresh...');
+      } else {
+        alert('Network error: Unable to load media. Please check your connection.');
+      }
     } finally {
       setRefreshingUrls(prev => {
         const newSet = new Set(prev);
@@ -539,7 +556,7 @@ export function ChatWindow({
             {mediaData?.media_url && mediaData.s3_uploaded ? (
               <div className="mb-2 relative overflow-hidden rounded-xl">
                 {isMediaLoading && (
-                  <div className="absolute inset-0 bg-gray-200 dark:bg-gray-700 flex items-center justify-center rounded-xl">
+                  <div className="absolute inset-0 bg-gray-200 dark:bg-gray-700 flex items-center justify-center rounded-xl z-10">
                     <div className="flex flex-col items-center gap-2">
                       <Loader2 className="h-6 w-6 animate-spin text-gray-500" />
                       <span className="text-xs text-gray-500">Loading image...</span>
@@ -554,12 +571,15 @@ export function ChatWindow({
                   className="max-w-[300px] max-h-[400px] w-auto h-auto object-cover cursor-pointer rounded-xl"
                   style={{ maxWidth: '100%', height: 'auto' }}
                   onClick={() => window.open(mediaData.media_url, '_blank')}
-                  onLoadingComplete={() => handleMediaLoad(message.id)}
+                  onLoad={() => handleMediaLoad(message.id)}
                   onLoadStart={() => handleMediaLoadStart(message.id)}
                   onError={() => {
-                    console.log('Next.js Image failed to load, attempting to refresh URL');
+                    console.log('Image failed to load, attempting to refresh URL for message:', message.id);
                     handleMediaLoad(message.id);
-                    refreshMediaUrl(message.id);
+                    // Only try to refresh if we haven't already tried
+                    if (!refreshingUrls.has(message.id)) {
+                      refreshMediaUrl(message.id);
+                    }
                   }}
                   priority={false}
                   placeholder="blur"
@@ -567,8 +587,11 @@ export function ChatWindow({
                   unoptimized={false}
                 />
                 {isRefreshing && (
-                  <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center rounded-xl">
-                    <RefreshCw className="h-6 w-6 text-white animate-spin" />
+                  <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center rounded-xl z-20">
+                    <div className="flex flex-col items-center gap-2">
+                      <RefreshCw className="h-6 w-6 text-white animate-spin" />
+                      <span className="text-xs text-white">Refreshing...</span>
+                    </div>
                   </div>
                 )}
               </div>
@@ -577,23 +600,24 @@ export function ChatWindow({
                 <ImageIcon className="h-8 w-8 text-gray-500" />
                 <div className="flex-1">
                   <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Image</p>
-                  <p className="text-xs text-gray-500">Loading...</p>
+                  <p className="text-xs text-gray-500">
+                    {mediaData?.s3_uploaded === false ? 'Preparing...' : 'Loading...'}
+                  </p>
                 </div>
-                {mediaData?.s3_uploaded === false && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="p-2 h-8 w-8"
-                    onClick={() => refreshMediaUrl(message.id)}
-                    disabled={isRefreshing}
-                  >
-                    {isRefreshing ? (
-                      <RefreshCw className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <RefreshCw className="h-4 w-4" />
-                    )}
-                  </Button>
-                )}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="p-2 h-8 w-8"
+                  onClick={() => refreshMediaUrl(message.id)}
+                  disabled={isRefreshing}
+                  title="Retry loading"
+                >
+                  {isRefreshing ? (
+                    <RefreshCw className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-4 w-4" />
+                  )}
+                </Button>
               </div>
             )}
             {mediaData?.caption && (
@@ -752,9 +776,12 @@ export function ChatWindow({
                   onLoadStart={() => handleMediaLoadStart(message.id)}
                   onCanPlay={() => handleMediaLoad(message.id)}
                   onError={() => {
-                    console.log('Video failed to load, attempting to refresh URL');
+                    console.log('Video failed to load, attempting to refresh URL for message:', message.id);
                     handleMediaLoad(message.id);
-                    refreshMediaUrl(message.id);
+                    // Only try to refresh if we haven't already tried
+                    if (!refreshingUrls.has(message.id)) {
+                      refreshMediaUrl(message.id);
+                    }
                   }}
                 >
                   <source src={mediaData.media_url} type={mediaData.mime_type} />
@@ -762,7 +789,10 @@ export function ChatWindow({
                 </video>
                 {isRefreshing && (
                   <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center rounded-xl z-20">
-                    <RefreshCw className="h-6 w-6 text-white animate-spin" />
+                    <div className="flex flex-col items-center gap-2">
+                      <RefreshCw className="h-6 w-6 text-white animate-spin" />
+                      <span className="text-xs text-white">Refreshing...</span>
+                    </div>
                   </div>
                 )}
               </div>
@@ -771,23 +801,24 @@ export function ChatWindow({
                 <Play className="h-8 w-8 text-gray-500" />
                 <div className="flex-1">
                   <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Video</p>
-                  <p className="text-xs text-gray-500">Loading...</p>
+                  <p className="text-xs text-gray-500">
+                    {mediaData?.s3_uploaded === false ? 'Preparing...' : 'Loading...'}
+                  </p>
                 </div>
-                {(!mediaData?.media_url || !mediaData.s3_uploaded) && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="p-2 h-8 w-8"
-                    onClick={() => refreshMediaUrl(message.id)}
-                    disabled={isRefreshing}
-                  >
-                    {isRefreshing ? (
-                      <RefreshCw className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <RefreshCw className="h-4 w-4" />
-                    )}
-                  </Button>
-                )}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="p-2 h-8 w-8"
+                  onClick={() => refreshMediaUrl(message.id)}
+                  disabled={isRefreshing}
+                  title="Retry loading"
+                >
+                  {isRefreshing ? (
+                    <RefreshCw className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-4 w-4" />
+                  )}
+                </Button>
               </div>
             )}
             {mediaData?.caption && (

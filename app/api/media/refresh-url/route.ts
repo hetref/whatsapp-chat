@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { auth } from '@clerk/nextjs/server';
+import { prisma } from '@/lib/db';
 import { generatePresignedUrl } from '@/lib/aws-s3';
 
 export const runtime = 'nodejs';
@@ -10,13 +11,13 @@ export const runtime = 'nodejs';
  */
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient();
-    
     // Verify user authentication
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
-      console.error('Authentication error:', authError);
-      return new NextResponse('Unauthorized', { status: 401 });
+    const { userId } = await auth();
+    if (!userId) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
     }
 
     // Parse request body
@@ -24,46 +25,67 @@ export async function POST(request: NextRequest) {
 
     // Validate required parameters
     if (!messageId) {
-      return new NextResponse('Missing required parameter: messageId', { status: 400 });
+      return NextResponse.json(
+        { error: 'Missing required parameter: messageId' },
+        { status: 400 }
+      );
     }
 
     // Get the message from database
-    const { data: message, error: messageError } = await supabase
-      .from('messages')
-      .select('*')
-      .eq('id', messageId)
-      .single();
+    const message = await prisma.message.findUnique({
+      where: { id: messageId }
+    });
 
-    if (messageError || !message) {
-      console.error('Message not found:', messageError);
-      return new NextResponse('Message not found', { status: 404 });
+    if (!message) {
+      console.error('Message not found:', messageId);
+      return NextResponse.json(
+        { error: 'Message not found' },
+        { status: 404 }
+      );
     }
 
     // Check if user has access to this message
-    if (message.sender_id !== user.id && message.receiver_id !== user.id) {
-      return new NextResponse('Access denied', { status: 403 });
+    if (message.senderId !== userId && message.receiverId !== userId) {
+      return NextResponse.json(
+        { error: 'Access denied' },
+        { status: 403 }
+      );
     }
 
     // Check if message has media data
-    if (!message.media_data) {
-      return new NextResponse('Message has no media data', { status: 400 });
+    if (!message.mediaData) {
+      return NextResponse.json(
+        { error: 'Message has no media data' },
+        { status: 400 }
+      );
     }
 
     let mediaData;
     try {
-      mediaData = JSON.parse(message.media_data);
+      // Handle both string and object mediaData
+      if (typeof message.mediaData === 'string') {
+        mediaData = JSON.parse(message.mediaData);
+      } else {
+        mediaData = message.mediaData;
+      }
     } catch (error) {
       console.error('Error parsing media data:', error);
-      return new NextResponse('Invalid media data', { status: 400 });
+      return NextResponse.json(
+        { error: 'Invalid media data' },
+        { status: 400 }
+      );
     }
 
     // Check that media has the required identifiers
     if (!mediaData.id || !mediaData.mime_type) {
-      return new NextResponse('Media data incomplete', { status: 400 });
+      return NextResponse.json(
+        { error: 'Media data incomplete' },
+        { status: 400 }
+      );
     }
 
     // Determine which identifier was used as the S3 owner when the media was stored
-    const ownerIdForS3 = message.is_sent_by_me ? message.receiver_id : message.sender_id;
+    const ownerIdForS3 = message.isSentByMe ? message.receiverId : message.senderId;
 
     // Generate new pre-signed URL
     const newUrl = await generatePresignedUrl(
@@ -74,7 +96,10 @@ export async function POST(request: NextRequest) {
 
     if (!newUrl) {
       console.error('Failed to generate new pre-signed URL');
-      return new NextResponse('Failed to generate media URL', { status: 500 });
+      return NextResponse.json(
+        { error: 'Failed to generate media URL' },
+        { status: 500 }
+      );
     }
 
     // Update the media_data with new URL
@@ -86,16 +111,19 @@ export async function POST(request: NextRequest) {
     };
 
     // Update the message in database
-    const { error: updateError } = await supabase
-      .from('messages')
-      .update({
-        media_data: JSON.stringify(updatedMediaData)
-      })
-      .eq('id', messageId);
-
-    if (updateError) {
+    try {
+      await prisma.message.update({
+        where: { id: messageId },
+        data: {
+          mediaData: JSON.stringify(updatedMediaData)
+        }
+      });
+    } catch (updateError) {
       console.error('Error updating message with new URL:', updateError);
-      return new NextResponse('Failed to update message', { status: 500 });
+      return NextResponse.json(
+        { error: 'Failed to update message' },
+        { status: 500 }
+      );
     }
 
     console.log(`Successfully refreshed media URL for message: ${messageId}`);
@@ -110,11 +138,11 @@ export async function POST(request: NextRequest) {
 
   } catch (error) {
     console.error('Error in refresh-url API:', error);
-    return new NextResponse(
-      JSON.stringify({ 
+    return NextResponse.json(
+      { 
         error: 'Internal server error', 
         message: error instanceof Error ? error.message : 'Unknown error' 
-      }), 
+      }, 
       { status: 500 }
     );
   }
