@@ -75,7 +75,7 @@ export default function Home() {
             </h1>
             
             <p className="text-xl md:text-2xl text-muted-foreground max-w-3xl mx-auto">
-              A fully functional, production-ready WhatsApp Business platform built with Next.js 15, Supabase, and WhatsApp Cloud API. Real-time messaging, broadcast groups, template management, and more.
+              A fully functional, production-ready WhatsApp Business platform built with Next.js 15, Clerk Auth, NeonDB, and WhatsApp Cloud API. Real-time messaging, broadcast groups, template management, and more.
             </p>
 
             <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
@@ -183,7 +183,7 @@ export default function Home() {
               </div>
               <h3 className="text-xl font-semibold mb-2">Secure by Default</h3>
               <p className="text-muted-foreground">
-                Row-level security, encrypted storage, and authentication built-in with Supabase Auth.
+                Robust authentication with Clerk, encrypted storage, and secure database policies with NeonDB.
               </p>
             </Card>
           </div>
@@ -421,8 +421,15 @@ export default function Home() {
                 <div className="flex items-start gap-3">
                   <CheckCircle2 className="h-5 w-5 text-blue-600 mt-0.5" />
                   <div>
-                    <div className="font-semibold">Supabase</div>
-                    <div className="text-sm text-muted-foreground">PostgreSQL database, Auth, Real-time</div>
+                    <div className="font-semibold">NeonDB</div>
+                    <div className="text-sm text-muted-foreground">Serverless PostgreSQL database with branching</div>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3">
+                  <CheckCircle2 className="h-5 w-5 text-blue-600 mt-0.5" />
+                  <div>
+                    <div className="font-semibold">Clerk Auth</div>
+                    <div className="text-sm text-muted-foreground">Complete authentication solution with webhooks</div>
                   </div>
                 </div>
                 <div className="flex items-start gap-3">
@@ -442,15 +449,8 @@ export default function Home() {
                 <div className="flex items-start gap-3">
                   <CheckCircle2 className="h-5 w-5 text-blue-600 mt-0.5" />
                   <div>
-                    <div className="font-semibold">PostgreSQL Functions</div>
-                    <div className="text-sm text-muted-foreground">Database-level business logic</div>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <CheckCircle2 className="h-5 w-5 text-blue-600 mt-0.5" />
-                  <div>
-                    <div className="font-semibold">Row Level Security</div>
-                    <div className="text-sm text-muted-foreground">Database-level access control</div>
+                    <div className="font-semibold">Prisma ORM</div>
+                    <div className="text-sm text-muted-foreground">Type-safe database access and migrations</div>
                   </div>
                 </div>
               </div>
@@ -549,8 +549,17 @@ export default function Home() {
                   <div className="flex items-center gap-3">
                     <Database className="h-5 w-5 text-blue-600" />
                     <div>
-                      <div className="font-semibold">Supabase Account</div>
-                      <div className="text-sm text-muted-foreground">PostgreSQL database & auth</div>
+                      <div className="font-semibold">NeonDB Account</div>
+                      <div className="text-sm text-muted-foreground">Serverless PostgreSQL database</div>
+                    </div>
+                  </div>
+                </Card>
+                <Card className="p-4">
+                  <div className="flex items-center gap-3">
+                    <Lock className="h-5 w-5 text-purple-600" />
+                    <div>
+                      <div className="font-semibold">Clerk Account</div>
+                      <div className="text-sm text-muted-foreground">Authentication and user management</div>
                     </div>
                   </div>
                 </Card>
@@ -618,11 +627,11 @@ export default function Home() {
               <div className="space-y-3">
                 <div className="flex items-start gap-2">
                   <CheckCircle2 className="h-5 w-5 text-green-600 mt-0.5 flex-shrink-0" />
-                  <span className="text-muted-foreground">Row Level Security (RLS) policies for data isolation</span>
+                  <span className="text-muted-foreground">Database-level security policies for data isolation</span>
                 </div>
                 <div className="flex items-start gap-2">
                   <CheckCircle2 className="h-5 w-5 text-green-600 mt-0.5 flex-shrink-0" />
-                  <span className="text-muted-foreground">Supabase Auth with secure session management</span>
+                  <span className="text-muted-foreground">Clerk Auth with secure JWT session management</span>
                 </div>
                 <div className="flex items-start gap-2">
                   <CheckCircle2 className="h-5 w-5 text-green-600 mt-0.5 flex-shrink-0" />
@@ -711,7 +720,7 @@ export default function Home() {
                 <span>WaChat</span>
               </div>
               <p className="text-sm text-muted-foreground">
-                Enterprise WhatsApp Business integration platform built with Next.js and Supabase.
+                Enterprise WhatsApp Business integration platform built with Next.js, Clerk Auth, and NeonDB.
               </p>
             </div>
             
@@ -776,9 +785,13 @@ export default function Home() {
               <a href="https://nextjs.org" target="_blank" className="font-semibold hover:underline" rel="noreferrer">
                 Next.js
               </a>
+              {" "},{" "}
+              <a href="https://clerk.com" target="_blank" className="font-semibold hover:underline" rel="noreferrer">
+                Clerk
+              </a>
               {" "}and{" "}
-              <a href="https://supabase.com" target="_blank" className="font-semibold hover:underline" rel="noreferrer">
-                Supabase
+              <a href="https://neon.tech" target="_blank" className="font-semibold hover:underline" rel="noreferrer">
+                NeonDB
               </a>
             </p>
             <p className="flex items-center gap-2">
