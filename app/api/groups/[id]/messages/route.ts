@@ -57,8 +57,8 @@ export async function GET(
     const broadcastMessages = messages.filter(msg => {
       if (!msg.mediaData) return false;
       try {
-        const mediaData = typeof msg.mediaData === 'string' 
-          ? JSON.parse(msg.mediaData) 
+        const mediaData = typeof msg.mediaData === 'string'
+          ? JSON.parse(msg.mediaData)
           : msg.mediaData;
         return (mediaData as BroadcastMediaData).broadcast_group_id === groupId;
       } catch {

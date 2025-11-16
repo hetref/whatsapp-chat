@@ -93,7 +93,7 @@ export async function POST(
       failed: 0,
       errors: [] as string[],
     };
-    
+
     // Helper function to replace variables in text
     const replaceVariables = (text: string, componentVariables: Record<string, string>) => {
       let result = text;
@@ -168,14 +168,14 @@ export async function POST(
             text?: string;
             media_url?: string | null;
           }
-          
+
           interface ProcessedButton {
             type: string;
             text: string;
             url?: string;
             phone_number?: string;
           }
-          
+
           const processedComponents = {
             header: null as ProcessedComponent | null,
             body: null as ProcessedComponent | null,
@@ -217,7 +217,7 @@ export async function POST(
 
           // Generate display content from body with variables replaced
           const bodyComponent = templateData.components?.find((c: { type: string }) => c.type === 'BODY');
-          messageContent = bodyComponent?.text && variables?.body 
+          messageContent = bodyComponent?.text && variables?.body
             ? replaceVariables(bodyComponent.text, variables.body)
             : (message || `Template: ${templateName}`);
 
@@ -254,7 +254,7 @@ export async function POST(
             },
             body: JSON.stringify(textMessage),
           });
-          
+
           // Mark text message as broadcast
           messageMediaData = JSON.stringify({
             broadcast_group_id: groupId
@@ -268,7 +268,7 @@ export async function POST(
 
           // Store the broadcast message in the database for this recipient
           const messageId = responseData.messages?.[0]?.id || `broadcast_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-          
+
           const messageObject = {
             id: messageId,
             senderId: cleanPhoneNumber, // The recipient's phone number
