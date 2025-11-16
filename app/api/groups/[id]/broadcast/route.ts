@@ -93,8 +93,6 @@ export async function POST(
       failed: 0,
       errors: [] as string[],
     };
-
-    const timestamp = new Date().toISOString();
     
     // Helper function to replace variables in text
     const replaceVariables = (text: string, componentVariables: Record<string, string>) => {

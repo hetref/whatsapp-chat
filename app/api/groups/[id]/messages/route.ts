@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { prisma } from '@/lib/db';
 
+interface BroadcastMediaData {
+  broadcast_group_id?: string;
+  [key: string]: unknown;
+}
+
 /**
  * GET - Get all broadcast messages for a group
  */
@@ -55,7 +60,7 @@ export async function GET(
         const mediaData = typeof msg.mediaData === 'string' 
           ? JSON.parse(msg.mediaData) 
           : msg.mediaData;
-        return (mediaData as any).broadcast_group_id === groupId;
+        return (mediaData as BroadcastMediaData).broadcast_group_id === groupId;
       } catch {
         return false;
       }

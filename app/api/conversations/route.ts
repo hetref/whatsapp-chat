@@ -2,6 +2,19 @@ import { NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { prisma } from '@/lib/db';
 
+interface ConversationRow {
+  id: string;
+  name: string;
+  custom_name?: string;
+  whatsapp_name?: string;
+  last_active: Date;
+  unread_count: bigint;
+  last_message_time?: Date;
+  last_message?: string;
+  last_message_type?: string;
+  last_message_sender?: string;
+}
+
 export async function GET() {
   try {
     // Verify user authentication
@@ -64,7 +77,7 @@ export async function GET() {
     `;
 
     // Convert BigInt values to numbers for JSON serialization
-    const conversations = (conversationsRaw as any[]).map(conversation => ({
+    const conversations = (conversationsRaw as ConversationRow[]).map(conversation => ({
       ...conversation,
       unread_count: Number(conversation.unread_count),
     }));
