@@ -58,7 +58,7 @@ async function sendTemplateMessage(
           type: 'text',
           text: variables.header[key]
         }));
-      
+
       templateComponents.push({
         type: 'header',
         parameters: headerParams
@@ -73,7 +73,7 @@ async function sendTemplateMessage(
           type: 'text',
           text: variables.body[key]
         }));
-      
+
       templateComponents.push({
         type: 'body',
         parameters: bodyParams
@@ -88,7 +88,7 @@ async function sendTemplateMessage(
           type: 'text',
           text: variables.footer[key]
         }));
-      
+
       templateComponents.push({
         type: 'footer',
         parameters: footerParams
@@ -201,7 +201,7 @@ export async function POST(request: NextRequest) {
 
     // Clean phone number for database consistency
     const cleanPhoneNumber = to.replace(/\s+/g, '').replace(/[^\d]/g, '');
-    
+
     // Check if user exists in our database
     const existingUser = await prisma.user.findUnique({
       where: { id: cleanPhoneNumber }
@@ -228,9 +228,9 @@ export async function POST(request: NextRequest) {
 
     // Send template message via WhatsApp using user-specific credentials
     const messageResponse = await sendTemplateMessage(
-      cleanPhoneNumber, 
-      templateName, 
-      templateData.language, 
+      cleanPhoneNumber,
+      templateName,
+      templateData.language,
       accessToken,
       phoneNumberId,
       apiVersion,
@@ -255,7 +255,7 @@ export async function POST(request: NextRequest) {
 
     // Store message in database
     const timestamp = new Date().toISOString();
-    
+
     // Process template components for storage with variables replaced
     const processedComponents = {
       header: null as {
@@ -363,10 +363,10 @@ export async function POST(request: NextRequest) {
   } catch (error: unknown) {
     console.error('Error in send-template API:', error);
     return NextResponse.json(
-      { 
-        error: 'Internal server error', 
-        message: error instanceof Error ? error.message : 'Unknown error' 
-      }, 
+      {
+        error: 'Internal server error',
+        message: error instanceof Error ? error.message : 'Unknown error'
+      },
       { status: 500 }
     );
   }
@@ -397,7 +397,7 @@ export async function GET() {
 
     const isConfigured = settings?.accessToken || false;
     const apiVersion = settings?.apiVersion || 'v23.0';
-    
+
     return NextResponse.json({
       status: 'WhatsApp Send Template API',
       configured: isConfigured,

@@ -139,14 +139,14 @@ async function sendMediaMessage(
     );
 
     if (!response.ok) {
-    const errorText = await response.text();
-    console.error('WhatsApp API error:', {
-      status: response.status,
-      statusText: response.statusText,
-      error: errorText
-    });
-    throw new Error(`WhatsApp API error: ${response.status} - ${errorText}`);
-  }
+      const errorText = await response.text();
+      console.error('WhatsApp API error:', {
+        status: response.status,
+        statusText: response.statusText,
+        error: errorText
+      });
+      throw new Error(`WhatsApp API error: ${response.status} - ${errorText}`);
+    }
 
     return await response.json();
   } catch (error: unknown) {

@@ -51,7 +51,7 @@ interface TransformedTemplate extends WhatsAppTemplate {
 export async function GET(request: NextRequest) {
   try {
     const supabase = await createClient();
-    
+
     // Verify user authentication
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) {
@@ -94,13 +94,13 @@ export async function GET(request: NextRequest) {
 
     // Build WhatsApp Business API URL
     let apiUrl = `https://graph.facebook.com/${WHATSAPP_API_VERSION}/${WHATSAPP_BUSINESS_ACCOUNT_ID}/message_templates`;
-    
+
     // Add query parameters
     const params = new URLSearchParams({
       fields,
       limit,
     });
-    
+
     if (status) {
       params.append('status', status);
     }
@@ -126,17 +126,17 @@ export async function GET(request: NextRequest) {
         error: errorText,
       });
       return new NextResponse(
-        JSON.stringify({ 
-          error: 'Failed to fetch templates', 
+        JSON.stringify({
+          error: 'Failed to fetch templates',
           details: errorText,
-          status: response.status 
-        }), 
+          status: response.status
+        }),
         { status: response.status }
       );
     }
 
     const templatesData = await response.json() as { data: WhatsAppTemplate[]; paging?: Record<string, unknown> };
-    
+
     console.log(`Successfully fetched ${templatesData.data?.length || 0} templates`);
 
     // Transform the data to include additional metadata for UI
@@ -163,10 +163,10 @@ export async function GET(request: NextRequest) {
   } catch (error: unknown) {
     console.error('Error in templates API:', error);
     return new NextResponse(
-      JSON.stringify({ 
-        error: 'Internal server error', 
-        message: error instanceof Error ? error.message : 'Unknown error' 
-      }), 
+      JSON.stringify({
+        error: 'Internal server error',
+        message: error instanceof Error ? error.message : 'Unknown error'
+      }),
       { status: 500 }
     );
   }

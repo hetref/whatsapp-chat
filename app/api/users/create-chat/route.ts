@@ -8,7 +8,7 @@ import { createClient } from '@/lib/supabase/server';
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient();
-    
+
     // Verify user authentication
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) {
@@ -52,15 +52,15 @@ async function handleSingleUserCreation(
 ) {
   // Clean and validate phone number - match WhatsApp format (without + prefix)
   const cleanPhoneNumber = phoneNumber.replace(/\s+/g, '').replace(/[^\d]/g, '');
-  
+
   // Validate phone number format
   const phoneRegex = /^\d{10,15}$/;
   if (!phoneRegex.test(cleanPhoneNumber)) {
     return new NextResponse(
-      JSON.stringify({ 
-        error: 'Invalid phone number format', 
-        message: 'Phone number must contain 10-15 digits (e.g., 918097296453)' 
-      }), 
+      JSON.stringify({
+        error: 'Invalid phone number format',
+        message: 'Phone number must contain 10-15 digits (e.g., 918097296453)'
+      }),
       { status: 400, headers: { 'Content-Type': 'application/json' } }
     );
   }
@@ -69,9 +69,9 @@ async function handleSingleUserCreation(
   const userIdWithoutPlus = user.id.replace(/^\+/, '');
   if (cleanPhoneNumber === user.id || cleanPhoneNumber === userIdWithoutPlus) {
     return new NextResponse(
-      JSON.stringify({ 
-        error: 'Cannot create chat with yourself' 
-      }), 
+      JSON.stringify({
+        error: 'Cannot create chat with yourself'
+      }),
       { status: 400, headers: { 'Content-Type': 'application/json' } }
     );
   }
@@ -79,10 +79,10 @@ async function handleSingleUserCreation(
   // Validate custom name length
   if (customName && customName.length > 100) {
     return new NextResponse(
-      JSON.stringify({ 
-        error: 'Custom name too long', 
-        message: 'Custom name must be 100 characters or less' 
-      }), 
+      JSON.stringify({
+        error: 'Custom name too long',
+        message: 'Custom name must be 100 characters or less'
+      }),
       { status: 400, headers: { 'Content-Type': 'application/json' } }
     );
   }
@@ -98,14 +98,14 @@ async function handleSingleUserCreation(
   if (error) {
     console.error('Error creating/getting user:', error);
     return new NextResponse(
-      JSON.stringify({ error: 'Failed to create chat', details: error.message }), 
+      JSON.stringify({ error: 'Failed to create chat', details: error.message }),
       { status: 500, headers: { 'Content-Type': 'application/json' } }
     );
   }
 
   if (!data || data.length === 0) {
     return new NextResponse(
-      JSON.stringify({ error: 'Failed to create or retrieve user' }), 
+      JSON.stringify({ error: 'Failed to create or retrieve user' }),
       { status: 500, headers: { 'Content-Type': 'application/json' } }
     );
   }
@@ -142,14 +142,14 @@ async function handleBulkUserCreation(
 ) {
   if (!Array.isArray(users) || users.length === 0) {
     return new NextResponse(
-      JSON.stringify({ error: 'Users array is required and must not be empty' }), 
+      JSON.stringify({ error: 'Users array is required and must not be empty' }),
       { status: 400, headers: { 'Content-Type': 'application/json' } }
     );
   }
 
   if (users.length > 50) {
     return new NextResponse(
-      JSON.stringify({ error: 'Cannot create more than 50 users at once' }), 
+      JSON.stringify({ error: 'Cannot create more than 50 users at once' }),
       { status: 400, headers: { 'Content-Type': 'application/json' } }
     );
   }
@@ -183,7 +183,7 @@ async function handleBulkUserCreation(
 
       // Clean and validate phone number
       const cleanPhoneNumber = phoneNumber.replace(/\s+/g, '').replace(/[^\d]/g, '');
-      
+
       // Validate phone number format
       const phoneRegex = /^\d{10,15}$/;
       if (!phoneRegex.test(cleanPhoneNumber)) {

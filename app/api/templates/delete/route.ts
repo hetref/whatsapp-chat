@@ -15,7 +15,7 @@ export async function DELETE(request: NextRequest) {
     // Verify user authentication
     const supabase = await createClient();
     const { data: { user }, error: authError } = await supabase.auth.getUser();
-    
+
     if (authError || !user) {
       return new NextResponse('Unauthorized', { status: 401 });
     }
@@ -52,10 +52,10 @@ export async function DELETE(request: NextRequest) {
 
     if (!templateId || !templateName) {
       return new NextResponse(
-        JSON.stringify({ 
-          error: 'Missing required fields', 
-          message: 'templateId and templateName are required' 
-        }), 
+        JSON.stringify({
+          error: 'Missing required fields',
+          message: 'templateId and templateName are required'
+        }),
         { status: 400, headers: { 'Content-Type': 'application/json' } }
       );
     }
@@ -88,13 +88,13 @@ export async function DELETE(request: NextRequest) {
       });
 
       return new NextResponse(
-        JSON.stringify({ 
-          error: 'Failed to delete template', 
+        JSON.stringify({
+          error: 'Failed to delete template',
           details: responseData,
           status: response.status,
           templateId,
           templateName
-        }), 
+        }),
         { status: response.status, headers: { 'Content-Type': 'application/json' } }
       );
     }
@@ -113,10 +113,10 @@ export async function DELETE(request: NextRequest) {
   } catch (error: unknown) {
     console.error('Error in delete template API:', error);
     return new NextResponse(
-      JSON.stringify({ 
-        error: 'Internal server error', 
-        message: error instanceof Error ? error.message : 'Unknown error' 
-      }), 
+      JSON.stringify({
+        error: 'Internal server error',
+        message: error instanceof Error ? error.message : 'Unknown error'
+      }),
       { status: 500, headers: { 'Content-Type': 'application/json' } }
     );
   }

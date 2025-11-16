@@ -52,7 +52,7 @@ interface WhatsAppMessage {
 export async function GET(request: NextRequest) {
   try {
     console.warn('DEPRECATED: Using legacy webhook endpoint. Please migrate to /api/webhook/[token]');
-    
+
     const searchParams = request.nextUrl.searchParams;
     const mode = searchParams.get('hub.mode');
     const token = searchParams.get('hub.verify_token');
@@ -86,7 +86,7 @@ export async function GET(request: NextRequest) {
     // Mark webhook as verified for this user
     await prisma.userSettings.update({
       where: { id: settings.id },
-      data: { 
+      data: {
         webhookVerified: true,
         updatedAt: new Date()
       }
@@ -103,8 +103,8 @@ export async function GET(request: NextRequest) {
  * Get media URL from WhatsApp API using user-specific access token
  */
 async function getWhatsAppMediaUrl(
-  mediaId: string, 
-  accessToken: string, 
+  mediaId: string,
+  accessToken: string,
   apiVersion: string
 ): Promise<string | null> {
   try {
@@ -130,7 +130,7 @@ async function getWhatsAppMediaUrl(
 
     const mediaInfo = await mediaInfoResponse.json();
     console.log('WhatsApp media info retrieved:', { id: mediaId, url: mediaInfo.url });
-    
+
     return mediaInfo.url;
   } catch (error: unknown) {
     console.error('Error getting WhatsApp media URL:', error);
@@ -150,7 +150,7 @@ function processMessageContent(message: WhatsAppMessage) {
     case 'text':
       content = message.text?.body || '';
       break;
-      
+
     case 'image':
       content = message.image?.caption || '[Image]';
       mediaData = {
@@ -161,7 +161,7 @@ function processMessageContent(message: WhatsAppMessage) {
         caption: message.image?.caption,
       };
       break;
-      
+
     case 'document':
       content = `[Document: ${message.document?.filename || 'Unknown'}]`;
       mediaData = {
@@ -172,7 +172,7 @@ function processMessageContent(message: WhatsAppMessage) {
         filename: message.document?.filename,
       };
       break;
-      
+
     case 'audio':
       content = message.audio?.voice ? '[Voice Message]' : '[Audio]';
       mediaData = {
@@ -183,7 +183,7 @@ function processMessageContent(message: WhatsAppMessage) {
         voice: message.audio?.voice,
       };
       break;
-      
+
     case 'video':
       content = message.video?.caption || '[Video]';
       mediaData = {
@@ -194,7 +194,7 @@ function processMessageContent(message: WhatsAppMessage) {
         caption: message.video?.caption,
       };
       break;
-      
+
     case 'sticker':
       content = '[Sticker]';
       mediaData = {
@@ -204,7 +204,7 @@ function processMessageContent(message: WhatsAppMessage) {
         sha256: message.sticker?.sha256,
       };
       break;
-      
+
     default:
       content = `[Unsupported message type: ${message.type}]`;
       console.warn('Unsupported message type:', message.type);
@@ -223,7 +223,7 @@ function processMessageContent(message: WhatsAppMessage) {
 export async function POST(request: NextRequest) {
   try {
     console.warn('DEPRECATED: Using legacy webhook endpoint. Please migrate to /api/webhook/[token]');
-    
+
     const body = await request.json();
 
     console.log('Received webhook payload (legacy):', JSON.stringify(body, null, 2));
@@ -234,36 +234,36 @@ export async function POST(request: NextRequest) {
     const value = changes?.value;
     const messages: WhatsAppMessage[] = value?.messages || [];
     const contacts: WhatsAppContact[] = value?.contacts || [];
-    
+
     // Extract the phone number ID that received the message (WhatsApp Business Account)
     const phoneNumberId = value?.metadata?.phone_number_id;
-    
+
     // Convert to string to ensure type consistency with database
     const phoneNumberIdStr = phoneNumberId ? String(phoneNumberId) : null;
-    
+
     console.log('Incoming message for phone_number_id:', phoneNumberIdStr, '(type:', typeof phoneNumberId, ')');
-    
+
     if (!phoneNumberIdStr) {
       console.error('No phone_number_id in webhook payload');
       return new NextResponse('OK', { status: 200 });
     }
-    
+
     // Find the user who owns this phone number ID
     const userSettings = await prisma.userSettings.findFirst({
       where: { phoneNumberId: phoneNumberIdStr },
       select: { id: true, accessToken: true, apiVersion: true, phoneNumberId: true }
     });
-    
+
     if (!userSettings) {
       console.error('No user found for phone_number_id:', phoneNumberIdStr);
-      
+
       // Debug: Let's check what phone_number_ids exist in the database
       const allSettings = await prisma.userSettings.findMany({
         where: { phoneNumberId: { not: null } },
         select: { id: true, phoneNumberId: true },
         take: 5
       });
-      
+
       if (allSettings.length > 0) {
         console.log('Available phone_number_ids in database:', allSettings.map(s => ({
           id: s.id,
@@ -271,17 +271,17 @@ export async function POST(request: NextRequest) {
           type: typeof s.phoneNumberId
         })));
       }
-      
+
       // Still acknowledge the webhook to avoid retries
       return new NextResponse('OK', { status: 200 });
     }
-    
+
     const businessOwnerId = userSettings.id;
     const accessToken = userSettings.accessToken;
     const apiVersion = userSettings.apiVersion || 'v23.0';
-    
+
     console.log('Found business owner:', businessOwnerId);
-    
+
     // Process each incoming message
     for (const message of messages) {
       const phoneNumber = message.from;
@@ -299,26 +299,26 @@ export async function POST(request: NextRequest) {
       // Handle media upload to S3 if it's a media message
       let s3MediaUrl = null;
       let s3UploadSuccess = false;
-      
+
       if (mediaData && mediaData.id && accessToken) {
         console.log(`Processing media upload for ${messageType}: ${mediaData.id}`);
-        
+
         try {
           // Get WhatsApp media URL first using user-specific credentials
           const whatsappMediaUrl = await getWhatsAppMediaUrl(
-            mediaData.id, 
-            accessToken, 
+            mediaData.id,
+            accessToken,
             apiVersion
           );
-          
+
           if (whatsappMediaUrl) {
             console.log(`Downloading and uploading ${messageType} to S3...`);
-            
+
             // Validate media ID format (should be numeric)
             if (!/^\d+$/.test(mediaData.id)) {
               throw new Error(`Invalid media ID format: ${mediaData.id}`);
             }
-            
+
             // Download from WhatsApp and upload to S3
             s3MediaUrl = await downloadAndUploadToS3(
               whatsappMediaUrl,
@@ -327,7 +327,7 @@ export async function POST(request: NextRequest) {
               mediaData.mime_type || 'application/octet-stream',
               accessToken // Pass user-specific access token for authentication
             );
-            
+
             if (s3MediaUrl) {
               console.log(`Successfully uploaded ${messageType} to S3: ${s3MediaUrl}`);
               s3UploadSuccess = true;

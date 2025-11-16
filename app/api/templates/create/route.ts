@@ -35,7 +35,7 @@ interface ButtonComponent {
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient();
-    
+
     // Verify user authentication
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) {
@@ -76,10 +76,10 @@ export async function POST(request: NextRequest) {
     // Validate required fields
     if (!templateData.name || !templateData.category || !templateData.language || !templateData.components) {
       return new NextResponse(
-        JSON.stringify({ 
-          error: 'Missing required fields', 
-          message: 'name, category, language, and components are required' 
-        }), 
+        JSON.stringify({
+          error: 'Missing required fields',
+          message: 'name, category, language, and components are required'
+        }),
         { status: 400 }
       );
     }
@@ -87,10 +87,10 @@ export async function POST(request: NextRequest) {
     // Validate template name (max 512 characters, lowercase, underscores only)
     if (templateData.name.length > 512) {
       return new NextResponse(
-        JSON.stringify({ 
-          error: 'Invalid template name', 
-          message: 'Template name must be 512 characters or less' 
-        }), 
+        JSON.stringify({
+          error: 'Invalid template name',
+          message: 'Template name must be 512 characters or less'
+        }),
         { status: 400 }
       );
     }
@@ -99,10 +99,10 @@ export async function POST(request: NextRequest) {
     const validCategories = ['MARKETING', 'UTILITY', 'AUTHENTICATION'];
     if (!validCategories.includes(templateData.category)) {
       return new NextResponse(
-        JSON.stringify({ 
-          error: 'Invalid category', 
-          message: 'Category must be MARKETING, UTILITY, or AUTHENTICATION' 
-        }), 
+        JSON.stringify({
+          error: 'Invalid category',
+          message: 'Category must be MARKETING, UTILITY, or AUTHENTICATION'
+        }),
         { status: 400 }
       );
     }
@@ -111,10 +111,10 @@ export async function POST(request: NextRequest) {
     const validationError = validateComponents(templateData.components);
     if (validationError) {
       return new NextResponse(
-        JSON.stringify({ 
-          error: 'Invalid components', 
-          message: validationError 
-        }), 
+        JSON.stringify({
+          error: 'Invalid components',
+          message: validationError
+        }),
         { status: 400 }
       );
     }
@@ -128,7 +128,7 @@ export async function POST(request: NextRequest) {
 
     // Prepare WhatsApp Business API request
     const apiUrl = `https://graph.facebook.com/${WHATSAPP_API_VERSION}/${WHATSAPP_BUSINESS_ACCOUNT_ID}/message_templates`;
-    
+
     const requestBody = {
       name: templateData.name,
       category: templateData.category,
@@ -157,13 +157,13 @@ export async function POST(request: NextRequest) {
         statusText: response.statusText,
         error: responseData,
       });
-      
+
       return new NextResponse(
-        JSON.stringify({ 
-          error: 'Failed to create template', 
+        JSON.stringify({
+          error: 'Failed to create template',
           details: responseData,
-          status: response.status 
-        }), 
+          status: response.status
+        }),
         { status: response.status }
       );
     }
@@ -191,10 +191,10 @@ export async function POST(request: NextRequest) {
   } catch (error: unknown) {
     console.error('Error in create template API:', error);
     return new NextResponse(
-      JSON.stringify({ 
-        error: 'Internal server error', 
-        message: error instanceof Error ? error.message : 'Unknown error' 
-      }), 
+      JSON.stringify({
+        error: 'Internal server error',
+        message: error instanceof Error ? error.message : 'Unknown error'
+      }),
       { status: 500 }
     );
   }
@@ -207,14 +207,14 @@ function extractVariables(text: string): number[] {
   const variableRegex = /\{\{(\d+)\}\}/g;
   const variables: number[] = [];
   let match;
-  
+
   while ((match = variableRegex.exec(text)) !== null) {
     const varNum = parseInt(match[1], 10);
     if (!variables.includes(varNum)) {
       variables.push(varNum);
     }
   }
-  
+
   return variables.sort((a, b) => a - b);
 }
 
@@ -249,7 +249,7 @@ function validateComponents(components: TemplateComponent[]): string | null {
           if (!component.text) {
             return 'TEXT HEADER component requires text field';
           }
-          
+
           // Check for variables and require examples
           const headerVariables = extractVariables(component.text);
           if (headerVariables.length > 0) {
@@ -271,7 +271,7 @@ function validateComponents(components: TemplateComponent[]): string | null {
         if (component.text.length > 1024) {
           return 'BODY text must be 1024 characters or less';
         }
-        
+
         // Check for variables and require examples
         const bodyVariables = extractVariables(component.text);
         if (bodyVariables.length > 0) {
@@ -295,7 +295,7 @@ function validateComponents(components: TemplateComponent[]): string | null {
         if (component.text.length > 60) {
           return 'FOOTER text must be 60 characters or less';
         }
-        
+
         // Footer typically doesn't support variables, but check anyway
         const footerVariables = extractVariables(component.text);
         if (footerVariables.length > 0) {
@@ -314,7 +314,7 @@ function validateComponents(components: TemplateComponent[]): string | null {
         if (component.buttons.length > 10) {
           return 'Maximum 10 buttons are allowed';
         }
-        
+
         // Validate each button
         for (const button of component.buttons) {
           if (!button.type || !button.text) {
@@ -350,7 +350,7 @@ function validateComponents(components: TemplateComponent[]): string | null {
 export async function GET() {
   try {
     const supabase = await createClient();
-    
+
     // Verify user authentication
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) {
@@ -369,7 +369,7 @@ export async function GET() {
 
     const isConfigured = settings?.access_token_added || false;
     const apiVersion = settings?.api_version || 'v23.0';
-    
+
     return NextResponse.json({
       status: 'WhatsApp Template Creation API',
       configured: isConfigured,

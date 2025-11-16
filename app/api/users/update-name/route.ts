@@ -29,10 +29,10 @@ export async function POST(request: NextRequest) {
     // Validate custom name length
     if (customName && customName.length > 100) {
       return NextResponse.json(
-        { 
-          error: 'Custom name too long', 
-          message: 'Custom name must be 100 characters or less' 
-        }, 
+        {
+          error: 'Custom name too long',
+          message: 'Custom name must be 100 characters or less'
+        },
         { status: 400 }
       );
     }
@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
     // Update the user's custom name
     const updatedUser = await prisma.user.update({
       where: { id: targetUserId },
-      data: { 
+      data: {
         customName: customName || null
       }
     });
@@ -71,10 +71,10 @@ export async function POST(request: NextRequest) {
   } catch (error: unknown) {
     console.error('Error in update-name API:', error);
     return NextResponse.json(
-      { 
-        error: 'Internal server error', 
-        message: error instanceof Error ? error.message : 'Unknown error' 
-      }, 
+      {
+        error: 'Internal server error',
+        message: error instanceof Error ? error.message : 'Unknown error'
+      },
       { status: 500 }
     );
   }
