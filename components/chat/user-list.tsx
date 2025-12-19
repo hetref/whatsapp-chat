@@ -396,57 +396,42 @@ export function UserList({ users, selectedUser, onUserSelect, currentUserId, onU
   return (
     <div className="h-full flex flex-col bg-background">
       {/* Header */}
-      <div className="p-4 border-b border-border bg-green-600 text-white">
+      <div className="p-4 border-b border-border bg-gradient-to-r from-green-600 to-emerald-600 text-white shadow-sm">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <MessageCircle className="h-6 w-6" />
-            <h1 className="text-lg font-semibold">WhatsApp</h1>
+            <div className="p-2 bg-white/10 rounded-full backdrop-blur-sm">
+              <MessageCircle className="h-5 w-5" />
+            </div>
+            <div>
+              <h1 className="text-lg font-semibold">Messages</h1>
+              <p className="text-xs text-white/80">{users.length} conversations</p>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
             <Button
               variant="ghost"
-              size="sm"
+              size="icon"
               onClick={() => setShowNewChat(true)}
-              className="p-2 text-white hover:bg-green-700 rounded-full transition-colors"
+              className="h-9 w-9 text-white hover:bg-white/20 rounded-full transition-all hover:scale-105"
               title="New chat"
             >
               <Plus className="h-5 w-5" />
             </Button>
             <Button
               variant="ghost"
-              size="sm"
+              size="icon"
               onClick={handleCreateGroup}
-              className="p-2 text-white hover:bg-green-700 rounded-full transition-colors"
+              className="h-9 w-9 text-white hover:bg-white/20 rounded-full transition-all hover:scale-105"
               title="Create broadcast group"
             >
               <Users className="h-5 w-5" />
             </Button>
-            <Link href="/protected/templates">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="p-2 text-white hover:bg-green-700 rounded-full transition-colors"
-                title="Message Templates"
-              >
-                <FileText className="h-5 w-5" />
-              </Button>
-            </Link>
-            <Link href="/protected/setup">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="p-2 text-white hover:bg-green-700 rounded-full transition-colors"
-                title="WhatsApp Setup"
-              >
-                <Settings className="h-5 w-5" />
-              </Button>
-            </Link>
-            <div className="[&>button]:text-white [&>button]:hover:bg-green-700">
+            <div className="[&>button]:text-white [&>button]:hover:bg-white/20 [&>button]:h-9 [&>button]:w-9">
               <ThemeSwitcher />
             </div>
             <button
               onClick={handleLogout}
-              className="p-2 hover:bg-green-700 rounded-full transition-colors"
+              className="h-9 w-9 flex items-center justify-center hover:bg-white/20 rounded-full transition-all hover:scale-105"
               title="Logout"
             >
               <LogOut className="h-5 w-5" />
@@ -566,7 +551,7 @@ export function UserList({ users, selectedUser, onUserSelect, currentUserId, onU
       )}
 
       {/* Search */}
-      <div className="p-4 border-b border-border">
+      <div className="p-3 border-b border-border bg-muted/30">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
           <input
@@ -574,7 +559,7 @@ export function UserList({ users, selectedUser, onUserSelect, currentUserId, onU
             placeholder="Search conversations..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-border rounded-lg bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-green-500"
+            className="w-full pl-10 pr-4 py-2.5 border border-border rounded-lg bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
           />
         </div>
       </div>
@@ -615,12 +600,14 @@ export function UserList({ users, selectedUser, onUserSelect, currentUserId, onU
           filteredUsers.map((user) => (
             <div
               key={user.id}
-              className={`group p-4 border-b border-border cursor-pointer hover:bg-muted/50 transition-all duration-200 ${selectedUser?.id === user.id ? "bg-muted" : ""
+              className={`group relative p-3.5 border-b border-border cursor-pointer transition-all duration-200 hover:bg-muted/70 ${selectedUser?.id === user.id
+                ? "bg-gradient-to-r from-primary/10 to-primary/5 border-l-4 border-l-primary"
+                : "hover:border-l-4 hover:border-l-transparent"
                 }`}
             >
               <div className="flex items-center gap-3">
-                <Avatar className="h-12 w-12">
-                  <AvatarFallback className="bg-green-100 text-green-700 font-semibold">
+                <Avatar className="h-12 w-12 ring-2 ring-background group-hover:ring-primary/20 transition-all">
+                  <AvatarFallback className="bg-gradient-to-br from-primary/90 to-primary text-primary-foreground font-semibold text-lg">
                     {getDisplayName(user).charAt(0).toUpperCase()}
                   </AvatarFallback>
                 </Avatar>
@@ -701,11 +688,11 @@ export function UserList({ users, selectedUser, onUserSelect, currentUserId, onU
                     </div>
 
                     <div className="flex items-center gap-2 ml-2">
-                      <span className="text-xs text-muted-foreground">
+                      <span className="text-xs text-muted-foreground whitespace-nowrap">
                         {formatTime(user.last_message_time || user.last_active)}
                       </span>
                       {(user.unread_count || 0) > 0 && (
-                        <div className="bg-green-600 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center font-medium shadow-md animate-scale-in">
+                        <div className="bg-primary text-primary-foreground text-xs rounded-full min-w-[20px] h-5 px-1.5 flex items-center justify-center font-semibold shadow-sm">
                           {user.unread_count! > 99 ? '99+' : user.unread_count}
                         </div>
                       )}

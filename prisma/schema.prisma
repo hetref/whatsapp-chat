@@ -20,29 +20,30 @@ model User {
   name         String
   customName   String?  @map("custom_name")
   whatsappName String?  @map("whatsapp_name")
-  lastActive   DateTime @map("last_active") @default(now())
+  lastActive   DateTime @default(now()) @map("last_active")
 
   // Relations
-  sentMessages     Message[]   @relation("sentMessages")
-  receivedMessages Message[]   @relation("receivedMessages")
-  groupsOwned      ChatGroup[] @relation("GroupOwner")
+  sentMessages     Message[]     @relation("sentMessages")
+  receivedMessages Message[]     @relation("receivedMessages")
+  groupsOwned      ChatGroup[]   @relation("GroupOwner")
   groupMemberships GroupMember[]
   settings         UserSettings?
+  apiKeys          ApiKey[]
 
   @@map("users")
 }
 
 /// Messages exchanged between a business owner (Clerk user) and WhatsApp contacts.
 model Message {
-  id         String   @id @db.Text
-  senderId   String   @map("sender_id")
-  receiverId String   @map("receiver_id")
-  content    String
-  timestamp  DateTime @default(now())
-  isSentByMe Boolean  @map("is_sent_by_me") @default(false)
-  messageType String  @map("message_type") @default("text")
-  mediaData   Json?   @map("media_data")
-  isRead      Boolean @map("is_read") @default(false)
+  id          String    @id @db.Text
+  senderId    String    @map("sender_id")
+  receiverId  String    @map("receiver_id")
+  content     String
+  timestamp   DateTime  @default(now())
+  isSentByMe  Boolean   @default(false) @map("is_sent_by_me")
+  messageType String    @default("text") @map("message_type")
+  mediaData   Json?     @map("media_data")
+  isRead      Boolean   @default(false) @map("is_read")
   readAt      DateTime? @map("read_at")
 
   // Relations
@@ -59,12 +60,12 @@ model Message {
 
 /// Broadcast group owned by a business user.
 model ChatGroup {
-  id          String       @id @default(uuid()) @db.Uuid
-  ownerId     String       @map("owner_id")
+  id          String   @id @default(uuid()) @db.Uuid
+  ownerId     String   @map("owner_id")
   name        String
   description String?
-  createdAt   DateTime     @map("created_at") @default(now())
-  updatedAt   DateTime     @map("updated_at") @default(now())
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @default(now()) @map("updated_at")
 
   // Relations
   owner   User          @relation("GroupOwner", fields: [ownerId], references: [id], onDelete: Cascade)
@@ -77,9 +78,9 @@ model ChatGroup {
 /// Member of a broadcast group, pointing to a WhatsApp contact in `users`.
 model GroupMember {
   id      String   @id @default(uuid()) @db.Uuid
-  groupId String   @db.Uuid @map("group_id")
+  groupId String   @map("group_id") @db.Uuid
   userId  String   @map("user_id")
-  addedAt DateTime @map("added_at") @default(now())
+  addedAt DateTime @default(now()) @map("added_at")
 
   group ChatGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
   user  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -98,11 +99,11 @@ model UserSettings {
   businessAccountId String?  @map("business_account_id")
   verifyToken       String?  @map("verify_token")
   webhookToken      String?  @map("webhook_token")
-  apiVersion        String   @map("api_version") @default("v23.0")
-  webhookVerified   Boolean  @map("webhook_verified") @default(false)
-  accessTokenAdded  Boolean  @map("access_token_added") @default(false)
-  createdAt         DateTime @map("created_at") @default(now())
-  updatedAt         DateTime @map("updated_at") @default(now())
+  apiVersion        String   @default("v23.0") @map("api_version")
+  webhookVerified   Boolean  @default(false) @map("webhook_verified")
+  accessTokenAdded  Boolean  @default(false) @map("access_token_added")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @default(now()) @map("updated_at")
 
   // Additional fields used by the UI
   phoneNumber String? @map("phone_number")
@@ -116,4 +117,26 @@ model UserSettings {
   @@index([webhookToken], name: "idx_user_settings_webhook_token")
   @@index([businessAccountId], name: "idx_user_settings_business_account_id")
   @@map("user_settings")
+}
+
+/// API Keys for external API access to WhatsApp Cloud features
+model ApiKey {
+  id           String    @id @default(uuid()) @db.Uuid
+  userId       String    @map("user_id") @db.Text
+  name         String // User-friendly name for the API key
+  key          String    @unique @db.Text // The actual API key (hashed)
+  encryptedKey String?   @map("encrypted_key") @db.Text // Encrypted version for reveal functionality
+  prefix       String    @db.Text // First 8 characters for display (e.g., "wc_live_")
+  lastUsed     DateTime? @map("last_used")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @default(now()) @map("updated_at")
+  isActive     Boolean   @default(true) @map("is_active")
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId], name: "idx_api_keys_user_id")
+  @@index([key], name: "idx_api_keys_key")
+  @@index([isActive], name: "idx_api_keys_is_active")
+  @@map("api_keys")
 }

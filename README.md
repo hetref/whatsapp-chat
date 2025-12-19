@@ -33,6 +33,33 @@
 
 ---
 
+## ✨ Complete Feature List
+
+### 💬 Messaging Features
+- **Real-time Chat** - Live message updates with optimistic UI
+- **Text Messages** - Send and receive unlimited text messages
+- **Media Messages** - Images, videos, audio, and documents
+- **Template Messages** - Pre-approved message templates
+- **Broadcast Groups** - Send messages to multiple contacts
+- **Message Status** - Delivery and read receipts
+- **Custom Names** - Personalize contact display names
+
+### 🔌 API Features
+- **RESTful API** - Complete WhatsApp messaging API
+- **API Key Management** - Secure access with encrypted keys
+- **Rate Limiting** - Built-in protection and quotas
+- **Webhook Support** - Receive real-time message events
+- **Template Management** - Create and manage templates via API
+- **Message Sending** - Text, template, and media messages
+
+### 🛠️ Platform Features
+- **Multi-tenant** - Each user has isolated WhatsApp configuration
+- **User Authentication** - Secure login with Clerk
+- **Cloud Storage** - AWS S3 integration for media files
+- **Database** - PostgreSQL via NeonDB with Prisma ORM
+- **Type Safety** - Full TypeScript support
+- **Responsive Design** - Works on desktop and mobile
+
 **Real-time Message Updates**
 
 WaChat provides real-time messaging experience through:
@@ -387,9 +414,83 @@ Display Priority:
 
 ## 🔌 API Reference
 
+### WhatsApp Cloud API (WC API)
+
+WaChat provides a comprehensive REST API for programmatic access to WhatsApp messaging features.
+
+#### Available Endpoints
+
+**Status & Health**
+- `GET /api/wc/status` - Check API status and template statistics
+
+**Template Management**
+- `GET /api/wc/templates` - List all templates with pagination
+- `POST /api/wc/templates` - Create new template
+- `GET /api/wc/templates/:id` - Get specific template details
+- `DELETE /api/wc/templates/:id` - Delete template
+
+**Message Sending**
+- `POST /api/wc/messages/text` - Send text messages (max 4096 chars)
+- `POST /api/wc/messages/template` - Send template messages with variables
+- `POST /api/wc/messages/media` - Send media files (images, videos, audio, documents)
+
+**API Key Management**
+- `GET /api/api-keys` - List your API keys
+- `POST /api/api-keys` - Create new API key
+- `PATCH /api/api-keys` - Update API key name
+- `DELETE /api/api-keys` - Revoke API key
+
+📖 **Complete Documentation:**
+- **[WC API Documentation](./WC_API_DOCUMENTATION.md)** - Full API reference with examples
+- **[Quick Start Guide](./WC_API_QUICK_START.md)** - Get started in 5 minutes
+- **[API Structure Guide](./API_STRUCTURE.md)** - Extend the API with custom endpoints
+
+#### Authentication
+
+All WC API requests require an API key in the Authorization header:
+
+```bash
+Authorization: Bearer wc_live_your_api_key_here
+```
+
+**Creating API Keys:**
+1. Navigate to `/protected/settings`
+2. Click "Create API Key"
+3. Give it a descriptive name
+4. Copy and securely store the key (shown only once)
+
+**Example Request:**
+
+```bash
+# Send a text message
+curl -X POST https://yourdomain.com/api/wc/messages/text \
+  -H "Authorization: Bearer wc_live_your_api_key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "to": "1234567890",
+    "text": "Hello from WaChat API!"
+  }'
+```
+
+**Key Features:**
+- 🔑 API Key Management - Create, manage, and secure API keys
+- 📋 Template Management - Create, list, and manage message templates
+- 💬 Message Sending - Text, template, and media messages
+- 📊 Status Monitoring - Check API health and template statistics
+- 🔐 Secure Authentication - Bearer token with encryption
+- 📝 Comprehensive Error Handling - Detailed error messages and codes
+
+**Base URL:** `https://yourdomain.com/api/wc`
+
+---
+
+### Legacy Internal APIs
+
+The following endpoints are used internally by the WaChat UI:
+
 ### Authentication
 
-All API routes require authentication via Clerk session.
+All internal API routes require authentication via Clerk session.
 
 ### Message APIs
 

@@ -61,12 +61,20 @@ AWS_ACCESS_KEY_ID=your_aws_access_key_id
 AWS_SECRET_ACCESS_KEY=your_aws_secret_access_key
 AWS_REGION=us-east-1
 AWS_BUCKET_NAME=wachat-media-bucket
+
+# ============================================
+# API KEY ENCRYPTION (Optional)
+# ============================================
+# For encrypting API keys shown in the UI
+# If not set, a default key will be used (not recommended for production)
+API_KEY_ENCRYPTION_SECRET=your_32_character_random_string_here
 ```
 
 ### Notes:
 - **Clerk Keys**: Get these from your Clerk dashboard → API Keys section
 - **Database URL**: Get this from your NeonDB dashboard → Connection Details
 - **AWS Keys**: Create an IAM user with S3 access permissions
+- **API Key Encryption Secret**: A 32-character random string for encrypting API keys (optional but recommended for production)
 - **WhatsApp credentials are NOT needed in environment variables** - they are configured per-user in the app interface
 
 ---
@@ -226,6 +234,7 @@ Ensure these are set in your deployment platform:
 - `AWS_SECRET_ACCESS_KEY`
 - `AWS_REGION`
 - `AWS_BUCKET_NAME`
+- `API_KEY_ENCRYPTION_SECRET` (recommended - 32 character random string)
 
 ---
 
@@ -241,6 +250,12 @@ Ensure these are set in your deployment platform:
 - **Outgoing messages** → `/api/send-message` → WhatsApp API + stored in database
 - **Media messages** → Uploaded to AWS S3 → URLs stored in database
 
+### WC API Flow (Programmatic Access)
+- **API Key Authentication** → Bearer token in Authorization header
+- **Template Management** → `/api/wc/templates` → Create, list, delete templates
+- **Message Sending** → `/api/wc/messages/*` → Send text, template, or media messages
+- **Status Monitoring** → `/api/wc/status` → Check API health and statistics
+
 ### Database Architecture
 - **Prisma ORM** provides type-safe database operations
 - **NeonDB** (PostgreSQL) stores all application data
@@ -253,6 +268,80 @@ Ensure these are set in your deployment platform:
 
 ---
 
+## 11. Using the WC API
+
+After setup, you can programmatically send messages using the WC API:
+
+### Creating an API Key
+
+1. Log in to your WaChat instance
+2. Navigate to `/protected/settings`
+3. Click "Create API Key"
+4. Give it a descriptive name (e.g., "Production Server")
+5. Copy the key immediately (it's shown only once)
+
+### Available Endpoints
+
+**Status & Health**
+```bash
+GET /api/wc/status
+# Check API health and template statistics
+```
+
+**Template Management**
+```bash
+GET /api/wc/templates              # List all templates
+POST /api/wc/templates             # Create new template
+GET /api/wc/templates/:id          # Get specific template
+DELETE /api/wc/templates/:id       # Delete template
+```
+
+**Message Sending**
+```bash
+POST /api/wc/messages/text         # Send text message
+POST /api/wc/messages/template     # Send template message
+POST /api/wc/messages/media        # Send media file
+```
+
+### Example: Send a Text Message
+
+```bash
+curl -X POST https://your-domain.com/api/wc/messages/text \
+  -H "Authorization: Bearer wc_live_your_api_key_here" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "to": "1234567890",
+    "text": "Hello from WaChat API!"
+  }'
+```
+
+### Example: Send a Template Message
+
+```bash
+curl -X POST https://your-domain.com/api/wc/messages/template \
+  -H "Authorization: Bearer wc_live_your_api_key_here" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "to": "1234567890",
+    "template": {
+      "name": "order_confirmation",
+      "language": "en"
+    }
+  }'
+```
+
+### Security Best Practices
+
+- **Never commit API keys** to version control
+- **Use environment variables** in your applications
+- **Create separate keys** for different environments (dev, staging, prod)
+- **Revoke unused keys** regularly
+- **Monitor usage** via the last used timestamp
+
+📖 For complete API documentation, see [WC_API_DOCUMENTATION.md](./WC_API_DOCUMENTATION.md)
+
+---
+
 ## 🚀 Quick Start Summary
 
 1. **Clone repo** and run `npm install`
@@ -262,4 +351,5 @@ Ensure these are set in your deployment platform:
 5. **Run `npx prisma db push`** to create database schema
 6. **Start with `npm run dev`**
 7. **Sign up** in the app and configure WhatsApp credentials
-8. **Start messaging!** 🎉
+8. **Create API keys** in `/protected/settings` for programmatic access
+9. **Start messaging!** 🎉
