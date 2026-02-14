@@ -155,7 +155,6 @@ export async function POST(request: NextRequest) {
             update: {},
             create: {
                 id: userId,
-                name: userId,
             },
         });
 

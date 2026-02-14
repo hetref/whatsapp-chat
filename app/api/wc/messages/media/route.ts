@@ -212,17 +212,6 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        // Ensure user exists in database
-        await prisma.user.upsert({
-            where: { id: cleanPhoneNumber },
-            update: { lastActive: new Date() },
-            create: {
-                id: cleanPhoneNumber,
-                name: cleanPhoneNumber,
-                lastActive: new Date()
-            }
-        });
-
         const results = [];
         const timestamp = new Date();
 
@@ -261,6 +250,33 @@ export async function POST(request: NextRequest) {
 
                 console.log(`[WC API] Media message sent successfully: ${messageId}`);
 
+                // Find or create contact for this phone number
+                let contact = await prisma.contact.findUnique({
+                    where: {
+                        contacts_user_id_phone_number_key: {
+                            userId: userId,
+                            phoneNumber: cleanPhoneNumber
+                        }
+                    }
+                });
+
+                if (!contact) {
+                    // Create new contact
+                    contact = await prisma.contact.create({
+                        data: {
+                            userId: userId,
+                            phoneNumber: cleanPhoneNumber,
+                            lastActive: timestamp
+                        }
+                    });
+                } else {
+                    // Update last active time
+                    await prisma.contact.update({
+                        where: { id: contact.id },
+                        data: { lastActive: timestamp }
+                    });
+                }
+
                 // Upload to S3 for our records
                 let s3Url: string | null = null;
                 try {
@@ -275,8 +291,8 @@ export async function POST(request: NextRequest) {
                     await prisma.message.create({
                         data: {
                             id: messageId || `wc_media_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-                            senderId: userId,
-                            receiverId: cleanPhoneNumber,
+                            userId: userId,
+                            contactId: contact.id,
                             content: caption || `[${mediaType.charAt(0).toUpperCase() + mediaType.slice(1)}]`,
                             timestamp: timestamp,
                             isSentByMe: true,

@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db';
 
 /**
  * POST handler to mark messages as read
+ * Marks all unread messages from a specific contact as read
  */
 export async function POST(request: NextRequest) {
   try {
@@ -16,7 +17,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Parse request body
+    // Parse request body - otherUserId is the contact ID (UUID)
     const { otherUserId } = await request.json();
 
     if (!otherUserId) {
@@ -26,13 +27,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log(`Marking messages as read for conversation with ${otherUserId}`);
+    console.log(`Marking messages as read for conversation with contact ${otherUserId}`);
 
-    // Mark messages as read where the current user is the receiver and sender is otherUserId
+    // Mark messages as read where:
+    // - userId is the current user (business owner)
+    // - contactId is the other user (contact)
+    // - isSentByMe is false (messages received from contact)
+    // - isRead is false (not already read)
     const updateResult = await prisma.message.updateMany({
       where: {
-        senderId: otherUserId,
-        receiverId: userId,
+        userId: userId,
+        contactId: otherUserId,
+        isSentByMe: false,
         isRead: false
       },
       data: {

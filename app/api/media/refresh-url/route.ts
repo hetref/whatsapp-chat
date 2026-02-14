@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if user has access to this message
-    if (message.senderId !== userId && message.receiverId !== userId) {
+    if (message.userId !== userId) {
       return NextResponse.json(
         { error: 'Access denied' },
         { status: 403 }
@@ -85,7 +85,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Determine which identifier was used as the S3 owner when the media was stored
-    const ownerIdForS3 = message.isSentByMe ? message.receiverId : message.senderId;
+    // In the multi-tenant model, all media belongs to the business owner (userId)
+    const ownerIdForS3 = message.userId;
 
     // Generate new pre-signed URL
     const newUrl = await generatePresignedUrl(
