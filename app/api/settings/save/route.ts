@@ -113,7 +113,6 @@ export async function POST(request: NextRequest) {
         update: {},
         create: {
           id: userId,
-          name: userId,
         },
       });
 
@@ -200,7 +199,6 @@ export async function GET() {
           update: {},
           create: {
             id: userId,
-            name: userId,
           },
         });
 

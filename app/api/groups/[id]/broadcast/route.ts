@@ -52,8 +52,13 @@ export async function POST(
       where: {
         groupId: groupId
       },
-      select: {
-        userId: true
+      include: {
+        contact: {
+          select: {
+            id: true,
+            phoneNumber: true
+          }
+        }
       }
     });
 
@@ -106,7 +111,7 @@ export async function POST(
     // Send message to each member individually
     for (const member of members) {
       try {
-        const cleanPhoneNumber = member.userId.replace(/\s+/g, '').replace(/[^\d]/g, '');
+        const cleanPhoneNumber = member.contact.phoneNumber.replace(/\s+/g, '').replace(/[^\d]/g, '');
         let whatsappResponse;
         let messageContent = message;
         let messageMediaData = null;
@@ -271,8 +276,8 @@ export async function POST(
 
           const messageObject = {
             id: messageId,
-            senderId: cleanPhoneNumber, // The recipient's phone number
-            receiverId: userId, // The broadcaster (current user)
+            userId: userId, // The broadcaster (current user)
+            contactId: member.contact.id, // The recipient contact
             content: messageContent,
             timestamp: new Date(),
             isSentByMe: true, // Sent by the current user
@@ -286,19 +291,19 @@ export async function POST(
             await prisma.message.create({
               data: messageObject
             });
-            console.log(`Broadcast message stored for ${member.userId}`);
+            console.log(`Broadcast message stored for contact ${member.contact.id}`);
           } catch (dbError) {
-            console.error(`Error storing broadcast message for ${member.userId}:`, dbError);
+            console.error(`Error storing broadcast message for contact ${member.contact.id}:`, dbError);
           }
         } else {
           results.failed++;
-          results.errors.push(`${member.userId}: ${responseData.error?.message || 'Unknown error'}`);
-          console.error(`WhatsApp API error for ${member.userId}:`, responseData);
+          results.errors.push(`${member.contact.phoneNumber}: ${responseData.error?.message || 'Unknown error'}`);
+          console.error(`WhatsApp API error for ${member.contact.phoneNumber}:`, responseData);
         }
       } catch (error) {
         results.failed++;
-        results.errors.push(`${member.userId}: ${error instanceof Error ? error.message : 'Unknown error'}`);
-        console.error(`Error sending to ${member.userId}:`, error);
+        results.errors.push(`${member.contact.phoneNumber}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        console.error(`Error sending to ${member.contact.phoneNumber}:`, error);
       }
     }
 

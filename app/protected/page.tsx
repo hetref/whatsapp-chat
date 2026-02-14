@@ -10,6 +10,7 @@ import Link from "next/link";
 
 interface ChatUser {
   id: string;
+  phone_number: string;
   name: string;
   custom_name?: string;
   whatsapp_name?: string;
@@ -35,6 +36,7 @@ interface Message {
 
 interface ConversationApi {
   id: string;
+  phone_number: string;
   name: string;
   custom_name?: string;
   whatsapp_name?: string;
@@ -133,6 +135,7 @@ export default function ChatPage() {
           // Transform data to match ChatUser interface
           const transformedUsers: ChatUser[] = result.conversations.map((conv: ConversationApi) => ({
             id: conv.id,
+            phone_number: conv.phone_number,
             name: conv.name,
             custom_name: conv.custom_name,
             whatsapp_name: conv.whatsapp_name,
@@ -348,6 +351,7 @@ export default function ChatPage() {
       if (response.ok && result.conversations) {
         const transformedUsers: ChatUser[] = result.conversations.map((conv: ConversationApi) => ({
           id: conv.id,
+          phone_number: conv.phone_number,
           name: conv.name,
           custom_name: conv.custom_name,
           whatsapp_name: conv.whatsapp_name,
@@ -561,7 +565,7 @@ export default function ChatPage() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          to: selectedUser.id,
+          to: selectedUser.phone_number,
           message: content,
         }),
       });

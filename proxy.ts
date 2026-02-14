@@ -21,14 +21,12 @@ export default clerkMiddleware(async (auth, req) => {
     const isPublic = isPublicRoute(req);
 
     // Handle root route specifically
-    if (req.nextUrl.pathname === "/") {
-        if (userId) {
-            // User is authenticated, redirect to dashboard
-            return NextResponse.redirect(new URL("/protected", req.url));
-        } else {
-            // User is not authenticated, redirect to sign-in
-            return NextResponse.redirect(new URL("/sign-in", req.url));
-        }
+    if ((req.nextUrl.pathname === "/sign-in" || req.nextUrl.pathname === "/sign-up") && userId) {
+        // User is authenticated, redirect to dashboard
+        return NextResponse.redirect(new URL("/protected", req.url));
+    } else if ((req.nextUrl.pathname === "/protected" || req.nextUrl.pathname.startsWith("/protected/")) && !userId) {
+        // User is not authenticated, redirect to sign-in
+        return NextResponse.redirect(new URL("/sign-in", req.url));
     }
 
     // For non-public routes, require authentication

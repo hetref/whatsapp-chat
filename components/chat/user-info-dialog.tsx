@@ -8,6 +8,7 @@ import { X, Edit3, Check, Phone, MessageCircle, Clock, User } from "lucide-react
 
 interface ChatUser {
   id: string;
+  phone_number: string;
   name: string;
   custom_name?: string;
   whatsapp_name?: string;
@@ -31,7 +32,7 @@ export function UserInfoDialog({ user, isOpen, onClose, onUpdateName }: UserInfo
   if (!isOpen) return null;
 
   const getDisplayName = () => {
-    return user.custom_name || user.whatsapp_name || user.id;
+    return user.custom_name || user.whatsapp_name || user.phone_number;
   };
 
   const formatLastActive = (timestamp: string) => {
@@ -189,7 +190,7 @@ export function UserInfoDialog({ user, isOpen, onClose, onUpdateName }: UserInfo
                 <Phone className="h-5 w-5 text-muted-foreground mt-0.5" />
                 <div className="flex-1">
                   <p className="text-sm font-medium text-muted-foreground">Phone Number</p>
-                  <p className="text-base font-mono">{user.id}</p>
+                  <p className="text-base font-mono">{user.phone_number}</p>
                 </div>
               </div>
 

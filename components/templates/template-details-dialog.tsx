@@ -1,7 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { X, Copy, CheckCircle, AlertCircle, Clock, Zap, Trash2, Loader2 } from "lucide-react";
+import { X, Copy, CheckCircle, AlertCircle, Clock, Zap, Trash2, Loader2, Hash, Image, Video, FileText } from "lucide-react";
 import { useState } from "react";
 
 // Type definitions
@@ -60,6 +60,34 @@ export function TemplateDetailsDialog({ template, isOpen, onClose, onRefresh }: 
     navigator.clipboard.writeText(text);
     // You might want to show a toast notification here
   };
+
+  const extractVariables = (template: WhatsAppTemplate): string[] => {
+    const variables = new Set<string>();
+    template.components.forEach(component => {
+      if (component.text) {
+        const matches = component.text.match(/\{\{(\d+)\}\}/g);
+        if (matches) {
+          matches.forEach(match => variables.add(match));
+        }
+      }
+    });
+    return Array.from(variables).sort();
+  };
+
+  const getMediaHeaderInfo = (template: WhatsAppTemplate): { hasMedia: boolean; type?: string; format?: string } => {
+    const header = template.components.find(c => c.type === 'HEADER');
+    if (!header?.format) return { hasMedia: false };
+
+    const format = header.format.toUpperCase();
+    if (['IMAGE', 'VIDEO', 'DOCUMENT'].includes(format)) {
+      return { hasMedia: true, type: format, format: header.format };
+    }
+
+    return { hasMedia: false };
+  };
+
+  const variables = extractVariables(template);
+  const mediaInfo = getMediaHeaderInfo(template);
 
   const handleDeleteTemplate = async () => {
     if (!template) return;
@@ -165,56 +193,73 @@ export function TemplateDetailsDialog({ template, isOpen, onClose, onRefresh }: 
   };
 
   const renderComponent = (component: TemplateComponent, index: number) => {
+    const isMediaHeader = component.type === 'HEADER' && component.format && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(component.format.toUpperCase());
+
     return (
-      <div key={index} className="bg-muted/50 rounded-lg p-4">
-        <div className="flex items-center justify-between mb-2">
+      <div key={index} className="bg-muted/50 rounded-lg p-4 border border-border">
+        <div className="flex items-center justify-between mb-3">
           <h4 className="font-medium text-sm uppercase tracking-wide text-muted-foreground">
             {component.type}
           </h4>
           {component.format && (
-            <span className="text-xs bg-background px-2 py-1 rounded">
+            <span className="inline-flex items-center gap-1.5 text-xs bg-background px-2.5 py-1 rounded-md border border-border font-medium">
+              {isMediaHeader && (
+                <>
+                  {component.format.toUpperCase() === 'IMAGE' && <Image className="h-3 w-3" />}
+                  {component.format.toUpperCase() === 'VIDEO' && <Video className="h-3 w-3" />}
+                  {component.format.toUpperCase() === 'DOCUMENT' && <FileText className="h-3 w-3" />}
+                </>
+              )}
               {component.format}
             </span>
           )}
         </div>
 
+        {isMediaHeader && (
+          <div className="mb-3 p-3 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-md">
+            <p className="text-xs text-blue-700 dark:text-blue-300 font-medium">
+              ⚠️ This template requires a {component.format?.toLowerCase()} to be provided when sending
+            </p>
+          </div>
+        )}
+
         {component.text && (
           <div className="space-y-2">
-            <p className="text-sm font-mono bg-background p-3 rounded border">
+            <p className="text-sm font-mono bg-background p-3 rounded border border-border break-words whitespace-pre-wrap">
               {component.text}
             </p>
             <Button
               variant="ghost"
               size="sm"
               onClick={() => copyToClipboard(component.text!)}
-              className="h-6 text-xs"
+              className="h-7 text-xs"
             >
               <Copy className="h-3 w-3 mr-1" />
-              Copy
+              Copy Text
             </Button>
           </div>
         )}
 
         {component.buttons && component.buttons.length > 0 && (
           <div className="mt-3">
-            <p className="text-xs text-muted-foreground mb-2">Buttons:</p>
+            <p className="text-xs text-muted-foreground mb-2 font-medium">Buttons:</p>
             <div className="space-y-2">
               {component.buttons.map((button, buttonIndex) => (
-                <div key={buttonIndex} className="bg-background p-2 rounded border">
+                <div key={buttonIndex} className="bg-background p-3 rounded border border-border">
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-medium">{button.text}</span>
-                    <span className="text-xs bg-muted px-2 py-1 rounded">
+                    <span className="text-xs bg-muted px-2 py-1 rounded font-medium">
                       {button.type}
                     </span>
                   </div>
                   {button.url && (
-                    <p className="text-xs text-muted-foreground mt-1 font-mono">
-                      URL: {button.url}
+                    <p className="text-xs text-muted-foreground mt-2 font-mono break-all">
+                      🔗 {button.url}
                     </p>
                   )}
                   {button.phone_number && (
-                    <p className="text-xs text-muted-foreground mt-1 font-mono">
-                      Phone: {button.phone_number}
+                    <p className="text-xs text-muted-foreground mt-2 font-mono">
+                      📞 {button.phone_number}
                     </p>
                   )}
                 </div>
@@ -261,6 +306,40 @@ export function TemplateDetailsDialog({ template, isOpen, onClose, onRefresh }: 
 
           {/* Content */}
           <div className="p-6">
+            {/* Media Header & Variables Info */}
+            {(mediaInfo.hasMedia || variables.length > 0) && (
+              <div className="flex flex-wrap gap-3 mb-6 p-4 bg-muted/50 rounded-lg border border-border">
+                {mediaInfo.hasMedia && (
+                  <div className="inline-flex items-center gap-2 px-3 py-2 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg">
+                    {mediaInfo.type === 'IMAGE' && <Image className="h-4 w-4 text-blue-600 dark:text-blue-400" />}
+                    {mediaInfo.type === 'VIDEO' && <Video className="h-4 w-4 text-blue-600 dark:text-blue-400" />}
+                    {mediaInfo.type === 'DOCUMENT' && <FileText className="h-4 w-4 text-blue-600 dark:text-blue-400" />}
+                    <span className="text-sm font-medium text-blue-700 dark:text-blue-300">
+                      {mediaInfo.type} Header Required
+                    </span>
+                  </div>
+                )}
+
+                {variables.length > 0 && (
+                  <div className="inline-flex items-center gap-2 px-3 py-2 bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800 rounded-lg">
+                    <Hash className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+                    <span className="text-sm font-medium text-purple-700 dark:text-purple-300">
+                      {variables.length} Variable{variables.length !== 1 ? 's' : ''}: {variables.join(', ')}
+                    </span>
+                  </div>
+                )}
+
+                {template.formatted_components.buttons.length > 0 && (
+                  <div className="inline-flex items-center gap-2 px-3 py-2 bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-800 rounded-lg">
+                    <div className="w-2 h-2 bg-orange-500 rounded-full" />
+                    <span className="text-sm font-medium text-orange-700 dark:text-orange-300">
+                      {template.formatted_components.buttons.length} Button{template.formatted_components.buttons.length !== 1 ? 's' : ''}
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Status and Info */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
               {/* Status Card */}
@@ -351,14 +430,24 @@ export function TemplateDetailsDialog({ template, isOpen, onClose, onRefresh }: 
 
             {/* Template Preview */}
             <div className="mt-8">
-              <h3 className="text-lg font-semibold mb-4">Preview</h3>
-              <div className="bg-gradient-to-br from-green-50 to-blue-50 dark:from-green-950/20 dark:to-blue-950/20 rounded-lg p-6">
-                <div className="max-w-sm mx-auto bg-white dark:bg-gray-800 rounded-2xl shadow-lg overflow-hidden">
+              <h3 className="text-lg font-semibold mb-4">WhatsApp Preview</h3>
+              <div className="bg-gradient-to-br from-green-50 via-emerald-50 to-blue-50 dark:from-green-950/20 dark:via-emerald-950/20 dark:to-blue-950/20 rounded-xl p-6">
+                <div className="max-w-sm mx-auto bg-white dark:bg-gray-800 rounded-2xl shadow-xl overflow-hidden">
                   {/* WhatsApp-like message bubble */}
-                  <div className="bg-green-500 text-white p-4 rounded-2xl m-4">
-                    {/* Header */}
-                    {template.formatted_components.header && (
-                      <div className="mb-2">
+                  <div className="bg-green-500 text-white rounded-2xl m-4 overflow-hidden">
+                    {/* Media Header Placeholder */}
+                    {mediaInfo.hasMedia && (
+                      <div className="bg-green-600 p-8 flex flex-col items-center justify-center gap-2 border-b border-green-400/30">
+                        {mediaInfo.type === 'IMAGE' && <Image className="h-12 w-12 opacity-80" />}
+                        {mediaInfo.type === 'VIDEO' && <Video className="h-12 w-12 opacity-80" />}
+                        {mediaInfo.type === 'DOCUMENT' && <FileText className="h-12 w-12 opacity-80" />}
+                        <p className="text-xs opacity-80 font-medium">[{mediaInfo.type} Header]</p>
+                      </div>
+                    )}
+
+                    {/* Text Header */}
+                    {!mediaInfo.hasMedia && template.formatted_components.header && (
+                      <div className="p-4 pb-2">
                         <p className="font-semibold text-sm">
                           {template.formatted_components.header.text || '[Header Content]'}
                         </p>
@@ -367,8 +456,8 @@ export function TemplateDetailsDialog({ template, isOpen, onClose, onRefresh }: 
 
                     {/* Body */}
                     {template.formatted_components.body && (
-                      <div className="mb-2">
-                        <p className="text-sm leading-relaxed">
+                      <div className={`px-4 ${mediaInfo.hasMedia || !template.formatted_components.header ? 'pt-4' : 'pt-2'} pb-2`}>
+                        <p className="text-sm leading-relaxed whitespace-pre-wrap">
                           {template.formatted_components.body.text}
                         </p>
                       </div>
@@ -376,7 +465,7 @@ export function TemplateDetailsDialog({ template, isOpen, onClose, onRefresh }: 
 
                     {/* Footer */}
                     {template.formatted_components.footer && (
-                      <div className="mb-2">
+                      <div className="px-4 pb-3">
                         <p className="text-xs opacity-75">
                           {template.formatted_components.footer.text}
                         </p>
@@ -385,11 +474,11 @@ export function TemplateDetailsDialog({ template, isOpen, onClose, onRefresh }: 
 
                     {/* Buttons */}
                     {template.formatted_components.buttons.length > 0 && (
-                      <div className="mt-3 space-y-1">
+                      <div className="px-4 pb-4 space-y-2">
                         {template.formatted_components.buttons.map((button, index) => (
                           <div
                             key={index}
-                            className="bg-white bg-opacity-20 rounded-lg p-2 text-center"
+                            className="bg-white bg-opacity-20 hover:bg-opacity-30 transition-colors rounded-lg p-2.5 text-center cursor-pointer"
                           >
                             <span className="text-sm font-medium">{button.text}</span>
                           </div>
@@ -398,8 +487,8 @@ export function TemplateDetailsDialog({ template, isOpen, onClose, onRefresh }: 
                     )}
 
                     {/* Timestamp */}
-                    <div className="text-xs opacity-75 text-right mt-2">
-                      12:34 PM
+                    <div className={`text-xs opacity-75 text-right ${template.formatted_components.buttons.length > 0 ? 'px-4 pb-3' : 'px-4 pb-4'}`}>
+                      12:34 PM ✓✓
                     </div>
                   </div>
                 </div>

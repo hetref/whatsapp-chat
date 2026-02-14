@@ -309,39 +309,44 @@ export default function NewTemplatePage() {
   return (
     <div className="h-full flex flex-col bg-background">
       {/* Header */}
-      <div className="border-b border-border bg-muted/50">
+      <div className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-10 shadow-sm">
         <div className="flex items-center justify-between p-4">
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
             <Link href="/protected/templates">
               <Button
                 variant="ghost"
                 size="sm"
-                className="p-2 hover:bg-muted rounded-full transition-colors"
+                className="p-2 hover:bg-muted rounded-lg transition-colors"
               >
                 <ArrowLeft className="h-5 w-5" />
               </Button>
             </Link>
+            <div className="h-8 w-px bg-border" />
             <div className="flex items-center gap-3">
-              <FileText className="h-8 w-8 text-green-600" />
+              <div className="p-2 bg-green-500/10 rounded-lg">
+                <FileText className="h-6 w-6 text-green-600" />
+              </div>
               <div>
-                <h1 className="text-2xl font-bold">Create Message Template</h1>
-                <p className="text-sm text-muted-foreground">
-                  Design a new WhatsApp Business message template
+                <h1 className="text-xl font-bold">Create New Template</h1>
+                <p className="text-xs text-muted-foreground">
+                  Design a WhatsApp Business message template
                 </p>
               </div>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <Button
               onClick={() => setShowPreview(!showPreview)}
-              variant="outline"
+              variant={showPreview ? "default" : "outline"}
               size="sm"
               className="gap-2"
             >
               <Eye className="h-4 w-4" />
-              {showPreview ? 'Hide Preview' : 'Show Preview'}
+              {showPreview ? 'Preview' : 'Preview'}
             </Button>
+
+            <div className="h-6 w-px bg-border" />
 
             <Button
               onClick={handleCreateTemplate}
@@ -368,14 +373,19 @@ export default function NewTemplatePage() {
           <div className={`${showPreview ? 'w-1/2' : 'w-full'} overflow-y-auto p-6 border-r border-border`}>
             {/* Validation Errors */}
             {validationErrors.length > 0 && (
-              <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
-                <div className="flex items-center gap-2 mb-2">
-                  <AlertCircle className="h-5 w-5 text-red-600" />
-                  <h3 className="font-medium text-red-800">Validation Errors</h3>
+              <div className="mb-6 p-4 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 rounded-lg shadow-sm">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="p-1 bg-red-100 dark:bg-red-900/30 rounded">
+                    <AlertCircle className="h-4 w-4 text-red-600 dark:text-red-400" />
+                  </div>
+                  <h3 className="font-semibold text-red-900 dark:text-red-100">Validation Errors</h3>
                 </div>
-                <ul className="text-sm text-red-700 space-y-1">
+                <ul className="text-sm text-red-700 dark:text-red-300 space-y-2 ml-7">
                   {validationErrors.map((error, index) => (
-                    <li key={index}>• {error}</li>
+                    <li key={index} className="flex items-start gap-2">
+                      <span className="text-red-400 mt-0.5">•</span>
+                      <span>{error}</span>
+                    </li>
                   ))}
                 </ul>
               </div>
@@ -383,8 +393,13 @@ export default function NewTemplatePage() {
 
             {/* Template Basic Info */}
             <div className="space-y-6 mb-8">
-              <div className="bg-card border border-border rounded-lg p-6">
-                <h2 className="text-lg font-semibold mb-4">Template Information</h2>
+              <div className="bg-card border border-border rounded-lg p-6 shadow-sm">
+                <div className="flex items-center gap-2 mb-4">
+                  <div className="p-1.5 bg-blue-500/10 rounded-md">
+                    <Info className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                  </div>
+                  <h2 className="text-lg font-semibold">Template Information</h2>
+                </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
@@ -454,18 +469,23 @@ export default function NewTemplatePage() {
 
             {/* Template Components */}
             <div className="space-y-6">
-              <div className="flex items-center justify-between">
-                <h2 className="text-lg font-semibold">Template Components</h2>
+              <div className="flex items-center justify-between bg-card border border-border rounded-lg p-4 shadow-sm">
+                <div className="flex items-center gap-2">
+                  <div className="p-1.5 bg-green-500/10 rounded-md">
+                    <FileText className="h-4 w-4 text-green-600 dark:text-green-400" />
+                  </div>
+                  <h2 className="text-lg font-semibold">Template Components</h2>
+                </div>
                 <div className="flex gap-2">
                   {!templateData.components.some(c => c.type === 'HEADER') && (
                     <Button
                       onClick={() => addComponent('HEADER')}
                       variant="outline"
                       size="sm"
-                      className="gap-2"
+                      className="gap-2 border-dashed hover:border-solid hover:bg-blue-50 dark:hover:bg-blue-950/20"
                     >
                       <Plus className="h-4 w-4" />
-                      Header
+                      Add Header
                     </Button>
                   )}
                   {!templateData.components.some(c => c.type === 'FOOTER') && (
@@ -473,10 +493,10 @@ export default function NewTemplatePage() {
                       onClick={() => addComponent('FOOTER')}
                       variant="outline"
                       size="sm"
-                      className="gap-2"
+                      className="gap-2 border-dashed hover:border-solid hover:bg-purple-50 dark:hover:bg-purple-950/20"
                     >
                       <Plus className="h-4 w-4" />
-                      Footer
+                      Add Footer
                     </Button>
                   )}
                   {!templateData.components.some(c => c.type === 'BUTTONS') && (
@@ -484,10 +504,10 @@ export default function NewTemplatePage() {
                       onClick={() => addComponent('BUTTONS')}
                       variant="outline"
                       size="sm"
-                      className="gap-2"
+                      className="gap-2 border-dashed hover:border-solid hover:bg-orange-50 dark:hover:bg-orange-950/20"
                     >
                       <Plus className="h-4 w-4" />
-                      Buttons
+                      Add Buttons
                     </Button>
                   )}
                 </div>
@@ -496,16 +516,16 @@ export default function NewTemplatePage() {
               {/* Render Components */}
               <div className="space-y-4">
                 {templateData.components.map((component, index) => (
-                  <div key={index} className="bg-card border border-border rounded-lg p-6">
+                  <div key={index} className="bg-card border border-border rounded-lg p-6 shadow-sm hover:shadow-md transition-shadow">
                     <div className="flex items-center justify-between mb-4">
-                      <h3 className="font-medium flex items-center gap-2">
-                        <div className={`w-3 h-3 rounded-full ${component.type === 'HEADER' ? 'bg-blue-500' :
+                      <h3 className="font-semibold flex items-center gap-2">
+                        <div className={`w-2 h-2 rounded-full ${component.type === 'HEADER' ? 'bg-blue-500' :
                             component.type === 'BODY' ? 'bg-green-500' :
                               component.type === 'FOOTER' ? 'bg-purple-500' :
                                 'bg-orange-500'
                           }`} />
                         {getComponentTypeName(component.type)}
-                        {component.type === 'BODY' && <span className="text-red-500">*</span>}
+                        {component.type === 'BODY' && <span className="text-red-500 text-sm">*</span>}
                       </h3>
 
                       {component.type !== 'BODY' && (
@@ -513,7 +533,7 @@ export default function NewTemplatePage() {
                           onClick={() => removeComponent(index)}
                           variant="ghost"
                           size="sm"
-                          className="h-8 w-8 p-0 text-red-500 hover:text-red-700"
+                          className="h-8 w-8 p-0 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20"
                         >
                           <Minus className="h-4 w-4" />
                         </Button>
@@ -549,9 +569,10 @@ export default function NewTemplatePage() {
                                 onChange={(e) => updateComponent(index, { text: e.target.value })}
                                 placeholder="Enter header text... Use {{1}} for variables"
                                 className="mt-1"
+                                maxLength={60}
                               />
                               <p className="text-xs text-muted-foreground mt-1">
-                                Use {`{{1}}, {{2}}`} for variables
+                                Maximum 60 characters. Use {`{{1}}, {{2}}`} for variables
                               </p>
                             </div>
 
@@ -601,6 +622,29 @@ export default function NewTemplatePage() {
                             })()}
                           </div>
                         )}
+
+                        {/* Info about media headers */}
+                        {component.format && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(component.format.toUpperCase()) && (
+                          <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+                            <div className="flex items-start gap-2">
+                              <Info className="h-4 w-4 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
+                              <div>
+                                <p className="text-sm font-medium text-blue-900 dark:text-blue-100 mb-1">
+                                  Media Header Information
+                                </p>
+                                <p className="text-xs text-blue-700 dark:text-blue-300">
+                                  When sending this template, you'll need to provide a publicly accessible URL for the {component.format.toLowerCase()}.
+                                  The URL must be accessible by WhatsApp's servers and in a supported format.
+                                </p>
+                                <ul className="text-xs text-blue-700 dark:text-blue-300 mt-2 space-y-1 list-disc list-inside">
+                                  <li>IMAGE: JPG, PNG (max 5MB)</li>
+                                  <li>VIDEO: MP4, 3GP (max 16MB)</li>
+                                  <li>DOCUMENT: PDF, DOC, DOCX, etc. (max 100MB)</li>
+                                </ul>
+                              </div>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
 
@@ -613,7 +657,7 @@ export default function NewTemplatePage() {
                             value={component.text || ''}
                             onChange={(e) => updateComponent(index, { text: e.target.value })}
                             placeholder="Enter your message body text here. Use {{1}}, {{2}}, etc. for variables..."
-                            className="mt-1 min-h-[100px]"
+                            className="mt-1 min-h-[120px]"
                             maxLength={1024}
                           />
                           <p className="text-xs text-muted-foreground mt-1">
@@ -687,16 +731,21 @@ export default function NewTemplatePage() {
 
                     {/* Buttons Component */}
                     {component.type === 'BUTTONS' && (
-                      <div className="space-y-4">
+                      <div className="space-y-3">
                         {component.buttons?.map((button, buttonIndex) => (
-                          <div key={buttonIndex} className="bg-muted/50 rounded-lg p-4">
+                          <div key={buttonIndex} className="bg-muted/50 border border-border rounded-lg p-4">
                             <div className="flex items-center justify-between mb-3">
-                              <h4 className="font-medium text-sm">Button {buttonIndex + 1}</h4>
+                              <h4 className="font-medium text-sm flex items-center gap-2">
+                                <span className="w-6 h-6 rounded-full bg-orange-500/10 text-orange-600 dark:text-orange-400 flex items-center justify-center text-xs font-bold">
+                                  {buttonIndex + 1}
+                                </span>
+                                Button {buttonIndex + 1}
+                              </h4>
                               <Button
                                 onClick={() => removeButton(index, buttonIndex)}
                                 variant="ghost"
                                 size="sm"
-                                className="h-6 w-6 p-0 text-red-500 hover:text-red-700"
+                                className="h-7 w-7 p-0 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20"
                               >
                                 <Minus className="h-3 w-3" />
                               </Button>
@@ -704,7 +753,7 @@ export default function NewTemplatePage() {
 
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                               <div>
-                                <Label>Button Type</Label>
+                                <Label className="text-xs font-medium">Button Type</Label>
                                 <select
                                   value={button.type}
                                   onChange={(e) => updateButton(index, buttonIndex, {
@@ -712,7 +761,7 @@ export default function NewTemplatePage() {
                                     url: e.target.value === 'URL' ? button.url : undefined,
                                     phone_number: e.target.value === 'PHONE_NUMBER' ? button.phone_number : undefined
                                   })}
-                                  className="mt-1 w-full px-3 py-2 border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-green-500"
+                                  className="mt-1 w-full px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-green-500"
                                 >
                                   <option value="QUICK_REPLY">Quick Reply</option>
                                   <option value="URL">URL</option>
@@ -722,7 +771,7 @@ export default function NewTemplatePage() {
                               </div>
 
                               <div>
-                                <Label>Button Text</Label>
+                                <Label className="text-xs font-medium">Button Text *</Label>
                                 <Input
                                   value={button.text}
                                   onChange={(e) => updateButton(index, buttonIndex, { text: e.target.value })}
@@ -730,12 +779,13 @@ export default function NewTemplatePage() {
                                   className="mt-1"
                                   maxLength={25}
                                 />
+                                <p className="text-xs text-muted-foreground mt-1">Max 25 chars</p>
                               </div>
                             </div>
 
                             {button.type === 'URL' && (
                               <div className="mt-3">
-                                <Label>URL</Label>
+                                <Label className="text-xs font-medium">URL *</Label>
                                 <Input
                                   value={button.url || ''}
                                   onChange={(e) => updateButton(index, buttonIndex, { url: e.target.value })}
@@ -747,7 +797,7 @@ export default function NewTemplatePage() {
 
                             {button.type === 'PHONE_NUMBER' && (
                               <div className="mt-3">
-                                <Label>Phone Number</Label>
+                                <Label className="text-xs font-medium">Phone Number *</Label>
                                 <Input
                                   value={button.phone_number || ''}
                                   onChange={(e) => updateButton(index, buttonIndex, { phone_number: e.target.value })}
@@ -764,10 +814,10 @@ export default function NewTemplatePage() {
                             onClick={() => addButton(index)}
                             variant="outline"
                             size="sm"
-                            className="gap-2"
+                            className="gap-2 w-full border-dashed"
                           >
                             <Plus className="h-4 w-4" />
-                            Add Button
+                            Add Another Button
                           </Button>
                         )}
                       </div>
@@ -781,25 +831,55 @@ export default function NewTemplatePage() {
           {/* Preview Panel */}
           {showPreview && (
             <div className="w-1/2 overflow-y-auto p-6 bg-gradient-to-br from-green-50 to-blue-50 dark:from-green-950/20 dark:to-blue-950/20">
-              <div className="sticky top-0 mb-6">
+              <div className="mb-6">
                 <h2 className="text-lg font-semibold mb-4">Template Preview</h2>
 
-                <div className="max-w-sm mx-auto bg-white dark:bg-gray-800 rounded-2xl shadow-lg overflow-hidden">
+                <div className="max-w-sm mx-auto bg-[#0a1628] rounded-2xl shadow-2xl overflow-hidden p-4">
+                  {/* Mock WhatsApp header */}
+                  <div className="flex items-center gap-3 mb-4 pb-3 border-b border-gray-700">
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-green-400 to-green-600 flex items-center justify-center text-white font-semibold">
+                      W
+                    </div>
+                    <div className="flex-1">
+                      <div className="font-medium text-white text-sm">WhatsApp Business</div>
+                      <div className="text-xs text-gray-400">Message Preview</div>
+                    </div>
+                  </div>
+
                   {/* WhatsApp-like message bubble */}
-                  <div className="bg-green-500 text-white p-4 rounded-2xl m-4">
+                  <div className="bg-[#005c4b] text-white rounded-lg overflow-hidden shadow-md">
                     {/* Header */}
                     {(() => {
                       const headerComp = templateData.components.find(c => c.type === 'HEADER');
-                      if (headerComp && headerComp.text) {
-                        const displayText = replaceVariablesWithExamples(
-                          headerComp.text,
-                          headerComp.example?.header_text
-                        );
-                        return (
-                          <div className="mb-2">
-                            <p className="font-semibold text-sm">{displayText}</p>
-                          </div>
-                        );
+                      if (headerComp) {
+                        if (headerComp.format === 'TEXT' && headerComp.text) {
+                          const displayText = replaceVariablesWithExamples(
+                            headerComp.text,
+                            headerComp.example?.header_text
+                          );
+                          return (
+                            <div className="px-4 pt-3 pb-2 border-b border-white/10">
+                              <p className="font-semibold text-sm">{displayText}</p>
+                            </div>
+                          );
+                        } else if (headerComp.format && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(headerComp.format)) {
+                          return (
+                            <div className="bg-gray-200 h-40 flex items-center justify-center text-gray-600 border-b border-white/10">
+                              <div className="text-center">
+                                <div className="text-4xl mb-2">
+                                  {headerComp.format === 'IMAGE' ? '🖼️' :
+                                    headerComp.format === 'VIDEO' ? '🎥' : '📄'}
+                                </div>
+                                <div className="text-sm font-medium">
+                                  {headerComp.format} Media
+                                </div>
+                                <div className="text-xs mt-1 text-gray-500">
+                                  Preview placeholder
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        }
                       }
                       return null;
                     })()}
@@ -815,8 +895,8 @@ export default function NewTemplatePage() {
                           )
                           : 'Enter your message body...';
                         return (
-                          <div className="mb-2">
-                            <p className="text-sm leading-relaxed">{displayText}</p>
+                          <div className="px-4 py-3">
+                            <p className="text-sm leading-relaxed whitespace-pre-wrap">{displayText}</p>
                           </div>
                         );
                       }
@@ -824,59 +904,81 @@ export default function NewTemplatePage() {
                     })()}
 
                     {/* Footer */}
-                    {templateData.components.find(c => c.type === 'FOOTER') && (
-                      <div className="mb-2">
-                        <p className="text-xs opacity-75">
-                          {templateData.components.find(c => c.type === 'FOOTER')?.text}
-                        </p>
-                      </div>
-                    )}
-
-                    {/* Buttons */}
-                    {templateData.components.find(c => c.type === 'BUTTONS')?.buttons && (
-                      <div className="mt-3 space-y-1">
-                        {templateData.components.find(c => c.type === 'BUTTONS')?.buttons?.map((button, index) => (
-                          <div
-                            key={index}
-                            className="bg-white bg-opacity-20 rounded-lg p-2 text-center"
-                          >
-                            <span className="text-sm font-medium">
-                              {button.text || `Button ${index + 1}`}
-                            </span>
+                    {(() => {
+                      const footerComp = templateData.components.find(c => c.type === 'FOOTER');
+                      if (footerComp && footerComp.text) {
+                        return (
+                          <div className="px-4 pb-2 border-t border-white/10 pt-2 mt-1">
+                            <p className="text-xs opacity-60">{footerComp.text}</p>
                           </div>
-                        ))}
-                      </div>
-                    )}
+                        );
+                      }
+                      return null;
+                    })()}
 
                     {/* Timestamp */}
-                    <div className="text-xs opacity-75 text-right mt-2">
-                      12:34 PM
+                    <div className="px-4 pb-2 flex justify-end items-center gap-1">
+                      <span className="text-xs opacity-60">12:34 PM</span>
+                      <svg className="w-4 h-4 opacity-60" viewBox="0 0 16 15" fill="currentColor">
+                        <path d="M15.01 3.316l-.478-.372a.365.365 0 0 0-.51.063L8.666 9.88a.32.32 0 0 1-.484.033l-.358-.325a.32.32 0 0 0-.484.032l-.378.483a.418.418 0 0 0 .036.54l1.32 1.267a.32.32 0 0 0 .484-.034l6.272-8.048a.366.366 0 0 0-.064-.512zm-4.1 0l-.478-.372a.365.365 0 0 0-.51.063L4.566 9.88a.32.32 0 0 1-.484.033L1.891 7.769a.366.366 0 0 0-.515.006l-.423.433a.364.364 0 0 0 .006.514l3.258 3.185c.143.14.361.125.484-.033l6.272-8.048a.365.365 0 0 0-.063-.51z" />
+                      </svg>
                     </div>
                   </div>
+
+                  {/* Buttons */}
+                  {(() => {
+                    const buttonsComp = templateData.components.find(c => c.type === 'BUTTONS');
+                    if (buttonsComp?.buttons && buttonsComp.buttons.length > 0) {
+                      return (
+                        <div className="mt-2 space-y-1">
+                          {buttonsComp.buttons.map((button, index) => (
+                            <div
+                              key={index}
+                              className="bg-[#0a1f35] hover:bg-[#0d2943] rounded-lg py-3 px-4 text-center border border-[#1a3a52] transition-colors cursor-pointer"
+                            >
+                              <span className="text-sm font-medium text-[#00d9ff] flex items-center justify-center gap-2">
+                                {button.type === 'URL' && '🔗'}
+                                {button.type === 'PHONE_NUMBER' && '📞'}
+                                {button.type === 'QUICK_REPLY' && '↩️'}
+                                {button.text || `Button ${index + 1}`}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
                 </div>
 
                 {/* Template Info */}
-                <div className="mt-6 bg-card border border-border rounded-lg p-4">
+                <div className="mt-6 bg-card border border-border rounded-lg p-4 max-w-sm mx-auto">
                   <h3 className="font-medium mb-3 flex items-center gap-2">
-                    <Info className="h-4 w-4" />
-                    Template Information
+                    <Info className="h-4 w-4 text-blue-500" />
+                    Template Details
                   </h3>
                   <div className="space-y-2 text-sm">
-                    <div className="flex justify-between">
+                    <div className="flex justify-between items-center py-1">
                       <span className="text-muted-foreground">Name:</span>
-                      <span className="font-mono">{templateData.name || 'Not set'}</span>
+                      <span className="font-mono text-xs bg-muted px-2 py-1 rounded">
+                        {templateData.name || 'not_set'}
+                      </span>
                     </div>
-                    <div className="flex justify-between">
+                    <div className="flex justify-between items-center py-1">
                       <span className="text-muted-foreground">Category:</span>
-                      <span>{templateData.category}</span>
+                      <span className="capitalize bg-blue-500/10 text-blue-600 dark:text-blue-400 px-2 py-1 rounded text-xs">
+                        {templateData.category.toLowerCase()}
+                      </span>
                     </div>
-                    <div className="flex justify-between">
+                    <div className="flex justify-between items-center py-1">
                       <span className="text-muted-foreground">Language:</span>
-                      <span>{SUPPORTED_LANGUAGES.find(l => l.code === templateData.language)?.name}</span>
+                      <span className="text-xs">{SUPPORTED_LANGUAGES.find(l => l.code === templateData.language)?.name}</span>
                     </div>
-                    <div className="flex justify-between">
+                    <div className="flex justify-between items-center py-1">
                       <span className="text-muted-foreground">Components:</span>
-                      <span>{templateData.components.length}</span>
+                      <span className="bg-green-500/10 text-green-600 dark:text-green-400 px-2 py-1 rounded text-xs font-medium">
+                        {templateData.components.length}
+                      </span>
                     </div>
                   </div>
                 </div>

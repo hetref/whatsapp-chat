@@ -17,9 +17,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Parse request body
-    const { userId: targetUserId, customName } = await request.json();
+    const { userId: contactId, customName } = await request.json(); // Still using userId param for backwards compat
 
-    if (!targetUserId) {
+    if (!contactId) {
       return NextResponse.json(
         { error: 'Missing userId parameter' },
         { status: 400 }
@@ -37,33 +37,41 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log(`Updating custom name for user ${targetUserId} to "${customName}"`);
+    console.log(`Updating custom name for contact ${contactId} to "${customName}"`);
 
-    // Update the user's custom name
-    const updatedUser = await prisma.user.update({
-      where: { id: targetUserId },
+    // Verify the contact belongs to this user, then update
+    const updatedContact = await prisma.contact.updateMany({
+      where: {
+        id: contactId,
+        userId: userId // Ensure this contact belongs to the current user
+      },
       data: {
         customName: customName || null
       }
     });
 
-    if (!updatedUser) {
+    if (updatedContact.count === 0) {
       return NextResponse.json(
-        { error: 'User not found' },
+        { error: 'Contact not found or access denied' },
         { status: 404 }
       );
     }
 
-    console.log('User name updated successfully:', updatedUser);
+    // Fetch the updated contact to return
+    const contact = await prisma.contact.findUnique({
+      where: { id: contactId }
+    });
+
+    console.log('Contact name updated successfully:', contact);
 
     return NextResponse.json({
       success: true,
       user: {
-        id: updatedUser.id,
-        name: updatedUser.name,
-        custom_name: updatedUser.customName,
-        whatsapp_name: updatedUser.whatsappName,
-        last_active: updatedUser.lastActive
+        id: contact!.id,
+        name: contact!.customName || contact!.whatsappName || contact!.phoneNumber,
+        custom_name: contact!.customName,
+        whatsapp_name: contact!.whatsappName,
+        last_active: contact!.lastActive
       },
       timestamp: new Date().toISOString()
     });

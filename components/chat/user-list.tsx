@@ -14,6 +14,7 @@ import { GroupManagementDialog } from "./group-management-dialog";
 
 interface ChatUser {
   id: string;
+  phone_number: string;
   name: string;
   custom_name?: string;
   whatsapp_name?: string;
@@ -229,9 +230,9 @@ export function UserList({ users, selectedUser, onUserSelect, currentUserId, onU
         setNewUsers([{ id: '1', phoneNumber: '', customName: '' }]);
         setShowNewChat(false);
 
-        // Refresh users list
+        // Refresh users list first, then select the new user
         if (onUsersUpdate) {
-          onUsersUpdate();
+          await onUsersUpdate();
         }
 
         // Select the new/existing user
@@ -281,7 +282,7 @@ export function UserList({ users, selectedUser, onUserSelect, currentUserId, onU
 
         // Refresh users list
         if (onUsersUpdate) {
-          onUsersUpdate();
+          await onUsersUpdate();
         }
       }
 
@@ -326,7 +327,7 @@ export function UserList({ users, selectedUser, onUserSelect, currentUserId, onU
 
       // Refresh users list
       if (onUsersUpdate) {
-        onUsersUpdate();
+        await onUsersUpdate();
       }
 
     } catch (error) {
@@ -360,9 +361,9 @@ export function UserList({ users, selectedUser, onUserSelect, currentUserId, onU
       });
 
       if (response.ok) {
-        loadGroups();
+        await loadGroups();
         if (onUsersUpdate) {
-          onUsersUpdate();
+          await onUsersUpdate();
         }
       } else {
         console.error('Failed to delete group');
@@ -372,10 +373,10 @@ export function UserList({ users, selectedUser, onUserSelect, currentUserId, onU
     }
   };
 
-  const handleGroupSaved = () => {
-    loadGroups();
+  const handleGroupSaved = async () => {
+    await loadGroups();
     if (onUsersUpdate) {
-      onUsersUpdate();
+      await onUsersUpdate();
     }
   };
 

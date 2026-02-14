@@ -61,7 +61,7 @@ interface TemplateSelectorProps {
     header: Record<string, string>;
     body: Record<string, string>;
     footer: Record<string, string>;
-  }) => Promise<void>;
+  }, mediaUrl?: string) => Promise<void>;
   selectedUser: ChatUser;
 }
 
@@ -78,6 +78,7 @@ export function TemplateSelector({ isOpen, onClose, onSendTemplate, selectedUser
     body: {},
     footer: {}
   });
+  const [mediaUrl, setMediaUrl] = useState<string>("");
   const [searchTerm, setSearchTerm] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isSending, setIsSending] = useState(false);
@@ -134,14 +135,14 @@ export function TemplateSelector({ isOpen, onClose, onSendTemplate, selectedUser
     const headerVariables: string[] = [];
     const bodyVariables: string[] = [];
     const footerVariables: string[] = [];
-    
+
     template.components.forEach(component => {
       if (component.text) {
         // Extract variables like {{1}}, {{2}}, etc.
         const matches = component.text.match(/\{\{(\d+)\}\}/g);
         if (matches) {
           const componentVariables = matches.map(match => match.replace(/[{}]/g, ''));
-          
+
           switch (component.type) {
             case 'HEADER':
               componentVariables.forEach(variable => {
@@ -173,7 +174,7 @@ export function TemplateSelector({ isOpen, onClose, onSendTemplate, selectedUser
     headerVariables.sort((a, b) => parseInt(a) - parseInt(b));
     bodyVariables.sort((a, b) => parseInt(a) - parseInt(b));
     footerVariables.sort((a, b) => parseInt(a) - parseInt(b));
-    
+
     // Get all unique variables
     const allVariables = [...new Set([...headerVariables, ...bodyVariables, ...footerVariables])]
       .sort((a, b) => parseInt(a) - parseInt(b));
@@ -190,7 +191,7 @@ export function TemplateSelector({ isOpen, onClose, onSendTemplate, selectedUser
     header: Record<string, string>;
     body: Record<string, string>;
     footer: Record<string, string>;
-  }) => {
+  }, previewMediaUrl?: string) => {
     const replaceVariables = (text: string, componentVars: Record<string, string>) => {
       let result = text;
       Object.entries(componentVars).forEach(([key, value]) => {
@@ -211,16 +212,36 @@ export function TemplateSelector({ isOpen, onClose, onSendTemplate, selectedUser
                   <span className="text-xs opacity-75 font-medium uppercase tracking-wide">Header</span>
                 </div>
                 {template.formatted_components.header.format === 'IMAGE' ? (
-                  <div className="bg-white bg-opacity-20 rounded-lg p-3 text-center mb-2">
-                    <span className="text-sm">📷 Header Image</span>
-                  </div>
+                  previewMediaUrl ? (
+                    <div className="bg-white bg-opacity-20 rounded-lg overflow-hidden mb-2">
+                      <img
+                        src={previewMediaUrl}
+                        alt="Header preview"
+                        className="w-full h-auto object-cover"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).style.display = 'none';
+                          (e.target as HTMLImageElement).parentElement!.innerHTML = '<div class="p-3 text-center"><span class="text-sm">📷 Invalid Image URL</span></div>';
+                        }}
+                      />
+                    </div>
+                  ) : (
+                    <div className="bg-white bg-opacity-20 rounded-lg p-3 text-center mb-2">
+                      <span className="text-sm">📷 Header Image (URL Required)</span>
+                    </div>
+                  )
                 ) : template.formatted_components.header.format === 'VIDEO' ? (
-                  <div className="bg-white bg-opacity-20 rounded-lg p-3 text-center mb-2">
-                    <span className="text-sm">🎥 Header Video</span>
-                  </div>
+                  previewMediaUrl ? (
+                    <div className="bg-white bg-opacity-20 rounded-lg overflow-hidden mb-2">
+                      <video src={previewMediaUrl} className="w-full h-auto" controls />
+                    </div>
+                  ) : (
+                    <div className="bg-white bg-opacity-20 rounded-lg p-3 text-center mb-2">
+                      <span className="text-sm">🎥 Header Video (URL Required)</span>
+                    </div>
+                  )
                 ) : template.formatted_components.header.format === 'DOCUMENT' ? (
                   <div className="bg-white bg-opacity-20 rounded-lg p-3 text-center mb-2">
-                    <span className="text-sm">📄 Header Document</span>
+                    <span className="text-sm">📄 Header Document {previewMediaUrl ? '(URL Provided)' : '(URL Required)'}</span>
                   </div>
                 ) : template.formatted_components.header.text ? (
                   <p className="font-semibold text-sm mb-2">
@@ -307,7 +328,8 @@ export function TemplateSelector({ isOpen, onClose, onSendTemplate, selectedUser
   const handleTemplateSelect = (template: WhatsAppTemplate) => {
     setSelectedTemplate(template);
     setShowPreview(false);
-    
+    setMediaUrl("");
+
     // Initialize variables
     const templateVars = extractVariables(template);
     const initialVars: Record<string, string> = {};
@@ -324,31 +346,43 @@ export function TemplateSelector({ isOpen, onClose, onSendTemplate, selectedUser
   const handleSendTemplate = async () => {
     if (!selectedTemplate) return;
 
+    // Check if template has media header
+    const headerComponent = selectedTemplate.components.find(c => c.type === 'HEADER');
+    const hasMediaHeader = headerComponent && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(headerComponent.format?.toUpperCase() || '');
+
+    // Validate media URL if header is media type
+    if (hasMediaHeader && !mediaUrl.trim()) {
+      setError(`Please provide a ${headerComponent?.format?.toLowerCase()} URL for the header`);
+      return;
+    }
+
     // Validate required variables per component
     const templateVars = extractVariables(selectedTemplate);
     const missingVars: string[] = [];
-    
-    // Check header variables
-    templateVars.header.forEach(variable => {
-      if (!variables.header[variable]?.trim()) {
-        missingVars.push(`Header {{${variable}}}`);
-      }
-    });
-    
+
+    // Check header variables (only for TEXT headers)
+    if (!hasMediaHeader) {
+      templateVars.header.forEach(variable => {
+        if (!variables.header[variable]?.trim()) {
+          missingVars.push(`Header {{${variable}}}`);
+        }
+      });
+    }
+
     // Check body variables
     templateVars.body.forEach(variable => {
       if (!variables.body[variable]?.trim()) {
         missingVars.push(`Body {{${variable}}}`);
       }
     });
-    
+
     // Check footer variables
     templateVars.footer.forEach(variable => {
       if (!variables.footer[variable]?.trim()) {
         missingVars.push(`Footer {{${variable}}}`);
       }
     });
-    
+
     if (missingVars.length > 0) {
       setError(`Please fill in all variables: ${missingVars.join(', ')}`);
       return;
@@ -358,8 +392,8 @@ export function TemplateSelector({ isOpen, onClose, onSendTemplate, selectedUser
     setError(null);
 
     try {
-      await onSendTemplate(selectedTemplate.name, selectedTemplate, variables);
-      
+      await onSendTemplate(selectedTemplate.name, selectedTemplate, variables, mediaUrl || undefined);
+
       // Reset state and close
       setSelectedTemplate(null);
       setVariables({
@@ -367,6 +401,7 @@ export function TemplateSelector({ isOpen, onClose, onSendTemplate, selectedUser
         body: {},
         footer: {}
       });
+      setMediaUrl("");
       setShowPreview(false);
       onClose();
     } catch (error) {
@@ -384,6 +419,7 @@ export function TemplateSelector({ isOpen, onClose, onSendTemplate, selectedUser
       body: {},
       footer: {}
     });
+    setMediaUrl("");
     setShowPreview(false);
     setSearchTerm('');
     setError(null);
@@ -474,7 +510,7 @@ export function TemplateSelector({ isOpen, onClose, onSendTemplate, selectedUser
                           </div>
                           <span className="text-lg">{template.category_icon}</span>
                         </div>
-                        
+
                         <div className="text-xs text-muted-foreground mb-2">
                           {template.formatted_components.body?.text?.substring(0, 100)}
                           {template.formatted_components.body?.text && template.formatted_components.body.text.length > 100 ? '...' : ''}
@@ -514,37 +550,84 @@ export function TemplateSelector({ isOpen, onClose, onSendTemplate, selectedUser
                     </Button>
                   </div>
 
+                  {/* Media URL for IMAGE/VIDEO/DOCUMENT headers */}
+                  {(() => {
+                    const headerComp = selectedTemplate.formatted_components.header;
+                    const hasMediaHeader = headerComp && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(headerComp.format?.toUpperCase() || '');
+
+                    if (hasMediaHeader) {
+                      return (
+                        <div className="space-y-3 mb-6">
+                          <h4 className="font-medium flex items-center gap-2">
+                            <div className="w-3 h-3 rounded-full bg-blue-500"></div>
+                            {headerComp.format} Header URL *
+                          </h4>
+                          <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+                            <Label htmlFor="mediaUrl" className="text-sm font-medium">
+                              {headerComp.format === 'IMAGE' ? 'Image URL' :
+                                headerComp.format === 'VIDEO' ? 'Video URL' :
+                                  'Document URL'} *
+                            </Label>
+                            <Input
+                              id="mediaUrl"
+                              value={mediaUrl}
+                              onChange={(e) => setMediaUrl(e.target.value)}
+                              placeholder={`https://example.com/${headerComp.format?.toLowerCase()}.${headerComp.format === 'IMAGE' ? 'jpg' :
+                                  headerComp.format === 'VIDEO' ? 'mp4' :
+                                    'pdf'
+                                }`}
+                              className="mt-2"
+                            />
+                            <p className="text-xs text-muted-foreground mt-2">
+                              Provide a publicly accessible URL for the {headerComp.format?.toLowerCase()} that will be used as the template header
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
+
                   {/* Variables */}
                   {extractVariables(selectedTemplate).all.length > 0 && (
                     <div className="space-y-6">
                       <h4 className="font-medium">Template Variables</h4>
-                      
-                      {/* Header Variables */}
-                      {extractVariables(selectedTemplate).header.length > 0 && (
-                        <div className="space-y-3">
-                          <div className="flex items-center gap-2">
-                            <div className="w-3 h-3 rounded-full bg-blue-500"></div>
-                            <h5 className="text-sm font-medium text-blue-700 dark:text-blue-300">Header Variables</h5>
-                          </div>
-                          {extractVariables(selectedTemplate).header.map((variable) => (
-                            <div key={`header-${variable}`}>
-                              <Label htmlFor={`header-var-${variable}`}>
-                                Header Variable {`{{${variable}}}`} *
-                              </Label>
-                              <Input
-                                id={`header-var-${variable}`}
-                                value={variables.header[variable] || ''}
-                                onChange={(e) => setVariables(prev => ({
-                                  ...prev,
-                                  header: { ...prev.header, [variable]: e.target.value }
-                                }))}
-                                placeholder={`Enter value for header {{${variable}}}`}
-                                className="mt-1"
-                              />
+
+                      {/* Header Variables - Only show for TEXT headers */}
+                      {(() => {
+                        const headerComp = selectedTemplate.formatted_components.header;
+                        const isTextHeader = headerComp && headerComp.format?.toUpperCase() === 'TEXT';
+                        const headerVars = extractVariables(selectedTemplate).header;
+
+                        if (isTextHeader && headerVars.length > 0) {
+                          return (
+                            <div className="space-y-3">
+                              <div className="flex items-center gap-2">
+                                <div className="w-3 h-3 rounded-full bg-blue-500"></div>
+                                <h5 className="text-sm font-medium text-blue-700 dark:text-blue-300">Header Variables</h5>
+                              </div>
+                              {headerVars.map((variable) => (
+                                <div key={`header-${variable}`}>
+                                  <Label htmlFor={`header-var-${variable}`}>
+                                    Header Variable {`{{${variable}}}`} *
+                                  </Label>
+                                  <Input
+                                    id={`header-var-${variable}`}
+                                    value={variables.header[variable] || ''}
+                                    onChange={(e) => setVariables(prev => ({
+                                      ...prev,
+                                      header: { ...prev.header, [variable]: e.target.value }
+                                    }))}
+                                    placeholder={`Enter value for header {{${variable}}}`}
+                                    className="mt-1"
+                                  />
+                                </div>
+                              ))}
                             </div>
-                          ))}
-                        </div>
-                      )}
+                          );
+                        }
+                        return null;
+                      })()}
 
                       {/* Body Variables */}
                       {extractVariables(selectedTemplate).body.length > 0 && (
@@ -619,7 +702,7 @@ export function TemplateSelector({ isOpen, onClose, onSendTemplate, selectedUser
               {showPreview && (
                 <div className="w-1/2 overflow-y-scroll p-6">
                   <h4 className="font-medium mb-4">Preview</h4>
-                  {renderTemplatePreview(selectedTemplate, variables)}
+                  {renderTemplatePreview(selectedTemplate, variables, mediaUrl)}
                 </div>
               )}
             </div>

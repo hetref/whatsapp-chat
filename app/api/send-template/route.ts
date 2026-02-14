@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db';
 
 interface SendTemplateRequest {
   to: string;
+  contactName?: string; // Optional: Name of the contact (used when creating new users)
   templateName: string;
   templateData: {
     id: string;
@@ -26,6 +27,8 @@ interface SendTemplateRequest {
     body: Record<string, string>;
     footer: Record<string, string>;
   };
+  mediaUrl?: string; // URL for IMAGE/VIDEO/DOCUMENT headers (publicly accessible URL)
+  mediaId?: string; // Media ID for IMAGE/VIDEO/DOCUMENT headers (uploaded to Facebook)
 }
 
 /**
@@ -38,11 +41,29 @@ async function sendTemplateMessage(
   accessToken: string,
   phoneNumberId: string,
   apiVersion: string,
+  templateData: {
+    id: string;
+    name: string;
+    language: string;
+    components: Array<{
+      type: string;
+      format?: string;
+      text?: string;
+      buttons?: Array<{
+        type: string;
+        text: string;
+        url?: string;
+        phone_number?: string;
+      }>;
+    }>;
+  },
   variables: {
     header: Record<string, string>;
     body: Record<string, string>;
     footer: Record<string, string>;
-  }
+  },
+  mediaUrl?: string,
+  mediaId?: string
 ): Promise<{ messages: { id: string }[] }> {
   try {
     const whatsappApiUrl = `https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`;
@@ -50,8 +71,37 @@ async function sendTemplateMessage(
     // Build template parameters for each component
     const templateComponents = [];
 
-    // Add header parameters if header variables exist
-    if (Object.keys(variables.header).length > 0) {
+    // Check if template has a media header (IMAGE/VIDEO/DOCUMENT)
+    const headerComponent = templateData.components.find(c => c.type === 'HEADER');
+    const hasMediaHeader = headerComponent?.format && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(headerComponent.format);
+
+    // Add header parameters
+    if (hasMediaHeader && (mediaUrl || mediaId) && headerComponent?.format) {
+      // Media header - supports both URL (link) and uploaded media (id)
+      // Format according to WhatsApp Business API documentation
+      const mediaType = headerComponent.format.toLowerCase();
+      const mediaParameter: Record<string, any> = {
+        type: mediaType
+      };
+
+      // Use media ID if provided (preferred method - more reliable)
+      // Otherwise use URL (must be publicly accessible)
+      if (mediaId) {
+        mediaParameter[mediaType] = {
+          id: mediaId
+        };
+      } else if (mediaUrl) {
+        mediaParameter[mediaType] = {
+          link: mediaUrl
+        };
+      }
+
+      templateComponents.push({
+        type: 'header',
+        parameters: [mediaParameter]
+      });
+    } else if (Object.keys(variables.header).length > 0) {
+      // Text header with variables
       const headerParams = Object.keys(variables.header)
         .sort((a, b) => parseInt(a) - parseInt(b))
         .map(key => ({
@@ -158,7 +208,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Parse request body
-    const { to, templateName, templateData, variables }: SendTemplateRequest = await request.json();
+    const { to, contactName, templateName, templateData, variables, mediaUrl, mediaId }: SendTemplateRequest = await request.json();
 
     // Validate required parameters
     if (!to || !templateName || !templateData) {
@@ -202,29 +252,72 @@ export async function POST(request: NextRequest) {
     // Clean phone number for database consistency
     const cleanPhoneNumber = to.replace(/\s+/g, '').replace(/[^\d]/g, '');
 
-    // Check if user exists in our database
-    const existingUser = await prisma.user.findUnique({
-      where: { id: cleanPhoneNumber }
+    // Find or create contact for this user
+    let contact = await prisma.contact.findUnique({
+      where: {
+        contacts_user_id_phone_number_key: {
+          userId: userId,
+          phoneNumber: cleanPhoneNumber
+        }
+      }
     });
 
-    // Create user if they don't exist
-    if (!existingUser) {
-      console.log(`Creating new user: ${cleanPhoneNumber}`);
+    // Create contact if it doesn't exist (DO NOT update existing contacts unless provided)
+    if (!contact) {
+      console.log(`Creating new contact ${cleanPhoneNumber} for user ${userId} with name: ${contactName || cleanPhoneNumber}`);
       try {
-        await prisma.user.create({
+        contact = await prisma.contact.create({
           data: {
-            id: cleanPhoneNumber,
-            name: cleanPhoneNumber, // Use phone number as default name
+            userId: userId,
+            phoneNumber: cleanPhoneNumber,
+            customName: contactName || null, // Use provided contact name if available
             lastActive: new Date()
           }
         });
-      } catch (userError: unknown) {
-        console.error('Error creating user:', userError);
-        // Continue anyway as this shouldn't block template sending
+      } catch (contactError: unknown) {
+        console.error('Error creating contact:', contactError);
+        return NextResponse.json(
+          { error: 'Failed to create contact record' },
+          { status: 500 }
+        );
       }
+    } else {
+      console.log(`Contact already exists: ${cleanPhoneNumber} for user ${userId}, skipping update (existing name: ${contact.customName || contact.phoneNumber})`);
     }
 
     console.log(`Sending template message: ${templateName} to ${to}`);
+
+    // Validate media URL or ID if template has media header
+    const headerComponent = templateData.components.find(c => c.type === 'HEADER');
+    const hasMediaHeader = headerComponent?.format && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(headerComponent.format);
+
+    if (hasMediaHeader && !mediaUrl && !mediaId && headerComponent?.format) {
+      return NextResponse.json(
+        {
+          error: `This template requires a ${headerComponent.format.toLowerCase()} for the header. Provide either a publicly accessible URL (mediaUrl) or a Media ID (mediaId).`,
+          details: 'You can upload media to Facebook and get a Media ID, or provide a direct HTTPS URL to the media file.'
+        },
+        { status: 400 }
+      );
+    }
+
+    // Validate URL format if URL is provided
+    if (mediaUrl) {
+      try {
+        const url = new URL(mediaUrl);
+        if (!url.protocol.startsWith('https')) {
+          return NextResponse.json(
+            { error: 'Media URL must use HTTPS protocol' },
+            { status: 400 }
+          );
+        }
+      } catch {
+        return NextResponse.json(
+          { error: 'Invalid media URL format. Please provide a valid HTTPS URL.' },
+          { status: 400 }
+        );
+      }
+    }
 
     // Send template message via WhatsApp using user-specific credentials
     const messageResponse = await sendTemplateMessage(
@@ -234,7 +327,10 @@ export async function POST(request: NextRequest) {
       accessToken,
       phoneNumberId,
       apiVersion,
-      variables
+      templateData,
+      variables,
+      mediaUrl,
+      mediaId
     );
     const messageId = messageResponse.messages?.[0]?.id;
 
@@ -254,7 +350,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Store message in database
-    const timestamp = new Date().toISOString();
+    const timestamp = new Date();
 
     // Process template components for storage with variables replaced
     const processedComponents = {
@@ -292,7 +388,7 @@ export async function POST(request: NextRequest) {
           processedComponents.header = {
             format: component.format || 'TEXT',
             text: component.text ? replaceVariables(component.text, variables.header) : component.text,
-            media_url: null // Media URLs would be handled separately for headers with media
+            media_url: mediaUrl || mediaId || null // Store media URL or ID if provided
           };
           break;
         case 'BODY':
@@ -320,10 +416,10 @@ export async function POST(request: NextRequest) {
 
     const messageObject = {
       id: messageId,
-      senderId: userId, // Current authenticated user (sender)
-      receiverId: cleanPhoneNumber, // Recipient phone number (receiver)
+      userId: userId, // Current authenticated user (owner)
+      contactId: contact.id, // Contact involved in this message
       content: displayContent,
-      timestamp: new Date(timestamp),
+      timestamp: timestamp,
       isSentByMe: true,
       isRead: true, // Outgoing messages are already "read" by the sender
       messageType: 'template',
@@ -357,7 +453,7 @@ export async function POST(request: NextRequest) {
       messageId: messageId,
       templateName: templateName,
       displayContent: displayContent,
-      timestamp: timestamp,
+      timestamp: timestamp.toISOString(),
     });
 
   } catch (error: unknown) {

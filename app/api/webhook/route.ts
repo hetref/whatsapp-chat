@@ -343,35 +343,46 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Check if user exists in our database
-      const existingUser = await prisma.user.findUnique({
-        where: { id: phoneNumber }
+      // Check if contact exists for this business owner
+      let existingContact = await prisma.contact.findUnique({
+        where: {
+          contacts_user_id_phone_number_key: {
+            userId: businessOwnerId,
+            phoneNumber: phoneNumber
+          }
+        }
       });
 
-      // Create user if they don't exist
-      if (!existingUser) {
-        console.log(`Creating new user: ${contactName}`);
+      // Create contact if they don't exist
+      if (!existingContact) {
+        console.log(`Creating new contact for business owner ${businessOwnerId}: ${contactName}`);
         try {
-          await prisma.user.create({
+          existingContact = await prisma.contact.create({
             data: {
-              id: phoneNumber,
-              name: contactName,
+              userId: businessOwnerId,
+              phoneNumber: phoneNumber,
+              whatsappName: contactName !== phoneNumber ? contactName : null,
               lastActive: new Date(messageTimestamp)
             }
           });
-        } catch (userError: unknown) {
-          console.error('Error creating user:', userError);
-          continue; // Skip this message if user creation fails
+        } catch (contactError: unknown) {
+          console.error('Error creating contact:', contactError);
+          continue; // Skip this message if contact creation fails
         }
       } else {
-        // Update last_active timestamp for existing user
+        // Update last_active timestamp for existing contact
         try {
-          await prisma.user.update({
-            where: { id: phoneNumber },
-            data: { lastActive: new Date(messageTimestamp) }
+          await prisma.contact.update({
+            where: {
+              id: existingContact.id
+            },
+            data: {
+              lastActive: new Date(messageTimestamp),
+              whatsappName: contactName !== phoneNumber ? contactName : existingContact.whatsappName
+            }
           });
         } catch (updateError: unknown) {
-          console.error('Error updating user last_seen:', updateError);
+          console.error('Error updating contact last_active:', updateError);
         }
       }
 
@@ -383,11 +394,11 @@ export async function POST(request: NextRequest) {
       // Prepare message object for database with S3 URL
       const messageObject = {
         id: message.id, // Use WhatsApp message ID
-        sender_id: phoneNumber,
-        receiver_id: receiverId,
+        user_id: receiverId, // Business owner (platform user)
+        contact_id: existingContact.id, // The contact who sent the message
         content: content,
         timestamp: messageTimestamp,
-        is_sent_by_me: false,
+        is_sent_by_me: false, // Received from contact
         is_read: false, // Mark incoming messages as unread by default
         message_type: messageType,
         media_data: mediaData ? JSON.stringify({
@@ -404,8 +415,8 @@ export async function POST(request: NextRequest) {
         await prisma.message.create({
           data: {
             id: messageObject.id,
-            senderId: messageObject.sender_id,
-            receiverId: messageObject.receiver_id,
+            userId: messageObject.user_id,
+            contactId: messageObject.contact_id,
             content: messageObject.content,
             timestamp: new Date(messageObject.timestamp),
             isSentByMe: messageObject.is_sent_by_me,

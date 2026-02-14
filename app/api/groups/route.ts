@@ -29,10 +29,10 @@ export async function GET() {
         },
         members: {
           include: {
-            user: {
+            contact: {
               select: {
                 id: true,
-                name: true,
+                phoneNumber: true,
                 customName: true,
                 whatsappName: true,
               },
@@ -56,9 +56,9 @@ export async function GET() {
       member_count: group._count.members,
       members: group.members.map((member: typeof group.members[0]) => ({
         id: member.id,
-        user_id: member.userId,
+        contact_id: member.contactId,
         added_at: member.addedAt,
-        user: member.user,
+        contact: member.contact,
       })),
     }));
 
@@ -115,9 +115,9 @@ export async function POST(request: NextRequest) {
       // Add members if provided
       if (memberIds && Array.isArray(memberIds) && memberIds.length > 0) {
         await tx.groupMember.createMany({
-          data: memberIds.map((memberId: string) => ({
+          data: memberIds.map((contactId: string) => ({
             groupId: group.id,
-            userId: memberId,
+            contactId: contactId,
           })),
           skipDuplicates: true,
         });

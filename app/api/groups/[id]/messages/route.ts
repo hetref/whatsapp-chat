@@ -45,7 +45,7 @@ export async function GET(
     // These are messages where media_data contains broadcast_group_id = groupId
     const messages = await prisma.message.findMany({
       where: {
-        receiverId: userId
+        userId: userId
       },
       orderBy: {
         timestamp: 'asc'
@@ -80,8 +80,8 @@ export async function GET(
     // Convert map to array and format for display
     const formattedMessages = Array.from(uniqueBroadcasts.values()).map((msg: typeof broadcastMessages[0]) => ({
       id: msg.id,
-      sender_id: msg.senderId,
-      receiver_id: msg.receiverId,
+      sender_id: msg.userId,
+      receiver_id: msg.contactId,
       content: msg.content,
       timestamp: msg.timestamp.toISOString(),
       is_sent_by_me: true, // All broadcast messages are sent by the user

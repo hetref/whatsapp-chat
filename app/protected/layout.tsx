@@ -1,6 +1,7 @@
 "use client";
 
 import { useAuth, UserButton } from "@clerk/nextjs";
+import { useClerk } from "@clerk/nextjs";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -12,24 +13,25 @@ import {
   ChevronLeft,
   ChevronRight,
   Home,
-  Book
+  Book,
+  LogOut
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 
 const navItems = [
-  // { 
-  //   name: "Dashboard", 
-  //   path: "/protected", 
-  //   icon: LayoutDashboard,
-  //   description: "View overview"
-  // },
   {
     name: "Chat",
     path: "/protected",
     icon: MessageCircle,
     description: "Messages & conversations"
+  },
+  {
+    name: "Bulk Sender",
+    path: "/protected/bulk-sender",
+    icon: MessageCircle,
+    description: "Send bulk messages"
   },
   {
     name: "Templates",
@@ -57,6 +59,7 @@ export default function ProtectedLayout({
   children: React.ReactNode;
 }) {
   const { isLoaded, userId } = useAuth();
+  const { signOut } = useClerk();
   const router = useRouter();
   const pathname = usePathname();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -158,15 +161,17 @@ export default function ProtectedLayout({
           </div>
         </div>
 
-        {/* Home Link */}
+        {/* Logout Button */}
         {!sidebarCollapsed && (
           <div className="px-4 pb-4">
-            <Link href="/">
-              <Button variant="outline" className="w-full justify-start gap-2">
-                <Home className="h-4 w-4" />
-                Back to Home
-              </Button>
-            </Link>
+            <Button
+              variant="outline"
+              className="w-full justify-start gap-2 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20 border-red-200 dark:border-red-800"
+              onClick={() => signOut(() => router.push("/"))}
+            >
+              <LogOut className="h-4 w-4" />
+              Sign Out
+            </Button>
           </div>
         )}
 

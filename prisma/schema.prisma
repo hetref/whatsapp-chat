@@ -13,81 +13,101 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-/// Application user/contact. Stores both business owners (Clerk users) and
-/// WhatsApp contacts (phone numbers) as string IDs.
+/// Platform user (business owner) with Clerk authentication ID only.
+/// These are the actual users of your application.
 model User {
-  id           String   @id @db.Text
-  name         String
-  customName   String?  @map("custom_name")
-  whatsappName String?  @map("whatsapp_name")
-  lastActive   DateTime @default(now()) @map("last_active")
+  id        String   @id @db.Text // Clerk user ID (e.g., "user_...")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   // Relations
-  sentMessages     Message[]     @relation("sentMessages")
-  receivedMessages Message[]     @relation("receivedMessages")
-  groupsOwned      ChatGroup[]   @relation("GroupOwner")
-  groupMemberships GroupMember[]
-  settings         UserSettings?
-  apiKeys          ApiKey[]
+  contacts Contact[] // WhatsApp contacts owned by this user
+  messages Message[] // Messages owned by this user
+  groups   ChatGroup[] // Broadcast groups owned by this user
+  settings UserSettings? // WhatsApp API settings for this user
+  apiKeys  ApiKey[] // API keys for this user
 
   @@map("users")
 }
 
-/// Messages exchanged between a business owner (Clerk user) and WhatsApp contacts.
+/// WhatsApp contact (phone number) owned by a specific platform user.
+/// Each platform user has their own isolated set of contacts.
+model Contact {
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String   @map("user_id") // Platform user who owns this contact
+  phoneNumber  String   @map("phone_number") // WhatsApp phone number (e.g., "918097296453")
+  customName   String?  @map("custom_name") // User-defined name for this contact
+  whatsappName String?  @map("whatsapp_name") // Name from WhatsApp profile
+  lastActive   DateTime @default(now()) @map("last_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  // Relations
+  owner            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages         Message[] // All messages for this contact
+  groupMemberships GroupMember[] // Group memberships for this contact
+
+  @@unique([userId, phoneNumber], name: "contacts_user_id_phone_number_key")
+  @@index([userId], name: "idx_contacts_user_id")
+  @@index([phoneNumber], name: "idx_contacts_phone_number")
+  @@map("contacts")
+}
+
+/// Messages exchanged between a platform user and their WhatsApp contacts.
+/// Each message is owned by a specific platform user and involves one of their contacts.
 model Message {
   id          String    @id @db.Text
-  senderId    String    @map("sender_id")
-  receiverId  String    @map("receiver_id")
+  userId      String    @map("user_id") // Platform user who owns this message
+  contactId   String    @map("contact_id") @db.Uuid // Contact involved in this message
   content     String
   timestamp   DateTime  @default(now())
-  isSentByMe  Boolean   @default(false) @map("is_sent_by_me")
+  isSentByMe  Boolean   @default(false) @map("is_sent_by_me") // true = user sent, false = contact sent
   messageType String    @default("text") @map("message_type")
   mediaData   Json?     @map("media_data")
   isRead      Boolean   @default(false) @map("is_read")
   readAt      DateTime? @map("read_at")
 
   // Relations
-  sender   User @relation("sentMessages", fields: [senderId], references: [id], onDelete: Cascade)
-  receiver User @relation("receivedMessages", fields: [receiverId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
 
-  @@index([senderId], name: "idx_messages_sender")
-  @@index([receiverId], name: "idx_messages_receiver")
+  @@index([userId], name: "idx_messages_user_id")
+  @@index([contactId], name: "idx_messages_contact_id")
   @@index([timestamp(sort: Desc)], name: "idx_messages_timestamp")
   @@index([isRead], name: "idx_messages_is_read")
-  @@index([senderId, receiverId, timestamp(sort: Desc)], name: "idx_messages_conversation")
+  @@index([userId, contactId, timestamp(sort: Desc)], name: "idx_messages_user_contact_conversation")
   @@map("messages")
 }
 
-/// Broadcast group owned by a business user.
+/// Broadcast group owned by a platform user.
 model ChatGroup {
   id          String   @id @default(uuid()) @db.Uuid
-  ownerId     String   @map("owner_id")
+  ownerId     String   @map("owner_id") // Platform user who owns this group
   name        String
   description String?
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @default(now()) @map("updated_at")
 
   // Relations
-  owner   User          @relation("GroupOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  owner   User          @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   members GroupMember[]
 
   @@index([ownerId], name: "idx_chat_groups_owner_id")
   @@map("chat_groups")
 }
 
-/// Member of a broadcast group, pointing to a WhatsApp contact in `users`.
+/// Member of a broadcast group, pointing to a contact owned by the group owner.
 model GroupMember {
-  id      String   @id @default(uuid()) @db.Uuid
-  groupId String   @map("group_id") @db.Uuid
-  userId  String   @map("user_id")
-  addedAt DateTime @default(now()) @map("added_at")
+  id        String   @id @default(uuid()) @db.Uuid
+  groupId   String   @map("group_id") @db.Uuid
+  contactId String   @map("contact_id") @db.Uuid
+  addedAt   DateTime @default(now()) @map("added_at")
 
-  group ChatGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  user  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group   ChatGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  contact Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
 
-  @@unique([groupId, userId], name: "group_members_group_id_user_id_key")
+  @@unique([groupId, contactId], name: "group_members_group_id_contact_id_key")
   @@index([groupId], name: "idx_group_members_group_id")
-  @@index([userId], name: "idx_group_members_user_id")
+  @@index([contactId], name: "idx_group_members_contact_id")
   @@map("group_members")
 }
 

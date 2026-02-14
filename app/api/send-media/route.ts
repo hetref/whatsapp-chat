@@ -229,25 +229,33 @@ export async function POST(request: NextRequest) {
     // Clean phone number for database consistency
     const cleanPhoneNumber = to.replace(/\s+/g, '').replace(/[^\d]/g, '');
 
-    // Check if user exists in our database
-    const existingUser = await prisma.user.findUnique({
-      where: { id: cleanPhoneNumber }
+    // Find or create contact for this user
+    let contact = await prisma.contact.findUnique({
+      where: {
+        contacts_user_id_phone_number_key: {
+          userId: userId,
+          phoneNumber: cleanPhoneNumber
+        }
+      }
     });
 
-    // Create user if they don't exist
-    if (!existingUser) {
-      console.log(`Creating new user: ${cleanPhoneNumber}`);
+    // Create contact if it doesn't exist
+    if (!contact) {
+      console.log(`Creating new contact ${cleanPhoneNumber} for user ${userId}`);
       try {
-        await prisma.user.create({
+        contact = await prisma.contact.create({
           data: {
-            id: cleanPhoneNumber,
-            name: cleanPhoneNumber, // Use phone number as default name
+            userId: userId,
+            phoneNumber: cleanPhoneNumber,
             lastActive: new Date()
           }
         });
-      } catch (userError: unknown) {
-        console.error('Failed to create user:', userError);
-        // Continue anyway as this shouldn't block media sending
+      } catch (contactError: unknown) {
+        console.error('Failed to create contact:', contactError);
+        return new NextResponse(
+          JSON.stringify({ error: 'Failed to create contact record' }),
+          { status: 500, headers: { 'Content-Type': 'application/json' } }
+        );
       }
     }
 
@@ -266,7 +274,7 @@ export async function POST(request: NextRequest) {
     }
 
     const results = [];
-    const timestamp = new Date().toISOString();
+    const timestamp = new Date();
 
     // Process each file
     for (let i = 0; i < files.length; i++) {
@@ -303,13 +311,13 @@ export async function POST(request: NextRequest) {
         const mediaIdForS3 = `upload_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         const s3Url = await uploadFileToS3(file, userId, mediaIdForS3);
 
-        // Store in database
+        // Store in database with new Contact model structure
         const messageObject = {
           id: messageId || `outgoing_media_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-          senderId: userId, // Current authenticated user (sender)
-          receiverId: cleanPhoneNumber, // Recipient phone number (receiver)
+          userId: userId, // Current authenticated user (owner)
+          contactId: contact.id, // Contact involved in this message
           content: caption || `[${mediaType.charAt(0).toUpperCase() + mediaType.slice(1)}]`,
-          timestamp: new Date(timestamp),
+          timestamp: timestamp,
           isSentByMe: true,
           isRead: true, // Outgoing messages are already "read" by the sender
           messageType: mediaType,
@@ -321,7 +329,7 @@ export async function POST(request: NextRequest) {
             caption: caption,
             media_url: s3Url,
             s3_uploaded: !!s3Url,
-            upload_timestamp: timestamp,
+            upload_timestamp: timestamp.toISOString(),
             whatsapp_media_id: mediaUpload.id,
           }),
         };
@@ -353,10 +361,6 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Note: Removed user last_active update to avoid RLS policy issues
-    // The user's last_active will be updated by the webhook when they receive messages
-    // or by other parts of the application where the user context is clearer
-
     // Return results
     const successCount = results.filter(r => r.success).length;
     const failureCount = results.filter(r => !r.success).length;
@@ -367,7 +371,7 @@ export async function POST(request: NextRequest) {
       successCount,
       failureCount,
       results,
-      timestamp,
+      timestamp: timestamp.toISOString(),
     });
 
   } catch (error: unknown) {

@@ -32,6 +32,7 @@ interface WhatsAppTemplate {
 
 interface ChatUser {
   id: string;
+  phone_number: string;
   name: string;
   custom_name?: string;
   whatsapp_name?: string;
@@ -140,7 +141,7 @@ export function ChatWindow({
     header: Record<string, string>;
     body: Record<string, string>;
     footer: Record<string, string>;
-  }) => {
+  }, mediaUrl?: string) => {
     // Handle broadcast mode
     if (broadcastGroupName) {
       // Call onSendMessage with template data - it will be routed to broadcast endpoint
@@ -151,6 +152,7 @@ export function ChatWindow({
         templateName,
         templateData,
         variables,
+        mediaUrl,
         displayMessage: templateMessage
       }));
       return;
@@ -165,10 +167,11 @@ export function ChatWindow({
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          to: selectedUser.id,
+          to: selectedUser.phone_number,
           templateName,
           templateData,
           variables,
+          mediaUrl,
         }),
       });
 
@@ -329,7 +332,7 @@ export function ChatWindow({
 
     try {
       const formData = new FormData();
-      formData.append('to', selectedUser.id);
+      formData.append('to', selectedUser.phone_number);
 
       mediaFiles.forEach((mediaFile) => {
         formData.append('files', mediaFile.file);
@@ -374,7 +377,7 @@ export function ChatWindow({
   };
 
   const getDisplayName = (user: ChatUser) => {
-    return user.custom_name || user.whatsapp_name || user.name || user.id;
+    return user.custom_name || user.whatsapp_name || user.name || user.phone_number;
   };
 
   const formatTime = (timestamp: string) => {
@@ -1351,15 +1354,15 @@ export function ChatWindow({
                     const isOwn = message.is_sent_by_me;
 
                     // Debug logging to help identify the issue
-                    if (!isOwn && message.content && !message.content.startsWith('[')) {
-                      console.log('Message alignment check:', {
-                        id: message.id,
-                        is_sent_by_me: message.is_sent_by_me,
-                        sender_id: message.sender_id,
-                        receiver_id: message.receiver_id,
-                        content: message.content.substring(0, 30)
-                      });
-                    }
+                    // if (!isOwn && message.content && !message.content.startsWith('[')) {
+                    //   console.log('Message alignment check:', {
+                    //     id: message.id,
+                    //     is_sent_by_me: message.is_sent_by_me,
+                    //     sender_id: message.sender_id,
+                    //     receiver_id: message.receiver_id,
+                    //     content: message.content.substring(0, 30)
+                    //   });
+                    // }
 
                     const globalIndex = messages.findIndex(m => m.id === message.id);
                     const isFirstUnread = globalIndex === firstUnreadIndex;

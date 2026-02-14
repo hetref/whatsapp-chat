@@ -14,34 +14,47 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url);
-    const conversationId = searchParams.get('conversationId');
+    const contactId = searchParams.get('conversationId'); // Still called conversationId for backwards compat
     const limit = parseInt(searchParams.get('limit') || '50');
     const offset = parseInt(searchParams.get('offset') || '0');
 
-    if (!conversationId) {
+    if (!contactId) {
       return NextResponse.json(
         { error: 'conversationId is required' },
         { status: 400 }
       );
     }
 
-    // Get messages for the conversation 
+    // Verify the contact belongs to this user
+    const contact = await prisma.contact.findFirst({
+      where: {
+        id: contactId,
+        userId: userId
+      }
+    });
+
+    if (!contact) {
+      return NextResponse.json(
+        { error: 'Contact not found or access denied' },
+        { status: 404 }
+      );
+    }
+
+    // Get messages for the conversation
     // We'll get them in DESC order (newest first) to ensure we get recent messages
     // but we'll reverse them in the response to display chronologically
     const messages = await prisma.message.findMany({
       where: {
-        OR: [
-          { senderId: userId, receiverId: conversationId },
-          { senderId: conversationId, receiverId: userId }
-        ]
+        userId: userId,
+        contactId: contactId
       },
       orderBy: { timestamp: 'desc' }, // Get newest first to ensure recent messages
       take: limit,
       skip: offset,
       select: {
         id: true,
-        senderId: true,
-        receiverId: true,
+        userId: true,
+        contactId: true,
         content: true,
         timestamp: true,
         isSentByMe: true,
@@ -55,11 +68,11 @@ export async function GET(request: NextRequest) {
     // Convert to the format expected by the frontend and reverse to show chronologically
     const formattedMessages = messages.map(msg => ({
       id: msg.id,
-      sender_id: msg.senderId,
-      receiver_id: msg.receiverId,
+      sender_id: msg.isSentByMe ? userId : contact.phoneNumber,
+      receiver_id: msg.isSentByMe ? contact.phoneNumber : userId,
       content: msg.content,
       timestamp: msg.timestamp.toISOString(),
-      is_sent_by_me: msg.senderId === userId, // Calculate based on current user
+      is_sent_by_me: msg.isSentByMe,
       is_read: msg.isRead,
       message_type: msg.messageType,
       media_data: msg.mediaData,

@@ -42,10 +42,10 @@ export async function GET(
         groupId: groupId
       },
       include: {
-        user: {
+        contact: {
           select: {
             id: true,
-            name: true,
+            phoneNumber: true,
             customName: true,
             whatsappName: true,
             lastActive: true
@@ -57,14 +57,14 @@ export async function GET(
     // Format the response to match expected structure
     const formattedMembers = members.map((member: typeof members[0]) => ({
       id: member.id,
-      user_id: member.userId,
+      contact_id: member.contactId,
       added_at: member.addedAt.toISOString(),
-      user: {
-        id: member.user.id,
-        name: member.user.name,
-        custom_name: member.user.customName,
-        whatsapp_name: member.user.whatsappName,
-        last_active: member.user.lastActive.toISOString()
+      contact: {
+        id: member.contact.id,
+        phone_number: member.contact.phoneNumber,
+        custom_name: member.contact.customName,
+        whatsapp_name: member.contact.whatsappName,
+        last_active: member.contact.lastActive.toISOString()
       }
     }));
 
@@ -101,12 +101,12 @@ export async function POST(
 
     const { id: groupId } = await params;
     const body = await request.json();
-    const { userIds } = body;
+    const { contactIds } = body;
 
     // Validate input
-    if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
+    if (!contactIds || !Array.isArray(contactIds) || contactIds.length === 0) {
       return NextResponse.json(
-        { error: 'User IDs array is required' },
+        { error: 'Contact IDs array is required' },
         { status: 400 }
       );
     }
@@ -127,9 +127,9 @@ export async function POST(
     }
 
     // Add members (duplicates will be ignored due to unique constraint)
-    const members = userIds.map(userId => ({
+    const members = contactIds.map((contactId: string) => ({
       groupId: groupId,
-      userId: userId,
+      contactId: contactId,
     }));
 
     try {
@@ -179,11 +179,11 @@ export async function DELETE(
 
     const { id: groupId } = await params;
     const { searchParams } = new URL(request.url);
-    const userIdToRemove = searchParams.get('userId');
+    const contactIdToRemove = searchParams.get('contactId');
 
-    if (!userIdToRemove) {
+    if (!contactIdToRemove) {
       return NextResponse.json(
-        { error: 'User ID is required' },
+        { error: 'Contact ID is required' },
         { status: 400 }
       );
     }
@@ -207,7 +207,7 @@ export async function DELETE(
     const result = await prisma.groupMember.deleteMany({
       where: {
         groupId: groupId,
-        userId: userIdToRemove
+        contactId: contactIdToRemove
       }
     });
 

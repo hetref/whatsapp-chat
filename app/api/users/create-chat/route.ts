@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
 }
 
 /**
- * Handle single user creation
+ * Handle single contact creation
  */
 async function handleSingleUserCreation(
   currentUserId: string,
@@ -90,47 +90,52 @@ async function handleSingleUserCreation(
     );
   }
 
-  console.log(`Creating/getting chat with ${cleanPhoneNumber}, custom name: "${customName}"`);
+  console.log(`Creating/getting contact ${cleanPhoneNumber} for user ${currentUserId}, custom name: "${customName}"`);
 
   try {
-    // Check if user already exists
-    let user = await prisma.user.findUnique({
-      where: { id: cleanPhoneNumber }
+    // Check if contact already exists for this user
+    let contact = await prisma.contact.findUnique({
+      where: {
+        contacts_user_id_phone_number_key: {
+          userId: currentUserId,
+          phoneNumber: cleanPhoneNumber
+        }
+      }
     });
 
     let isNew = false;
-    if (!user) {
-      // Create new user
-      user = await prisma.user.create({
+    if (!contact) {
+      // Create new contact
+      contact = await prisma.contact.create({
         data: {
-          id: cleanPhoneNumber,
-          name: cleanPhoneNumber, // Default name is phone number
+          userId: currentUserId,
+          phoneNumber: cleanPhoneNumber,
           customName: customName || null,
           lastActive: new Date()
         }
       });
       isNew = true;
-    } else if (customName && customName !== user.customName) {
+    } else if (customName && customName !== contact.customName) {
       // Update custom name if provided and different
-      user = await prisma.user.update({
-        where: { id: cleanPhoneNumber },
+      contact = await prisma.contact.update({
+        where: { id: contact.id },
         data: { customName }
       });
     }
 
-    console.log(`Successfully ${isNew ? 'created' : 'retrieved'} user:`, user.id);
+    console.log(`Successfully ${isNew ? 'created' : 'retrieved'} contact:`, contact.id);
 
     return NextResponse.json({
       success: true,
       user: {
-        id: user.id,
-        name: user.customName || user.whatsappName || user.name || user.id,
-        custom_name: user.customName,
-        whatsapp_name: user.whatsappName,
-        last_active: user.lastActive.toISOString(),
+        id: contact.id,
+        name: contact.customName || contact.whatsappName || contact.phoneNumber,
+        custom_name: contact.customName,
+        whatsapp_name: contact.whatsappName,
+        last_active: contact.lastActive.toISOString(),
         unread_count: 0,
         last_message: '',
-        last_message_time: user.lastActive.toISOString(),
+        last_message_time: contact.lastActive.toISOString(),
         last_message_type: 'text',
         last_message_sender: ''
       },
@@ -139,7 +144,7 @@ async function handleSingleUserCreation(
     });
 
   } catch (error) {
-    console.error('Error creating/getting user:', error);
+    console.error('Error creating/getting contact:', error);
     return NextResponse.json(
       { error: 'Failed to create chat', details: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
@@ -168,7 +173,7 @@ async function handleBulkUserCreation(
     );
   }
 
-  console.log(`Bulk creating ${users.length} users`);
+  console.log(`Bulk creating ${users.length} contacts for user ${currentUserId}`);
 
   const results = {
     success: [] as Array<{ phoneNumber: string; customName?: string; user: unknown; isNew?: boolean }>,
@@ -232,27 +237,32 @@ async function handleBulkUserCreation(
         continue;
       }
 
-      // Check if user already exists
-      let user = await prisma.user.findUnique({
-        where: { id: cleanPhoneNumber }
+      // Check if contact already exists for this user
+      let contact = await prisma.contact.findUnique({
+        where: {
+          contacts_user_id_phone_number_key: {
+            userId: currentUserId,
+            phoneNumber: cleanPhoneNumber
+          }
+        }
       });
 
       let isNew = false;
-      if (!user) {
-        // Create new user
-        user = await prisma.user.create({
+      if (!contact) {
+        // Create new contact
+        contact = await prisma.contact.create({
           data: {
-            id: cleanPhoneNumber,
-            name: cleanPhoneNumber, // Default name is phone number
+            userId: currentUserId,
+            phoneNumber: cleanPhoneNumber,
             customName: customName || null,
             lastActive: new Date()
           }
         });
         isNew = true;
-      } else if (customName && customName !== user.customName) {
+      } else if (customName && customName !== contact.customName) {
         // Update custom name if provided and different
-        user = await prisma.user.update({
-          where: { id: cleanPhoneNumber },
+        contact = await prisma.contact.update({
+          where: { id: contact.id },
           data: { customName }
         });
       }
@@ -261,14 +271,14 @@ async function handleBulkUserCreation(
         phoneNumber,
         customName,
         user: {
-          id: user.id,
-          name: user.customName || user.whatsappName || user.name || user.id,
-          custom_name: user.customName,
-          whatsapp_name: user.whatsappName,
-          last_active: user.lastActive.toISOString(),
+          id: contact.id,
+          name: contact.customName || contact.whatsappName || contact.phoneNumber,
+          custom_name: contact.customName,
+          whatsapp_name: contact.whatsappName,
+          last_active: contact.lastActive.toISOString(),
           unread_count: 0,
           last_message: '',
-          last_message_time: user.lastActive.toISOString(),
+          last_message_time: contact.lastActive.toISOString(),
           last_message_type: 'text',
           last_message_sender: ''
         },
