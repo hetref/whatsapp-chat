@@ -5,10 +5,11 @@ import { useState, useEffect, useCallback } from "react";
 export interface SubscriptionData {
   subscription: {
     id: string;
-    status: "INACTIVE" | "ACTIVE" | "PAST_DUE" | "CANCELLED" | "EXPIRED";
+    status: "INACTIVE" | "ACTIVE" | "PAST_DUE" | "CANCELLED" | "EXPIRED" | "PAUSED";
     startDate: string | null;
     currentPeriodEnd: string | null;
     autoRenew: boolean;
+    razorpaySubscriptionId?: string | null;
     plan: {
       id: string;
       name: string;
@@ -183,6 +184,7 @@ export function formatSubscriptionStatus(status: string): {
     PAST_DUE: { label: "Past Due", variant: "destructive" },
     CANCELLED: { label: "Cancelled", variant: "outline" },
     EXPIRED: { label: "Expired", variant: "destructive" },
+    PAUSED: { label: "Paused", variant: "outline" },
   };
   
   return statusMap[status] || { label: status, variant: "secondary" };

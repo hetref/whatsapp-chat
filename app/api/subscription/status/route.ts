@@ -1,6 +1,9 @@
 /**
  * GET /api/subscription/status
  * Get current user's subscription status and details
+ * 
+ * This endpoint auto-creates users in the database if they only exist in Clerk.
+ * This ensures smooth UX - users can check status before subscribing.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -19,7 +22,7 @@ export async function GET(req: NextRequest) {
     }
 
     // Get user with subscription details
-    const user = await prisma.user.findUnique({
+    let user = await prisma.user.findUnique({
       where: { id: userId },
       include: {
         subscription: {
@@ -34,11 +37,26 @@ export async function GET(req: NextRequest) {
       },
     });
 
+    // Auto-create user if they exist in Clerk but not in our database
     if (!user) {
-      return NextResponse.json(
-        { error: 'User not found' },
-        { status: 404 }
-      );
+      user = await prisma.user.create({
+        data: {
+          id: userId,
+          isActive: false,
+        },
+        include: {
+          subscription: {
+            include: {
+              plan: true,
+            },
+          },
+          payments: {
+            orderBy: { createdAt: 'desc' },
+            take: 5,
+          },
+        },
+      });
+      console.log(`✅ Auto-created user in database: ${userId}`);
     }
 
     // If no subscription, return inactive status
@@ -52,11 +70,40 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // Check if subscription billing period has ended
+    // For INACTIVE subscriptions (not yet paid), don't check expiration
+    if (user.subscription.status === 'INACTIVE') {
+      return NextResponse.json({
+        hasSubscription: true,
+        isActive: false,
+        daysRemaining: null,
+        subscription: {
+          id: user.subscription.id,
+          status: 'INACTIVE',
+          startDate: user.subscription.startDate,
+          currentPeriodStart: user.subscription.currentPeriodStart,
+          currentPeriodEnd: user.subscription.currentPeriodEnd,
+          autoRenew: user.subscription.autoRenew,
+          cancelledAt: user.subscription.cancelledAt,
+          daysRemaining: null,
+          isExpired: false,
+          plan: {
+            name: user.subscription.plan.name,
+            displayName: user.subscription.plan.displayName,
+            description: user.subscription.plan.description,
+            price: Number(user.subscription.plan.price),
+            currency: user.subscription.plan.currency,
+          },
+        },
+        recentPayments: [],
+        message: 'Subscription pending. Complete payment to activate.',
+      });
+    }
+
+    // Check if subscription billing period has ended (only for ACTIVE/CANCELLED)
     const now = new Date();
     const isExpired = user.subscription.currentPeriodEnd 
       ? new Date(user.subscription.currentPeriodEnd) < now
-      : true; // If no end date, consider expired
+      : false; // If no end date and already active, not expired yet
 
     // Calculate days remaining (only if not expired)
     let daysRemaining = 0;
@@ -70,11 +117,17 @@ export async function GET(req: NextRequest) {
     // Access is granted if:
     // 1. Status is ACTIVE and billing period hasn't ended
     // 2. Status is CANCELLED but billing period hasn't ended (they paid for this period)
+    // 3. Status is PAUSED (paused subscriptions still have access until period ends)
     const hasAccess = !isExpired && 
-      (user.subscription.status === 'ACTIVE' || user.subscription.status === 'CANCELLED');
+      (user.subscription.status === 'ACTIVE' || 
+       user.subscription.status === 'CANCELLED' ||
+       user.subscription.status === 'PAUSED');
 
     // If subscription expired, update status in database (lazy expiration)
-    if (isExpired && user.subscription.status !== 'EXPIRED') {
+    // Only mark as EXPIRED if it was previously ACTIVE or CANCELLED (not INACTIVE)
+    if (isExpired && 
+        user.subscription.status !== 'EXPIRED' && 
+        user.subscription.status !== 'INACTIVE') {
       await prisma.$transaction([
         prisma.subscription.update({
           where: { id: user.subscription.id },
@@ -107,6 +160,7 @@ export async function GET(req: NextRequest) {
         currentPeriodEnd: user.subscription.currentPeriodEnd,
         autoRenew: user.subscription.autoRenew,
         cancelledAt: user.subscription.cancelledAt,
+        razorpaySubscriptionId: user.subscription.razorpaySubscriptionId, // Needed for cancel/pause
         daysRemaining,
         isExpired,
         plan: {

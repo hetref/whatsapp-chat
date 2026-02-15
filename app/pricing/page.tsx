@@ -92,34 +92,32 @@ export default function PricingPage() {
       setLoading(true);
       setError(null);
 
-      // Create order
-      const orderRes = await fetch("/api/razorpay/create-order", {
+      // Create subscription (recurring)
+      const subRes = await fetch("/api/razorpay/create-subscription", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
       });
 
-      const orderData = await orderRes.json();
+      const subData = await subRes.json();
 
-      if (orderData.error) {
-        throw new Error(orderData.error);
+      if (subData.error) {
+        throw new Error(subData.error);
       }
 
-      // Open Razorpay checkout
+      // Open Razorpay checkout for subscription
       const options = {
         key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
-        amount: orderData.order.amount,
-        currency: orderData.order.currency,
+        subscription_id: subData.subscription_id,
         name: "WaChat",
-        description: "Premium Subscription - ₹500/month",
-        order_id: orderData.order.id,
+        description: "Premium Subscription - ₹500/month (Auto-renewal)",
         handler: async function (response: any) {
-          // Verify payment
+          // Verify subscription
           try {
-            const verifyRes = await fetch("/api/razorpay/verify-payment", {
+            const verifyRes = await fetch("/api/razorpay/verify-subscription", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
-                razorpay_order_id: response.razorpay_order_id,
+                razorpay_subscription_id: response.razorpay_subscription_id,
                 razorpay_payment_id: response.razorpay_payment_id,
                 razorpay_signature: response.razorpay_signature,
               }),
@@ -131,10 +129,10 @@ export default function PricingPage() {
               // Redirect to dashboard
               router.push("/protected?payment=success");
             } else {
-              setError(verifyData.error || "Payment verification failed");
+              setError(verifyData.error || "Subscription verification failed");
             }
           } catch (err: any) {
-            setError(err.message || "Payment verification failed");
+            setError(err.message || "Subscription verification failed");
           }
         },
         modal: {
@@ -273,7 +271,7 @@ export default function PricingPage() {
                 </Button>
 
                 <p className="text-xs text-muted-foreground text-center">
-                  Cancel anytime. No questions asked.
+                  Auto-renews monthly. Cancel anytime from your dashboard.
                 </p>
               </CardFooter>
             </Card>

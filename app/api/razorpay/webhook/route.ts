@@ -2,10 +2,19 @@
  * POST /api/razorpay/webhook
  * Handle Razorpay webhooks for automated payment updates
  * 
- * Webhook events handled:
- * - payment.captured: Payment successful
+ * Webhook events handled (Subscriptions API):
+ * - subscription.activated: First payment successful, subscription active
+ * - subscription.charged: Recurring payment captured (auto-renewal)
+ * - subscription.cancelled: Subscription cancelled
+ * - subscription.paused: Subscription paused
+ * - subscription.resumed: Subscription resumed
+ * - subscription.pending: Payment pending/retrying
+ * - subscription.halted: Payment failed, subscription halted
+ * 
+ * Legacy events (Orders API - still supported):
+ * - payment.captured: One-time payment successful
  * - payment.failed: Payment failed
- * - subscription.cancelled: Subscription cancelled (future)
+ * - payment.authorized: Payment authorized
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -41,11 +50,42 @@ export async function POST(req: NextRequest) {
     const payload = JSON.parse(rawBody);
     const event = payload.event;
     const paymentEntity = payload.payload?.payment?.entity;
+    const subscriptionEntity = payload.payload?.subscription?.entity;
 
     console.log(`📨 Webhook received: ${event}`);
 
     // Handle different webhook events
     switch (event) {
+      // === SUBSCRIPTION EVENTS (Recurring Payments) ===
+      case 'subscription.activated':
+        await handleSubscriptionActivated(subscriptionEntity, paymentEntity);
+        break;
+
+      case 'subscription.charged':
+        await handleSubscriptionCharged(subscriptionEntity, paymentEntity);
+        break;
+
+      case 'subscription.cancelled':
+        await handleSubscriptionCancelled(subscriptionEntity);
+        break;
+
+      case 'subscription.paused':
+        await handleSubscriptionPaused(subscriptionEntity);
+        break;
+
+      case 'subscription.resumed':
+        await handleSubscriptionResumed(subscriptionEntity);
+        break;
+
+      case 'subscription.pending':
+        await handleSubscriptionPending(subscriptionEntity);
+        break;
+
+      case 'subscription.halted':
+        await handleSubscriptionHalted(subscriptionEntity);
+        break;
+
+      // === LEGACY ONE-TIME PAYMENT EVENTS ===
       case 'payment.captured':
         await handlePaymentCaptured(paymentEntity);
         break;
@@ -71,6 +111,390 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+
+// ========================================
+// SUBSCRIPTION EVENT HANDLERS (RECURRING)
+// ========================================
+
+/**
+ * Handle subscription.activated event
+ * Called when user completes first payment and subscription becomes active
+ */
+async function handleSubscriptionActivated(subscription: any, payment: any) {
+  if (!subscription) return;
+
+  const { id: subscriptionId, customer_id: customerId, notes } = subscription;
+  const userId = notes?.userId;
+
+  if (!userId) {
+    console.error('No userId in subscription notes');
+    return;
+  }
+
+  // Find user's subscription record
+  const userSubscription = await prisma.subscription.findUnique({
+    where: { userId },
+  });
+
+  if (!userSubscription) {
+    console.error(`Subscription not found for user: ${userId}`);
+    return;
+  }
+
+  // Calculate billing period
+  const currentPeriodStart = new Date();
+  const currentPeriodEnd = new Date();
+  currentPeriodEnd.setDate(currentPeriodEnd.getDate() + 30);
+
+  // Update subscription to ACTIVE
+  await prisma.subscription.update({
+    where: { id: userSubscription.id },
+    data: {
+      status: 'ACTIVE',
+      razorpaySubscriptionId: subscriptionId,
+      razorpayCustomerId: customerId,
+      startDate: userSubscription.startDate || currentPeriodStart,
+      currentPeriodStart,
+      currentPeriodEnd,
+      autoRenew: true,
+    },
+  });
+
+  // Create payment record if payment entity exists
+  if (payment) {
+    const existingPayment = await prisma.payment.findUnique({
+      where: { razorpayPaymentId: payment.id },
+    });
+
+    if (!existingPayment) {
+      await prisma.payment.create({
+        data: {
+          subscriptionId: userSubscription.id,
+          userId,
+          amount: payment.amount / 100,
+          currency: payment.currency || 'INR',
+          status: 'CAPTURED',
+          razorpayPaymentId: payment.id,
+          razorpayOrderId: subscriptionId, // Use subscription ID as reference
+          paymentMethod: payment.method,
+          billingPeriodStart: currentPeriodStart,
+          billingPeriodEnd: currentPeriodEnd,
+        },
+      });
+    }
+  }
+
+  // Activate user
+  await prisma.user.update({
+    where: { id: userId },
+    data: { isActive: true },
+  });
+
+  console.log(`✅ Subscription activated for user: ${userId}`);
+}
+
+/**
+ * Handle subscription.charged event
+ * Called when recurring payment is captured (auto-renewal)
+ */
+async function handleSubscriptionCharged(subscription: any, payment: any) {
+  if (!subscription || !payment) return;
+
+  const { id: subscriptionId, notes } = subscription;
+  const userId = notes?.userId;
+
+  if (!userId) {
+    // Try to find by subscription ID
+    const dbSubscription = await prisma.subscription.findFirst({
+      where: { razorpaySubscriptionId: subscriptionId },
+    });
+
+    if (!dbSubscription) {
+      console.error('Could not find subscription for charged event');
+      return;
+    }
+
+    await processSubscriptionRenewal(dbSubscription, payment, subscriptionId);
+    return;
+  }
+
+  // Find user's subscription
+  const userSubscription = await prisma.subscription.findUnique({
+    where: { userId },
+  });
+
+  if (!userSubscription) {
+    console.error(`Subscription not found for user: ${userId}`);
+    return;
+  }
+
+  await processSubscriptionRenewal(userSubscription, payment, subscriptionId);
+  console.log(`💰 Subscription renewed for user: ${userId}`);
+}
+
+/**
+ * Process subscription renewal payment
+ */
+async function processSubscriptionRenewal(
+  userSubscription: any,
+  payment: any,
+  subscriptionId: string
+) {
+  // Calculate new billing period
+  const currentPeriodStart = new Date();
+  const currentPeriodEnd = new Date();
+  currentPeriodEnd.setDate(currentPeriodEnd.getDate() + 30);
+
+  // Update subscription with new billing period
+  await prisma.subscription.update({
+    where: { id: userSubscription.id },
+    data: {
+      status: 'ACTIVE',
+      currentPeriodStart,
+      currentPeriodEnd,
+    },
+  });
+
+  // Create payment record
+  const existingPayment = await prisma.payment.findUnique({
+    where: { razorpayPaymentId: payment.id },
+  });
+
+  if (!existingPayment) {
+    await prisma.payment.create({
+      data: {
+        subscriptionId: userSubscription.id,
+        userId: userSubscription.userId,
+        amount: payment.amount / 100,
+        currency: payment.currency || 'INR',
+        status: 'CAPTURED',
+        razorpayPaymentId: payment.id,
+        razorpayOrderId: subscriptionId,
+        paymentMethod: payment.method,
+        billingPeriodStart: currentPeriodStart,
+        billingPeriodEnd: currentPeriodEnd,
+      },
+    });
+  }
+
+  // Ensure user is active
+  await prisma.user.update({
+    where: { id: userSubscription.userId },
+    data: { isActive: true },
+  });
+}
+
+/**
+ * Handle subscription.cancelled event
+ */
+async function handleSubscriptionCancelled(subscription: any) {
+  if (!subscription) return;
+
+  const { id: subscriptionId, notes, ended_at } = subscription;
+  const userId = notes?.userId;
+
+  // Find subscription by ID or user
+  let userSubscription;
+  if (userId) {
+    userSubscription = await prisma.subscription.findUnique({
+      where: { userId },
+    });
+  } else {
+    userSubscription = await prisma.subscription.findFirst({
+      where: { razorpaySubscriptionId: subscriptionId },
+    });
+  }
+
+  if (!userSubscription) {
+    console.error('Subscription not found for cancellation');
+    return;
+  }
+
+  // Update subscription status
+  await prisma.subscription.update({
+    where: { id: userSubscription.id },
+    data: {
+      status: 'CANCELLED',
+      autoRenew: false,
+      cancelledAt: ended_at ? new Date(ended_at * 1000) : new Date(),
+    },
+  });
+
+  // Deactivate user if subscription ended immediately
+  if (ended_at && new Date(ended_at * 1000) <= new Date()) {
+    await prisma.user.update({
+      where: { id: userSubscription.userId },
+      data: { isActive: false },
+    });
+  }
+
+  console.log(`🚫 Subscription cancelled for user: ${userSubscription.userId}`);
+}
+
+/**
+ * Handle subscription.paused event
+ */
+async function handleSubscriptionPaused(subscription: any) {
+  if (!subscription) return;
+
+  const { id: subscriptionId, notes } = subscription;
+  const userId = notes?.userId;
+
+  // Find subscription
+  let userSubscription;
+  if (userId) {
+    userSubscription = await prisma.subscription.findUnique({
+      where: { userId },
+    });
+  } else {
+    userSubscription = await prisma.subscription.findFirst({
+      where: { razorpaySubscriptionId: subscriptionId },
+    });
+  }
+
+  if (!userSubscription) {
+    console.error('Subscription not found for pause');
+    return;
+  }
+
+  await prisma.subscription.update({
+    where: { id: userSubscription.id },
+    data: {
+      status: 'PAUSED',
+      autoRenew: false,
+    },
+  });
+
+  console.log(`⏸️ Subscription paused for user: ${userSubscription.userId}`);
+}
+
+/**
+ * Handle subscription.resumed event
+ */
+async function handleSubscriptionResumed(subscription: any) {
+  if (!subscription) return;
+
+  const { id: subscriptionId, notes } = subscription;
+  const userId = notes?.userId;
+
+  // Find subscription
+  let userSubscription;
+  if (userId) {
+    userSubscription = await prisma.subscription.findUnique({
+      where: { userId },
+    });
+  } else {
+    userSubscription = await prisma.subscription.findFirst({
+      where: { razorpaySubscriptionId: subscriptionId },
+    });
+  }
+
+  if (!userSubscription) {
+    console.error('Subscription not found for resume');
+    return;
+  }
+
+  await prisma.subscription.update({
+    where: { id: userSubscription.id },
+    data: {
+      status: 'ACTIVE',
+      autoRenew: true,
+    },
+  });
+
+  // Activate user
+  await prisma.user.update({
+    where: { id: userSubscription.userId },
+    data: { isActive: true },
+  });
+
+  console.log(`▶️ Subscription resumed for user: ${userSubscription.userId}`);
+}
+
+/**
+ * Handle subscription.pending event
+ * Payment is being retried
+ */
+async function handleSubscriptionPending(subscription: any) {
+  if (!subscription) return;
+
+  const { id: subscriptionId, notes } = subscription;
+  const userId = notes?.userId;
+
+  // Find subscription
+  let userSubscription;
+  if (userId) {
+    userSubscription = await prisma.subscription.findUnique({
+      where: { userId },
+    });
+  } else {
+    userSubscription = await prisma.subscription.findFirst({
+      where: { razorpaySubscriptionId: subscriptionId },
+    });
+  }
+
+  if (!userSubscription) {
+    console.error('Subscription not found for pending');
+    return;
+  }
+
+  // Set to PAST_DUE - payment is being retried
+  await prisma.subscription.update({
+    where: { id: userSubscription.id },
+    data: { status: 'PAST_DUE' },
+  });
+
+  console.log(`⏳ Subscription pending for user: ${userSubscription.userId}`);
+}
+
+/**
+ * Handle subscription.halted event
+ * Payment failed after all retry attempts
+ */
+async function handleSubscriptionHalted(subscription: any) {
+  if (!subscription) return;
+
+  const { id: subscriptionId, notes } = subscription;
+  const userId = notes?.userId;
+
+  // Find subscription
+  let userSubscription;
+  if (userId) {
+    userSubscription = await prisma.subscription.findUnique({
+      where: { userId },
+    });
+  } else {
+    userSubscription = await prisma.subscription.findFirst({
+      where: { razorpaySubscriptionId: subscriptionId },
+    });
+  }
+
+  if (!userSubscription) {
+    console.error('Subscription not found for halt');
+    return;
+  }
+
+  // Set to EXPIRED - subscription halted due to payment failure
+  await prisma.subscription.update({
+    where: { id: userSubscription.id },
+    data: {
+      status: 'EXPIRED',
+      autoRenew: false,
+    },
+  });
+
+  // Deactivate user
+  await prisma.user.update({
+    where: { id: userSubscription.userId },
+    data: { isActive: false },
+  });
+
+  console.log(`🛑 Subscription halted for user: ${userSubscription.userId}`);
+}
+
+// ========================================
+// LEGACY ONE-TIME PAYMENT HANDLERS
+// ========================================
 
 /**
  * Handle payment.captured event

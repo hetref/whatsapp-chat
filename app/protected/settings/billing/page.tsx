@@ -27,6 +27,9 @@ import {
   AlertCircle,
   Clock,
   ArrowRight,
+  Pause,
+  Play,
+  XCircle,
 } from "lucide-react";
 
 declare global {
@@ -48,6 +51,7 @@ export default function BillingPage() {
   } = useSubscription();
 
   const [paymentLoading, setPaymentLoading] = useState(false);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
 
@@ -56,37 +60,38 @@ export default function BillingPage() {
     fetchPayments();
   }, [fetchPayments]);
 
-  // Handle subscription renewal/new payment
-  const handlePayment = async () => {
+  // Handle new subscription
+  const handleSubscribe = async () => {
     try {
       setPaymentLoading(true);
       setActionError(null);
+      setActionSuccess(null);
 
-      const orderRes = await fetch("/api/razorpay/create-order", {
+      // Create subscription
+      const subRes = await fetch("/api/razorpay/create-subscription", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
       });
 
-      const orderData = await orderRes.json();
+      const subData = await subRes.json();
 
-      if (orderData.error) {
-        throw new Error(orderData.error);
+      if (subData.error) {
+        throw new Error(subData.error);
       }
 
+      // Open Razorpay checkout for subscription
       const options = {
         key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
-        amount: orderData.order.amount,
-        currency: orderData.order.currency,
+        subscription_id: subData.subscription_id,
         name: "WaChat",
-        description: "Premium Subscription - ₹500/month",
-        order_id: orderData.order.id,
+        description: "Premium Subscription - ₹500/month (Auto-renewal)",
         handler: async function (response: any) {
           try {
-            const verifyRes = await fetch("/api/razorpay/verify-payment", {
+            const verifyRes = await fetch("/api/razorpay/verify-subscription", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
-                razorpay_order_id: response.razorpay_order_id,
+                razorpay_subscription_id: response.razorpay_subscription_id,
                 razorpay_payment_id: response.razorpay_payment_id,
                 razorpay_signature: response.razorpay_signature,
               }),
@@ -95,14 +100,18 @@ export default function BillingPage() {
             const verifyData = await verifyRes.json();
 
             if (verifyData.success) {
-              setActionSuccess("Payment successful! Subscription activated.");
+              setActionSuccess(
+                "Subscription activated! Auto-renewal is enabled.",
+              );
               refresh();
               fetchPayments();
             } else {
-              setActionError(verifyData.error || "Payment verification failed");
+              setActionError(
+                verifyData.error || "Subscription verification failed",
+              );
             }
           } catch (err: any) {
-            setActionError(err.message || "Payment verification failed");
+            setActionError(err.message || "Subscription verification failed");
           }
         },
         modal: {
@@ -118,9 +127,105 @@ export default function BillingPage() {
       const razorpay = new window.Razorpay(options);
       razorpay.open();
     } catch (err: any) {
-      setActionError(err.message || "Failed to initiate payment");
+      setActionError(err.message || "Failed to create subscription");
     } finally {
       setPaymentLoading(false);
+    }
+  };
+
+  // Handle cancel subscription
+  const handleCancel = async (immediately = false) => {
+    if (
+      !confirm(
+        immediately
+          ? "Are you sure you want to cancel immediately? You will lose access right away."
+          : "Are you sure you want to cancel? Your subscription will remain active until the end of the current billing period.",
+      )
+    ) {
+      return;
+    }
+
+    try {
+      setActionLoading("cancel");
+      setActionError(null);
+      setActionSuccess(null);
+
+      const res = await fetch("/api/razorpay/cancel-subscription", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cancelAtCycleEnd: !immediately }),
+      });
+
+      const data = await res.json();
+
+      if (data.error) {
+        throw new Error(data.error);
+      }
+
+      setActionSuccess(data.message);
+      refresh();
+    } catch (err: any) {
+      setActionError(err.message || "Failed to cancel subscription");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // Handle pause subscription
+  const handlePause = async () => {
+    if (!confirm("Pause your subscription? You can resume anytime.")) {
+      return;
+    }
+
+    try {
+      setActionLoading("pause");
+      setActionError(null);
+      setActionSuccess(null);
+
+      const res = await fetch("/api/razorpay/pause-subscription", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+
+      const data = await res.json();
+
+      if (data.error) {
+        throw new Error(data.error);
+      }
+
+      setActionSuccess(data.message);
+      refresh();
+    } catch (err: any) {
+      setActionError(err.message || "Failed to pause subscription");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // Handle resume subscription
+  const handleResume = async () => {
+    try {
+      setActionLoading("resume");
+      setActionError(null);
+      setActionSuccess(null);
+
+      const res = await fetch("/api/razorpay/resume-subscription", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+
+      const data = await res.json();
+
+      if (data.error) {
+        throw new Error(data.error);
+      }
+
+      setActionSuccess(data.message);
+      refresh();
+    } catch (err: any) {
+      setActionError(err.message || "Failed to resume subscription");
+    } finally {
+      setActionLoading(null);
     }
   };
 
@@ -241,18 +346,16 @@ export default function BillingPage() {
             <CardContent className="space-y-4">
               {/* Subscription Details */}
               {status === "ACTIVE" && (
-                <div className="grid grid-cols-3 gap-4 p-4 bg-muted/50 rounded-lg">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-muted/50 rounded-lg">
                   <div>
-                    <p className="text-sm text-muted-foreground">
-                      Started On
-                    </p>
+                    <p className="text-sm text-muted-foreground">Started On</p>
                     <p className="font-medium">
                       {formatDate(subscription?.startDate ?? null)}
                     </p>
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">
-                      Expires On
+                      {subscription?.autoRenew ? "Renews On" : "Expires On"}
                     </p>
                     <p className="font-medium">
                       {formatDate(subscription?.currentPeriodEnd ?? null)}
@@ -266,6 +369,42 @@ export default function BillingPage() {
                       {data?.daysRemaining ?? 0} days
                     </p>
                   </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">
+                      Auto-Renewal
+                    </p>
+                    <div className="flex items-center gap-2">
+                      {subscription?.autoRenew ? (
+                        <>
+                          <CheckCircle className="h-4 w-4 text-green-500" />
+                          <span className="font-medium text-green-600">
+                            Enabled
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <AlertCircle className="h-4 w-4 text-amber-500" />
+                          <span className="font-medium text-amber-600">
+                            Disabled
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Paused State */}
+              {status === "PAUSED" && (
+                <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-lg text-center">
+                  <Pause className="h-8 w-8 mx-auto text-amber-500 mb-2" />
+                  <p className="font-medium text-amber-600">
+                    Subscription Paused
+                  </p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Your subscription is paused. Resume to continue using
+                    WaChat.
+                  </p>
                 </div>
               )}
 
@@ -274,8 +413,8 @@ export default function BillingPage() {
                 <div className="p-4 bg-muted/50 rounded-lg text-center">
                   <p className="text-muted-foreground mb-4">
                     {status === "EXPIRED"
-                      ? "Your subscription has expired. Renew to continue using WaChat."
-                      : "Subscribe to access all WaChat features."}
+                      ? "Your subscription has expired. Subscribe again to continue using WaChat."
+                      : "Subscribe to access all WaChat features with auto-renewal."}
                   </p>
                 </div>
               )}
@@ -284,18 +423,92 @@ export default function BillingPage() {
 
               {/* Action Buttons */}
               <div className="flex flex-wrap gap-3">
+                {/* Subscribe Button - for INACTIVE or EXPIRED */}
                 {canMakePayment(status) && (
-                  <Button onClick={handlePayment} disabled={paymentLoading}>
+                  <Button onClick={handleSubscribe} disabled={paymentLoading}>
                     {paymentLoading ? (
                       <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                     ) : (
                       <CreditCard className="h-4 w-4 mr-2" />
                     )}
-                    {status === "INACTIVE"
-                      ? "Subscribe Now"
-                      : "Renew Subscription"}
+                    Subscribe Now (₹500/month)
                   </Button>
                 )}
+
+                {/* Active + Auto-Renew ON → Show Pause & Cancel */}
+                {status === "ACTIVE" &&
+                  subscription?.autoRenew &&
+                  subscription?.razorpaySubscriptionId && (
+                    <>
+                      <Button
+                        variant="outline"
+                        onClick={handlePause}
+                        disabled={actionLoading !== null}
+                      >
+                        {actionLoading === "pause" ? (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <Pause className="h-4 w-4 mr-2" />
+                        )}
+                        Pause Subscription
+                      </Button>
+                      <Button
+                        variant="outline"
+                        className="text-destructive hover:text-destructive"
+                        onClick={() => handleCancel(false)}
+                        disabled={actionLoading !== null}
+                      >
+                        {actionLoading === "cancel" ? (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <XCircle className="h-4 w-4 mr-2" />
+                        )}
+                        Cancel
+                      </Button>
+                    </>
+                  )}
+
+                {/* Active + Auto-Renew OFF (Cancelled but still in period) → Show Reactivate */}
+                {status === "ACTIVE" &&
+                  !subscription?.autoRenew &&
+                  subscription?.razorpaySubscriptionId && (
+                    <p className="text-sm text-muted-foreground py-2">
+                      Your subscription is cancelled. You have access until{" "}
+                      {formatDate(subscription?.currentPeriodEnd ?? null)}. To
+                      continue after that, subscribe again.
+                    </p>
+                  )}
+
+                {/* Paused Subscription Actions */}
+                {status === "PAUSED" &&
+                  subscription?.razorpaySubscriptionId && (
+                    <>
+                      <Button
+                        onClick={handleResume}
+                        disabled={actionLoading !== null}
+                      >
+                        {actionLoading === "resume" ? (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <Play className="h-4 w-4 mr-2" />
+                        )}
+                        Resume Subscription
+                      </Button>
+                      <Button
+                        variant="outline"
+                        className="text-destructive hover:text-destructive"
+                        onClick={() => handleCancel(true)}
+                        disabled={actionLoading !== null}
+                      >
+                        {actionLoading === "cancel" ? (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <XCircle className="h-4 w-4 mr-2" />
+                        )}
+                        Cancel Subscription
+                      </Button>
+                    </>
+                  )}
               </div>
             </CardContent>
           </Card>

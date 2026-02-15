@@ -219,6 +219,7 @@ enum SubscriptionStatus {
   PAST_DUE  // Payment failed
   CANCELLED // User cancelled
   EXPIRED   // Subscription ended
+  PAUSED    // User paused
 }
 
 /// Payment records
