@@ -105,13 +105,15 @@ export async function GET(request: NextRequest) {
 
             return NextResponse.json({
                 success: false,
-                error: 'WhatsApp API Error',
-                message: errorData?.error?.message || errorData?.error?.error_user_msg || 'Failed to fetch templates from WhatsApp',
-                details: {
-                    status: response.status,
-                    code: errorData?.error?.code,
-                    subcode: errorData?.error?.error_subcode,
-                    type: errorData?.error?.type,
+                error: {
+                    code: 'WHATSAPP_API_ERROR',
+                    message: errorData?.error?.message || errorData?.error?.error_user_msg || 'Failed to fetch templates from WhatsApp',
+                    details: {
+                        status: response.status,
+                        code: errorData?.error?.code,
+                        subcode: errorData?.error?.error_subcode,
+                        type: errorData?.error?.type,
+                    },
                 },
                 timestamp: new Date().toISOString()
             }, { status: response.status });
@@ -252,14 +254,16 @@ export async function POST(request: NextRequest) {
 
             return NextResponse.json({
                 success: false,
-                error: errorTitle,
-                message: errorMessage,
-                details: {
-                    status: response.status,
-                    code: responseData?.error?.code,
-                    subcode: responseData?.error?.error_subcode,
-                    type: responseData?.error?.type,
-                    fbtrace_id: responseData?.error?.fbtrace_id,
+                error: {
+                    code: 'WHATSAPP_API_ERROR',
+                    message: errorMessage,
+                    details: {
+                        status: response.status,
+                        code: responseData?.error?.code,
+                        subcode: responseData?.error?.error_subcode,
+                        type: responseData?.error?.type,
+                        fbtrace_id: responseData?.error?.fbtrace_id,
+                    },
                 },
                 timestamp: new Date().toISOString()
             }, { status: response.status });

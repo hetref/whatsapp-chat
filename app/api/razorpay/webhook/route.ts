@@ -299,6 +299,9 @@ async function processSubscriptionRenewal(
 
 /**
  * Handle subscription.cancelled event
+ * If the current billing period hasn't ended, keep plan benefits active
+ * until the period expires. The /api/subscription/status endpoint handles
+ * the actual downgrade when the period ends.
  */
 async function handleSubscriptionCancelled(subscription: any) {
   if (!subscription) return;
@@ -333,14 +336,24 @@ async function handleSubscriptionCancelled(subscription: any) {
     },
   });
 
-  // Always downgrade to FREE and deactivate on cancellation
-  await applyPlanLimits(userSubscription.userId, 'FREE');
-  await prisma.user.update({
-    where: { id: userSubscription.userId },
-    data: { isActive: false },
-  });
+  // Check if the current billing period still has remaining time
+  const now = new Date();
+  const periodEnd = userSubscription.currentPeriodEnd;
+  const hasRemainingPeriod = periodEnd && new Date(periodEnd) > now;
 
-  console.log(`🚫 Subscription cancelled for user: ${userSubscription.userId} - downgraded to FREE`);
+  if (hasRemainingPeriod) {
+    // User paid for this period — keep their plan benefits until it expires.
+    // The /api/subscription/status endpoint will downgrade when the period ends.
+    console.log(`🚫 Subscription cancelled for user: ${userSubscription.userId} - benefits active until ${periodEnd}`);
+  } else {
+    // Period already ended or no period data — downgrade immediately
+    await applyPlanLimits(userSubscription.userId, 'FREE');
+    await prisma.user.update({
+      where: { id: userSubscription.userId },
+      data: { isActive: false },
+    });
+    console.log(`🚫 Subscription cancelled for user: ${userSubscription.userId} - downgraded to FREE`);
+  }
 }
 
 /**

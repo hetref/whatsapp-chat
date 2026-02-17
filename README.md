@@ -454,7 +454,7 @@ Authorization: Bearer wc_live_your_api_key_here
 ```
 
 **Creating API Keys:**
-1. Navigate to `/protected/settings`
+1. Navigate to `/protected/api-keys`
 2. Click "Create API Key"
 3. Give it a descriptive name
 4. Copy and securely store the key (shown only once)

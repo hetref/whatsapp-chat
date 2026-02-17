@@ -10,6 +10,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { prisma } from '@/lib/db';
 import { getUserPlanInfo, formatBytes, checkSubscriptionActive } from '@/lib/plan-limits';
+import type { PlanTier } from '@/lib/plan-limits';
 
 export async function GET(req: NextRequest) {
   try {
@@ -184,14 +185,26 @@ export async function GET(req: NextRequest) {
       });
     }
 
+    // If user still has access (e.g. CANCELLED but period not expired),
+    // ensure plan limits match the subscription tier they paid for.
+    // This fixes cases where the webhook prematurely downgraded to FREE.
+    const subscriptionPlanTier = (user.subscription.plan.name as PlanTier) || 'SILVER';
+    if (hasAccess && user.planTier !== subscriptionPlanTier) {
+      const { applyPlanLimits } = await import('@/lib/plan-limits');
+      await applyPlanLimits(userId, subscriptionPlanTier);
+      console.log(`🔄 Restored plan limits to ${subscriptionPlanTier} for user ${userId} (was ${user.planTier})`);
+    }
+
     const planInfo = await getUserPlanInfo(userId);
     const subActiveCheck = await checkSubscriptionActive(userId);
+    // Use the effective plan tier (may have been restored above)
+    const effectivePlanTier = hasAccess ? subscriptionPlanTier : (user.planTier || 'FREE');
 
     return NextResponse.json({
       hasSubscription: true,
       isActive: hasAccess, // Calculated dynamically, not from DB
       daysRemaining,
-      planTier: user.planTier || 'FREE',
+      planTier: effectivePlanTier,
       messagingBlocked: !subActiveCheck.active,
       messagingBlockedReason: subActiveCheck.active ? null : subActiveCheck.message,
       usage: planInfo ? {

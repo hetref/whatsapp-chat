@@ -373,5 +373,32 @@ export function getRazorpayPlanId(tier?: 'SILVER' | 'GOLD'): string | undefined 
   return RAZORPAY_SILVER_PLAN_ID || RAZORPAY_PLAN_ID;
 }
 
+/**
+ * Update a Razorpay subscription's plan (for upgrades)
+ * @param scheduleAt - 'cycle_end' applies new price at next billing; 'now' starts a new cycle immediately
+ */
+export async function updateRazorpaySubscriptionPlan(
+  subscriptionId: string,
+  newPlanTier: 'SILVER' | 'GOLD',
+  scheduleAt: 'now' | 'cycle_end' = 'cycle_end'
+) {
+  const razorpay = getRazorpayInstance();
+  if (!razorpay) throw new Error('Razorpay not configured');
+
+  const newPlanId = getRazorpayPlanId(newPlanTier);
+  if (!newPlanId) throw new Error(`Plan ID not configured for ${newPlanTier}`);
+
+  try {
+    const subscription = await razorpay.subscriptions.update(subscriptionId, {
+      plan_id: newPlanId,
+      schedule_change_at: scheduleAt,
+    });
+    return subscription;
+  } catch (error: any) {
+    console.error('Error updating subscription plan:', error);
+    throw new Error(error.error?.description || 'Failed to update subscription plan');
+  }
+}
+
 // Keep for backwards compatibility
 export const calculateNextBillingPeriod = calculateBillingPeriod;

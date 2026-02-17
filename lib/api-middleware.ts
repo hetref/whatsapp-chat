@@ -31,8 +31,11 @@ export async function authenticateApiRequest(
                 response: NextResponse.json(
                     {
                         success: false,
-                        error: 'Unauthorized',
-                        message: 'Missing or invalid API key. Please provide a valid API key in the Authorization header as "Bearer <your-api-key>"'
+                        error: {
+                            code: 'UNAUTHORIZED',
+                            message: 'Missing or invalid API key. Provide a valid API key in the Authorization header as "Bearer <your-api-key>".',
+                        },
+                        timestamp: new Date().toISOString()
                     },
                     { status: 401 }
                 )
@@ -48,8 +51,11 @@ export async function authenticateApiRequest(
                 response: NextResponse.json(
                     {
                         success: false,
-                        error: 'Unauthorized',
-                        message: 'Invalid or inactive API key. Please check your API key and try again.'
+                        error: {
+                            code: 'INVALID_API_KEY',
+                            message: 'Invalid or inactive API key. Please check your API key and try again.',
+                        },
+                        timestamp: new Date().toISOString()
                     },
                     { status: 401 }
                 )
@@ -64,8 +70,11 @@ export async function authenticateApiRequest(
                 response: NextResponse.json(
                     {
                         success: false,
-                        error: 'Upgrade Required',
-                        message: 'API access is not available on your current plan. Upgrade to Silver or Gold.'
+                        error: {
+                            code: 'FEATURE_UNAVAILABLE',
+                            message: 'API access is not available on your current plan. Upgrade to Silver or Gold.',
+                        },
+                        timestamp: new Date().toISOString()
                     },
                     { status: 403 }
                 )
@@ -80,9 +89,13 @@ export async function authenticateApiRequest(
                 response: NextResponse.json(
                     {
                         success: false,
-                        error: 'Messaging Blocked',
-                        message: subCheck.message,
-                        subscriptionStatus: subCheck.status
+                        error: {
+                            code: 'SUBSCRIPTION_INACTIVE',
+                            message: subCheck.message,
+                            subscription_status: subCheck.status,
+                            plan_tier: subCheck.planTier,
+                        },
+                        timestamp: new Date().toISOString()
                     },
                     { status: 403 }
                 )
@@ -107,8 +120,11 @@ export async function authenticateApiRequest(
                 response: NextResponse.json(
                     {
                         success: false,
-                        error: 'Configuration Error',
-                        message: 'WhatsApp credentials not configured. Please complete setup in the settings page.'
+                        error: {
+                            code: 'CONFIGURATION_ERROR',
+                            message: 'WhatsApp credentials not configured. Please complete setup in the dashboard settings page.',
+                        },
+                        timestamp: new Date().toISOString()
                     },
                     { status: 400 }
                 )
@@ -134,8 +150,11 @@ export async function authenticateApiRequest(
             response: NextResponse.json(
                 {
                     success: false,
-                    error: 'Internal Server Error',
-                    message: 'An error occurred while authenticating your request.'
+                    error: {
+                        code: 'INTERNAL_ERROR',
+                        message: 'An error occurred while authenticating your request.',
+                    },
+                    timestamp: new Date().toISOString()
                 },
                 { status: 500 }
             )
@@ -154,8 +173,10 @@ export function createErrorResponse(
     return NextResponse.json(
         {
             success: false,
-            error: errorCode || 'Error',
-            message,
+            error: {
+                code: errorCode || 'ERROR',
+                message,
+            },
             timestamp: new Date().toISOString()
         },
         { status: statusCode }

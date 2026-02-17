@@ -47,7 +47,7 @@ interface SubscriptionStatus {
 // Pages that require specific feature access
 const FEATURE_RESTRICTED_PATHS: Record<string, 'bulkSend' | 'apiAccess'> = {
   "/protected/bulk-sender": "bulkSend",
-  "/protected/settings": "apiAccess",
+  "/protected/api-keys": "apiAccess",
 };
 
 /**
@@ -70,7 +70,7 @@ export function SubscriptionGuard({
   ];
 
   const alwaysAllowedPrefix = [
-    "/protected/settings/billing",
+    "/protected/billing",
     "/protected/setup",
     "/protected/templates",
   ];
@@ -139,7 +139,7 @@ export function SubscriptionGuard({
             </CardHeader>
             <CardContent className="space-y-3">
               <Button className="w-full" asChild>
-                <Link href="/protected/settings/billing">
+                <Link href="/protected/billing">
                   <CreditCard className="h-4 w-4 mr-2" />
                   View Plans
                   <ArrowRight className="h-4 w-4 ml-2" />
@@ -173,7 +173,7 @@ export function SubscriptionGuard({
             </CardHeader>
             <CardContent className="space-y-3">
               <Button className="w-full" asChild>
-                <Link href="/protected/settings/billing">
+                <Link href="/protected/billing">
                   <CreditCard className="h-4 w-4 mr-2" />
                   View Plans
                   <ArrowRight className="h-4 w-4 ml-2" />

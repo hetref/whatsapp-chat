@@ -62,14 +62,14 @@ const navItems = [
   },
   {
     name: "API Keys",
-    path: "/protected/settings",
+    path: "/protected/api-keys",
     icon: Settings,
     description: "API Keys & Configs",
     requiresFeature: "apiAccess" as string | null,
   },
   {
     name: "Billing",
-    path: "/protected/settings/billing",
+    path: "/protected/billing",
     icon: CreditCard,
     description: "Subscription & payments",
     requiresFeature: null as string | null,
@@ -321,7 +321,7 @@ export default function ProtectedLayout({
             <p className="text-sm text-amber-800 dark:text-amber-200 flex-1">
               {messagingBlockedReason || 'Messaging is currently blocked.'}
             </p>
-            <Link href="/protected/settings/billing">
+            <Link href="/protected/billing">
               <Button variant="outline" size="sm" className="h-7 text-xs border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/50">
                 <CreditCard className="h-3 w-3 mr-1" />
                 Manage Plan

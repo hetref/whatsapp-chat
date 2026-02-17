@@ -52,6 +52,14 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Guard: don't try to cancel an already-cancelled subscription in Razorpay
+    if (subscription.status === 'CANCELLED') {
+      return NextResponse.json(
+        { error: 'Subscription is already cancelled' },
+        { status: 400 }
+      );
+    }
+
     // Cancel subscription in Razorpay
     const cancelledSubscription = await cancelRazorpaySubscription(
       subscription.razorpaySubscriptionId,
@@ -66,6 +74,20 @@ export async function POST(req: NextRequest) {
         cancelledAt: new Date(),
         // Keep ACTIVE if cancelling at cycle end, otherwise set to CANCELLED
         status: cancelAtCycleEnd ? subscription.status : 'CANCELLED',
+      },
+    });
+
+    // Log cancellation event in subscription activity
+    await prisma.payment.create({
+      data: {
+        subscriptionId: subscription.id,
+        userId,
+        amount: 0,
+        currency: 'INR',
+        status: 'CAPTURED',
+        paymentMethod: 'event_cancel',
+        billingPeriodStart: subscription.currentPeriodStart ?? new Date(),
+        billingPeriodEnd: subscription.currentPeriodEnd ?? new Date(),
       },
     });
 

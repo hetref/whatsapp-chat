@@ -189,7 +189,7 @@ export async function checkSubscriptionActive(userId: string): Promise<{
     select: {
       planTier: true,
       subscription: {
-        select: { status: true },
+        select: { status: true, currentPeriodEnd: true },
       },
     },
   });
@@ -218,8 +218,15 @@ export async function checkSubscriptionActive(userId: string): Promise<{
       return { active: false, status: subStatus, planTier, message: 'Your subscription is paused. Resume your subscription to send and receive messages.' };
     case 'PAST_DUE':
       return { active: false, status: subStatus, planTier, message: 'Your subscription payment is past due. Please update your payment method.' };
-    case 'CANCELLED':
-      return { active: false, status: subStatus, planTier, message: 'Your subscription has been cancelled. Please resubscribe to continue.' };
+    case 'CANCELLED': {
+      // If the billing period hasn't ended, the user still has access for the time they paid for
+      const now = new Date();
+      const periodEnd = user.subscription?.currentPeriodEnd;
+      if (periodEnd && new Date(periodEnd) > now) {
+        return { active: true, status: subStatus, planTier, message: '' };
+      }
+      return { active: false, status: subStatus, planTier, message: 'Your subscription has been cancelled and the billing period has ended. Please resubscribe to continue.' };
+    }
     case 'EXPIRED':
       return { active: false, status: subStatus, planTier, message: 'Your subscription has expired. Please renew to continue.' };
     case 'INACTIVE':

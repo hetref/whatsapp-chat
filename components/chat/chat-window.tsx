@@ -1358,7 +1358,7 @@ export function ChatWindow({
               <p className="text-sm font-medium text-amber-800 dark:text-amber-200">Messaging unavailable</p>
               <p className="text-xs text-amber-600 dark:text-amber-400 truncate">{messagingDisabledReason || 'Your subscription does not allow sending messages.'}</p>
             </div>
-            <a href="/protected/settings/billing" className="text-xs font-medium text-amber-700 dark:text-amber-300 hover:underline flex-shrink-0">
+            <a href="/protected/billing" className="text-xs font-medium text-amber-700 dark:text-amber-300 hover:underline flex-shrink-0">
               Manage Plan
             </a>
           </div>

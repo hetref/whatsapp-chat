@@ -20,8 +20,10 @@ import {
     CheckCircle2,
     Calendar,
     Clock,
-    Settings
+    Settings,
+    ShieldAlert
 } from "lucide-react";
+import { useSubscriptionStatus } from "@/components/subscription-guard";
 
 interface ApiKey {
     id: string;
@@ -34,6 +36,9 @@ interface ApiKey {
 }
 
 export default function SettingsPage() {
+    const subscriptionStatus = useSubscriptionStatus();
+    const isRestricted = subscriptionStatus.loading ? false : (!subscriptionStatus.isActive || subscriptionStatus.messagingBlocked);
+
     const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
     const [loading, setLoading] = useState(true);
     const [creating, setCreating] = useState(false);
@@ -74,7 +79,7 @@ export default function SettingsPage() {
             if (response.ok) {
                 setApiKeys(data.data || []);
             } else {
-                setError(data.message || 'Failed to load API keys');
+                setError(data.error?.message || data.message || 'Failed to load API keys');
             }
         } catch (err) {
             console.error('Error loading API keys:', err);
@@ -103,7 +108,7 @@ export default function SettingsPage() {
             const data = await response.json();
 
             if (!response.ok) {
-                throw new Error(data.message || 'Failed to create API key');
+                throw new Error(data.error?.message || data.message || 'Failed to create API key');
             }
 
             // Show the newly created key
@@ -145,7 +150,7 @@ export default function SettingsPage() {
             const data = await response.json();
 
             if (!response.ok) {
-                throw new Error(data.message || 'Failed to update API key');
+                throw new Error(data.error?.message || data.message || 'Failed to update API key');
             }
 
             setEditingId(null);
@@ -175,7 +180,7 @@ export default function SettingsPage() {
             const data = await response.json();
 
             if (!response.ok) {
-                throw new Error(data.message || 'Failed to delete API key');
+                throw new Error(data.error?.message || data.message || 'Failed to delete API key');
             }
 
             setSuccess('API key revoked successfully');
@@ -214,7 +219,7 @@ export default function SettingsPage() {
                 setFullKeys(prev => ({ ...prev, [keyId]: data.data.key }));
                 setVisibleKeys(prev => ({ ...prev, [keyId]: true }));
             } else {
-                setError(data.message || 'Failed to reveal API key');
+                setError(data.error?.message || data.message || 'Failed to reveal API key');
             }
         } catch (err) {
             console.error('Error revealing API key:', err);
@@ -271,6 +276,24 @@ export default function SettingsPage() {
                 </div>
 
                 <div className="p-8 space-y-6">
+
+                    {/* Subscription Restriction Banner */}
+                    {!subscriptionStatus.loading && isRestricted && (
+                        <Card className="border-amber-300 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-800 shadow-sm">
+                            <CardContent className="pt-6">
+                                <div className="flex items-start gap-3">
+                                    <ShieldAlert className="h-5 w-5 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+                                    <div>
+                                        <p className="font-semibold text-amber-900 dark:text-amber-100">API Access Restricted</p>
+                                        <p className="text-sm text-amber-800 dark:text-amber-200 mt-1">
+                                            {subscriptionStatus?.messagingBlockedReason ||
+                                                'Your subscription is currently inactive. API key creation & reveal are disabled. Existing API keys will not authenticate until your subscription is reactivated.'}
+                                        </p>
+                                    </div>
+                                </div>
+                            </CardContent>
+                        </Card>
+                    )}
 
                     {/* Messages */}
                     {error && (
@@ -372,7 +395,7 @@ export default function SettingsPage() {
                         </CardHeader>
                         <CardContent>
                             {!showNewKeyDialog ? (
-                                <Button onClick={() => setShowNewKeyDialog(true)}>
+                                <Button onClick={() => setShowNewKeyDialog(true)} disabled={isRestricted}>
                                     <Plus className="mr-2 h-4 w-4" />
                                     Create API Key
                                 </Button>
@@ -507,8 +530,8 @@ export default function SettingsPage() {
                                                                 size="icon"
                                                                 className="h-8 w-8"
                                                                 onClick={() => toggleKeyVisibility(apiKey.id)}
-                                                                disabled={loadingKeys[apiKey.id]}
-                                                                title={visibleKeys[apiKey.id] ? "Hide API key" : "Show complete API key"}
+                                                                disabled={loadingKeys[apiKey.id] || isRestricted}
+                                                                title={isRestricted ? "Subscription inactive" : visibleKeys[apiKey.id] ? "Hide API key" : "Show complete API key"}
                                                             >
                                                                 {loadingKeys[apiKey.id] ? (
                                                                     <Loader2 className="h-4 w-4 animate-spin" />

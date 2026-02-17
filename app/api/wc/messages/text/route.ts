@@ -91,11 +91,12 @@ export async function POST(request: NextRequest) {
             return NextResponse.json(
                 {
                     success: false,
-                    message: 'Failed to send message via WhatsApp API',
                     error: {
                         code: 'WHATSAPP_API_ERROR',
+                        message: 'Failed to send message via WhatsApp API',
                         details: responseData.error || responseData
-                    }
+                    },
+                    timestamp: new Date().toISOString()
                 },
                 { status: whatsappResponse.status }
             );

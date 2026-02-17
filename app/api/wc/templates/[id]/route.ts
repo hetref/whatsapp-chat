@@ -57,13 +57,15 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
             return NextResponse.json({
                 success: false,
-                error: 'WhatsApp API Error',
-                message: errorData?.error?.message || errorData?.error?.error_user_msg || 'Failed to fetch template from WhatsApp',
-                details: {
-                    status: response.status,
-                    code: errorData?.error?.code,
-                    subcode: errorData?.error?.error_subcode,
-                    type: errorData?.error?.type,
+                error: {
+                    code: 'WHATSAPP_API_ERROR',
+                    message: errorData?.error?.message || errorData?.error?.error_user_msg || 'Failed to fetch template from WhatsApp',
+                    details: {
+                        status: response.status,
+                        code: errorData?.error?.code,
+                        subcode: errorData?.error?.error_subcode,
+                        type: errorData?.error?.type,
+                    },
                 },
                 timestamp: new Date().toISOString()
             }, { status: response.status });
@@ -164,13 +166,15 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
             return NextResponse.json({
                 success: false,
-                error: errorTitle,
-                message: errorMessage,
-                details: {
-                    status: response.status,
-                    code: errorData?.error?.code,
-                    subcode: errorData?.error?.error_subcode,
-                    type: errorData?.error?.type,
+                error: {
+                    code: 'WHATSAPP_API_ERROR',
+                    message: errorMessage,
+                    details: {
+                        status: response.status,
+                        code: errorData?.error?.code,
+                        subcode: errorData?.error?.error_subcode,
+                        type: errorData?.error?.type,
+                    },
                 },
                 timestamp: new Date().toISOString()
             }, { status: response.status });

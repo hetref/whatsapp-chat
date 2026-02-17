@@ -70,6 +70,20 @@ export async function POST(req: NextRequest) {
       data: { isActive: false },
     });
 
+    // Log pause event in subscription activity
+    await prisma.payment.create({
+      data: {
+        subscriptionId: subscription.id,
+        userId,
+        amount: 0,
+        currency: 'INR',
+        status: 'CAPTURED',
+        paymentMethod: 'event_pause',
+        billingPeriodStart: subscription.currentPeriodStart ?? new Date(),
+        billingPeriodEnd: subscription.currentPeriodEnd ?? new Date(),
+      },
+    });
+
     return NextResponse.json({
       success: true,
       message: 'Subscription paused successfully. You can resume anytime.',

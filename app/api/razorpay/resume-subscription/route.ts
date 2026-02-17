@@ -77,6 +77,20 @@ export async function POST(req: NextRequest) {
     const planTier = (subscription.plan?.name as PlanTier) || 'SILVER';
     await applyPlanLimits(userId, planTier);
 
+    // Log resume event in subscription activity
+    await prisma.payment.create({
+      data: {
+        subscriptionId: subscription.id,
+        userId,
+        amount: 0,
+        currency: 'INR',
+        status: 'CAPTURED',
+        paymentMethod: 'event_resume',
+        billingPeriodStart: subscription.currentPeriodStart ?? new Date(),
+        billingPeriodEnd: subscription.currentPeriodEnd ?? new Date(),
+      },
+    });
+
     return NextResponse.json({
       success: true,
       message: 'Subscription resumed successfully!',

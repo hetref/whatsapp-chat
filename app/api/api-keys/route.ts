@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { prisma } from '@/lib/db';
 import { generateApiKey, hashApiKey, maskApiKey, getPartialKey, decryptApiKey } from '@/lib/api-keys';
-import { checkFeatureAccess } from '@/lib/plan-limits';
+import { checkFeatureAccess, checkSubscriptionActive } from '@/lib/plan-limits';
 
 /**
  * GET - List all API keys for the authenticated user OR reveal a specific key
@@ -13,8 +13,42 @@ export async function GET(request: NextRequest) {
 
         if (!userId) {
             return NextResponse.json(
-                { success: false, error: 'Unauthorized', message: 'You must be logged in to view API keys' },
+                { success: false, error: { code: 'UNAUTHORIZED', message: 'You must be logged in to view API keys' } },
                 { status: 401 }
+            );
+        }
+
+        // Check if user's plan allows API access
+        const hasApiAccess = await checkFeatureAccess(userId, 'apiAccess');
+        if (!hasApiAccess) {
+            return NextResponse.json(
+                {
+                    success: false,
+                    error: {
+                        code: 'FEATURE_UNAVAILABLE',
+                        message: 'API access is not available on your current plan. Upgrade to Silver or Gold to use API keys.',
+                    },
+                    timestamp: new Date().toISOString()
+                },
+                { status: 403 }
+            );
+        }
+
+        // Check if subscription is active
+        const subCheck = await checkSubscriptionActive(userId);
+        if (!subCheck.active) {
+            return NextResponse.json(
+                {
+                    success: false,
+                    error: {
+                        code: 'SUBSCRIPTION_INACTIVE',
+                        message: subCheck.message,
+                        subscription_status: subCheck.status,
+                        plan_tier: subCheck.planTier,
+                    },
+                    timestamp: new Date().toISOString()
+                },
+                { status: 403 }
             );
         }
 
@@ -34,21 +68,21 @@ export async function GET(request: NextRequest) {
 
             if (!apiKey) {
                 return NextResponse.json(
-                    { success: false, error: 'Not Found', message: 'API key not found' },
+                    { success: false, error: { code: 'NOT_FOUND', message: 'API key not found' } },
                     { status: 404 }
                 );
             }
 
             if (!apiKey.isActive) {
                 return NextResponse.json(
-                    { success: false, error: 'Forbidden', message: 'This API key has been revoked' },
+                    { success: false, error: { code: 'KEY_REVOKED', message: 'This API key has been revoked' } },
                     { status: 403 }
                 );
             }
 
             if (!apiKey.encryptedKey) {
                 return NextResponse.json(
-                    { success: false, error: 'Not Available', message: 'This API key was created before encryption was enabled. Please create a new API key.' },
+                    { success: false, error: { code: 'KEY_UNAVAILABLE', message: 'This API key was created before encryption was enabled. Please create a new API key.' } },
                     { status: 400 }
                 );
             }
@@ -66,7 +100,7 @@ export async function GET(request: NextRequest) {
             } catch (error) {
                 console.error('Error decrypting API key:', error);
                 return NextResponse.json(
-                    { success: false, error: 'Decryption Error', message: 'Failed to decrypt API key. Please create a new one.' },
+                    { success: false, error: { code: 'DECRYPTION_ERROR', message: 'Failed to decrypt API key. Please create a new one.' } },
                     { status: 500 }
                 );
             }
@@ -110,8 +144,10 @@ export async function GET(request: NextRequest) {
         return NextResponse.json(
             {
                 success: false,
-                error: 'Internal Server Error',
-                message: error instanceof Error ? error.message : 'Failed to fetch API keys'
+                error: {
+                    code: 'INTERNAL_ERROR',
+                    message: error instanceof Error ? error.message : 'Failed to fetch API keys'
+                }
             },
             { status: 500 }
         );
@@ -127,7 +163,7 @@ export async function POST(request: NextRequest) {
 
         if (!userId) {
             return NextResponse.json(
-                { success: false, error: 'Unauthorized', message: 'You must be logged in to create API keys' },
+                { success: false, error: { code: 'UNAUTHORIZED', message: 'You must be logged in to create API keys' } },
                 { status: 401 }
             );
         }
@@ -138,14 +174,14 @@ export async function POST(request: NextRequest) {
         // Validate name
         if (!name || typeof name !== 'string' || name.trim().length === 0) {
             return NextResponse.json(
-                { success: false, error: 'Validation Error', message: 'API key name is required' },
+                { success: false, error: { code: 'VALIDATION_ERROR', message: 'API key name is required' } },
                 { status: 400 }
             );
         }
 
         if (name.length > 100) {
             return NextResponse.json(
-                { success: false, error: 'Validation Error', message: 'API key name must be 100 characters or less' },
+                { success: false, error: { code: 'VALIDATION_ERROR', message: 'API key name must be 100 characters or less' } },
                 { status: 400 }
             );
         }
@@ -154,7 +190,32 @@ export async function POST(request: NextRequest) {
         const hasApiAccess = await checkFeatureAccess(userId, 'apiAccess');
         if (!hasApiAccess) {
             return NextResponse.json(
-                { success: false, error: 'Upgrade Required', message: 'API access is not available on your current plan. Upgrade to Silver or Gold to use API keys.' },
+                {
+                    success: false,
+                    error: {
+                        code: 'FEATURE_UNAVAILABLE',
+                        message: 'API access is not available on your current plan. Upgrade to Silver or Gold to use API keys.',
+                    },
+                    timestamp: new Date().toISOString()
+                },
+                { status: 403 }
+            );
+        }
+
+        // Check if subscription is active
+        const subCheck = await checkSubscriptionActive(userId);
+        if (!subCheck.active) {
+            return NextResponse.json(
+                {
+                    success: false,
+                    error: {
+                        code: 'SUBSCRIPTION_INACTIVE',
+                        message: subCheck.message,
+                        subscription_status: subCheck.status,
+                        plan_tier: subCheck.planTier,
+                    },
+                    timestamp: new Date().toISOString()
+                },
                 { status: 403 }
             );
         }
@@ -209,8 +270,10 @@ export async function POST(request: NextRequest) {
         return NextResponse.json(
             {
                 success: false,
-                error: 'Internal Server Error',
-                message: error instanceof Error ? error.message : 'Failed to create API key'
+                error: {
+                    code: 'INTERNAL_ERROR',
+                    message: error instanceof Error ? error.message : 'Failed to create API key'
+                }
             },
             { status: 500 }
         );
@@ -226,7 +289,7 @@ export async function PATCH(request: NextRequest) {
 
         if (!userId) {
             return NextResponse.json(
-                { success: false, error: 'Unauthorized', message: 'You must be logged in to update API keys' },
+                { success: false, error: { code: 'UNAUTHORIZED', message: 'You must be logged in to update API keys' } },
                 { status: 401 }
             );
         }
@@ -237,21 +300,21 @@ export async function PATCH(request: NextRequest) {
         // Validate inputs
         if (!id) {
             return NextResponse.json(
-                { success: false, error: 'Validation Error', message: 'API key ID is required' },
+                { success: false, error: { code: 'VALIDATION_ERROR', message: 'API key ID is required' } },
                 { status: 400 }
             );
         }
 
         if (!name || typeof name !== 'string' || name.trim().length === 0) {
             return NextResponse.json(
-                { success: false, error: 'Validation Error', message: 'API key name is required' },
+                { success: false, error: { code: 'VALIDATION_ERROR', message: 'API key name is required' } },
                 { status: 400 }
             );
         }
 
         if (name.length > 100) {
             return NextResponse.json(
-                { success: false, error: 'Validation Error', message: 'API key name must be 100 characters or less' },
+                { success: false, error: { code: 'VALIDATION_ERROR', message: 'API key name must be 100 characters or less' } },
                 { status: 400 }
             );
         }
@@ -263,7 +326,7 @@ export async function PATCH(request: NextRequest) {
 
         if (!existingKey) {
             return NextResponse.json(
-                { success: false, error: 'Not Found', message: 'API key not found or you do not have permission to update it' },
+                { success: false, error: { code: 'NOT_FOUND', message: 'API key not found or you do not have permission to update it' } },
                 { status: 404 }
             );
         }
@@ -305,8 +368,10 @@ export async function PATCH(request: NextRequest) {
         return NextResponse.json(
             {
                 success: false,
-                error: 'Internal Server Error',
-                message: error instanceof Error ? error.message : 'Failed to update API key'
+                error: {
+                    code: 'INTERNAL_ERROR',
+                    message: error instanceof Error ? error.message : 'Failed to update API key'
+                }
             },
             { status: 500 }
         );
@@ -322,7 +387,7 @@ export async function DELETE(request: NextRequest) {
 
         if (!userId) {
             return NextResponse.json(
-                { success: false, error: 'Unauthorized', message: 'You must be logged in to delete API keys' },
+                { success: false, error: { code: 'UNAUTHORIZED', message: 'You must be logged in to delete API keys' } },
                 { status: 401 }
             );
         }
@@ -332,7 +397,7 @@ export async function DELETE(request: NextRequest) {
 
         if (!id) {
             return NextResponse.json(
-                { success: false, error: 'Validation Error', message: 'API key ID is required' },
+                { success: false, error: { code: 'VALIDATION_ERROR', message: 'API key ID is required' } },
                 { status: 400 }
             );
         }
@@ -344,7 +409,7 @@ export async function DELETE(request: NextRequest) {
 
         if (!existingKey) {
             return NextResponse.json(
-                { success: false, error: 'Not Found', message: 'API key not found or you do not have permission to delete it' },
+                { success: false, error: { code: 'NOT_FOUND', message: 'API key not found or you do not have permission to delete it' } },
                 { status: 404 }
             );
         }
@@ -364,8 +429,10 @@ export async function DELETE(request: NextRequest) {
         return NextResponse.json(
             {
                 success: false,
-                error: 'Internal Server Error',
-                message: error instanceof Error ? error.message : 'Failed to delete API key'
+                error: {
+                    code: 'INTERNAL_ERROR',
+                    message: error instanceof Error ? error.message : 'Failed to delete API key'
+                }
             },
             { status: 500 }
         );

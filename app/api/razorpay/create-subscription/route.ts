@@ -86,10 +86,13 @@ export async function POST(req: NextRequest) {
 
     // Check if already has active subscription
     if (user.subscription?.status === 'ACTIVE' && user.subscription?.razorpaySubscriptionId) {
-      return NextResponse.json(
-        { error: 'You already have an active subscription' },
-        { status: 400 }
-      );
+      // If autoRenew is false (cancel pending), allow re-subscribing to a new plan
+      if (user.subscription.autoRenew) {
+        return NextResponse.json(
+          { error: 'You already have an active subscription. Cancel it first to switch plans.' },
+          { status: 400 }
+        );
+      }
     }
 
     // Get the subscription plan from database
@@ -131,9 +134,17 @@ export async function POST(req: NextRequest) {
         include: { plan: true },
       });
     } else {
+      // Update existing subscription with new plan and customer ID
+      // This handles re-subscribing after cancellation or switching plans
       subscription = await prisma.subscription.update({
         where: { id: subscription.id },
-        data: { razorpayCustomerId },
+        data: {
+          razorpayCustomerId,
+          planId: subscriptionPlan.id,
+          status: 'INACTIVE',
+          autoRenew: true,
+          cancelledAt: null,
+        },
         include: { plan: true },
       });
     }

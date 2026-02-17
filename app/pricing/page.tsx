@@ -8,12 +8,13 @@ import Script from "next/script";
 import {
   Check,
   X,
-  MessageCircle,
   ArrowRight,
   Loader2,
   Shield,
   Crown,
 } from "lucide-react";
+import { Navbar } from "@/components/navbar";
+import { Footer } from "@/components/footer";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -127,7 +128,7 @@ export default function PricingPage() {
     }
 
     // If signed in, redirect to billing page for subscription management
-    router.push("/protected/settings/billing");
+    router.push("/protected/billing");
   };
 
   return (
@@ -137,39 +138,11 @@ export default function PricingPage() {
         strategy="lazyOnload"
       />
 
-      <div className="min-h-screen bg-gradient-to-b from-background to-muted/30">
-        {/* Header */}
-        <header className="border-b bg-background/80 backdrop-blur-sm sticky top-0 z-50">
-          <div className="container mx-auto px-4 h-16 flex items-center justify-between">
-            <Link
-              href="/"
-              className="flex items-center gap-2 font-bold text-lg"
-            >
-              <MessageCircle className="h-6 w-6 text-primary" />
-              <span className="text-primary">WaChat</span>
-            </Link>
-
-            <div className="flex items-center gap-4">
-              {isSignedIn ? (
-                <Link href="/protected">
-                  <Button variant="outline">Dashboard</Button>
-                </Link>
-              ) : (
-                <>
-                  <Link href="/sign-in">
-                    <Button variant="ghost">Sign In</Button>
-                  </Link>
-                  <Link href="/sign-up">
-                    <Button>Get Started</Button>
-                  </Link>
-                </>
-              )}
-            </div>
-          </div>
-        </header>
+      <div className="min-h-screen flex flex-col">
+        <Navbar />
 
         {/* Main Content */}
-        <main className="container mx-auto px-4 py-16">
+        <main className="flex-1 container mx-auto px-4 py-16">
           {/* Hero Section */}
           <div className="text-center mb-16">
             <Badge variant="secondary" className="mb-4">
@@ -193,8 +166,8 @@ export default function PricingPage() {
                 <Card
                   key={plan.tier}
                   className={`relative overflow-hidden shadow-lg ${isPopular
-                      ? "border-2 border-primary/40 scale-105"
-                      : "border"
+                    ? "border-2 border-primary/40 scale-105"
+                    : "border"
                     }`}
                 >
                   {isPopular && (
@@ -236,8 +209,8 @@ export default function PricingPage() {
                         <li key={index} className="flex items-center gap-3">
                           <div
                             className={`h-5 w-5 rounded-full flex items-center justify-center ${feature.included
-                                ? "bg-primary/10"
-                                : "bg-muted"
+                              ? "bg-primary/10"
+                              : "bg-muted"
                               }`}
                           >
                             {feature.included ? (
@@ -248,8 +221,8 @@ export default function PricingPage() {
                           </div>
                           <span
                             className={`text-sm ${feature.included
-                                ? ""
-                                : "text-muted-foreground"
+                              ? ""
+                              : "text-muted-foreground"
                               }`}
                           >
                             {feature.label}
@@ -268,8 +241,8 @@ export default function PricingPage() {
 
                     <Button
                       className={`w-full h-12 text-lg ${plan.tier === "GOLD"
-                          ? "bg-amber-500 hover:bg-amber-600"
-                          : ""
+                        ? "bg-amber-500 hover:bg-amber-600"
+                        : ""
                         }`}
                       variant={plan.tier === "FREE" ? "outline" : "default"}
                       onClick={() => handleSubscribe(plan.tier)}
@@ -318,14 +291,7 @@ export default function PricingPage() {
           </div>
         </main>
 
-        {/* Footer */}
-        <footer className="border-t mt-16 py-8">
-          <div className="container mx-auto px-4 text-center text-sm text-muted-foreground">
-            <p>
-              &copy; {new Date().getFullYear()} WaChat. All rights reserved.
-            </p>
-          </div>
-        </footer>
+        <Footer />
       </div>
     </>
   );
