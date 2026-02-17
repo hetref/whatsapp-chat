@@ -5,9 +5,11 @@ import { generatePresignedUrl } from '@/lib/aws-s3';
 
 export const runtime = 'nodejs';
 
+const PRESIGNED_URL_EXPIRY = 1800; // 30 minutes in seconds
+
 /**
- * POST handler for refreshing S3 pre-signed URLs
- * This is useful when URLs expire and need to be regenerated
+ * POST handler for generating S3 pre-signed URLs on demand
+ * Returns a presigned URL valid for 30 minutes without storing it in the database
  */
 export async function POST(request: NextRequest) {
   try {
@@ -79,62 +81,41 @@ export async function POST(request: NextRequest) {
     // Check that media has the required identifiers
     if (!mediaData.id || !mediaData.mime_type) {
       return NextResponse.json(
-        { error: 'Media data incomplete' },
+        { error: 'Media data incomplete - missing id or mime_type' },
         { status: 400 }
       );
     }
 
-    // Determine which identifier was used as the S3 owner when the media was stored
-    // In the multi-tenant model, all media belongs to the business owner (userId)
-    const ownerIdForS3 = message.userId;
+    // Determine the S3 owner ID based on how the media was stored
+    // For outgoing messages (sent by user), the owner is the userId
+    // For incoming messages (received from contacts), the owner is the sender's phone number
+    const ownerIdForS3 = mediaData.s3_owner_id || message.userId;
 
-    // Generate new pre-signed URL
-    const newUrl = await generatePresignedUrl(
+    // Generate new pre-signed URL (30 minutes expiry)
+    const presignedUrl = await generatePresignedUrl(
       ownerIdForS3,
       mediaData.id,
-      mediaData.mime_type
+      mediaData.mime_type,
+      PRESIGNED_URL_EXPIRY
     );
 
-    if (!newUrl) {
-      console.error('Failed to generate new pre-signed URL');
+    if (!presignedUrl) {
+      console.error('Failed to generate pre-signed URL');
       return NextResponse.json(
         { error: 'Failed to generate media URL' },
         { status: 500 }
       );
     }
 
-    // Update the media_data with new URL
-    const updatedMediaData = {
-      ...mediaData,
-      media_url: newUrl,
-      s3_uploaded: true,
-      url_refreshed_at: new Date().toISOString()
-    };
+    console.log(`Generated presigned URL for message: ${messageId} (expires in ${PRESIGNED_URL_EXPIRY}s)`);
 
-    // Update the message in database
-    try {
-      await prisma.message.update({
-        where: { id: messageId },
-        data: {
-          mediaData: JSON.stringify(updatedMediaData)
-        }
-      });
-    } catch (updateError) {
-      console.error('Error updating message with new URL:', updateError);
-      return NextResponse.json(
-        { error: 'Failed to update message' },
-        { status: 500 }
-      );
-    }
-
-    console.log(`Successfully refreshed media URL for message: ${messageId}`);
-
-    // Return the new URL
+    // Return the URL and expiry info - NOT stored in DB
     return NextResponse.json({
       success: true,
       messageId: messageId,
-      mediaUrl: newUrl, // Changed from newUrl to mediaUrl for consistency
-      refreshedAt: updatedMediaData.url_refreshed_at
+      mediaUrl: presignedUrl,
+      expiresIn: PRESIGNED_URL_EXPIRY,
+      generatedAt: new Date().toISOString()
     });
 
   } catch (error) {
@@ -154,7 +135,7 @@ export async function POST(request: NextRequest) {
  */
 export async function GET() {
   return NextResponse.json({
-    status: 'Media URL Refresh API',
+    status: 'Media URL Generation API',
     timestamp: new Date().toISOString()
   });
 } 

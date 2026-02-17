@@ -3,7 +3,7 @@
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ArrowLeft, Send, MessageCircle, Loader2, X, Download, FileText, Image as ImageIcon, Play, Pause, RefreshCw, Volume2, Paperclip, MessageSquare, Users } from "lucide-react";
+import { ArrowLeft, Send, MessageCircle, Loader2, X, Download, FileText, Image as ImageIcon, Play, Pause, Volume2, Paperclip, MessageSquare, Users, AlertTriangle } from "lucide-react";
 import { useState, useRef, useEffect, useCallback } from "react";
 import Image from "next/image";
 import { MediaUpload } from "./media-upload";
@@ -63,15 +63,16 @@ interface MediaData {
   voice?: boolean;
   media_url?: string;
   s3_uploaded?: boolean;
+  s3_owner_id?: string;
   upload_timestamp?: string;
   url_refreshed_at?: string;
-  template_name?: string; // Added for template messages
-  language?: string; // Added for template language
+  template_name?: string;
+  language?: string;
   header?: {
     format: 'IMAGE' | 'VIDEO' | 'DOCUMENT';
     media_url?: string;
     text?: string;
-    filename?: string; // Added for document headers
+    filename?: string;
   };
   body?: {
     text?: string;
@@ -105,6 +106,8 @@ interface ChatWindowProps {
   isLoading?: boolean;
   onUpdateName?: (userId: string, customName: string) => Promise<void>;
   broadcastGroupName?: string | null;
+  messagingDisabled?: boolean;
+  messagingDisabledReason?: string | null;
 }
 
 export function ChatWindow({
@@ -116,13 +119,13 @@ export function ChatWindow({
   isMobile = false,
   isLoading = false,
   onUpdateName,
-  broadcastGroupName
+  broadcastGroupName,
+  messagingDisabled = false,
+  messagingDisabledReason = null,
 }: ChatWindowProps) {
   const [messageInput, setMessageInput] = useState("");
   const [playingAudio, setPlayingAudio] = useState<string | null>(null);
-  const [refreshingUrls, setRefreshingUrls] = useState<Set<string>>(new Set());
-  const [loadingMedia, setLoadingMedia] = useState<Set<string>>(new Set());
-  const [failedMedia, setFailedMedia] = useState<Set<string>>(new Set());
+  const [processingMedia, setProcessingMedia] = useState<Set<string>>(new Set());
   const [mediaUrls, setMediaUrls] = useState<{ [key: string]: string }>({});
   const [audioDurations, setAudioDurations] = useState<{ [key: string]: number }>({});
   const [audioCurrentTime, setAudioCurrentTime] = useState<{ [key: string]: number }>({});
@@ -135,6 +138,49 @@ export function ChatWindow({
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const unreadIndicatorRef = useRef<HTMLDivElement>(null);
   const audioRefs = useRef<{ [key: string]: HTMLAudioElement }>({});
+
+  // SessionStorage helpers for caching presigned URLs
+  const MEDIA_CACHE_PREFIX = 'media_url_';
+  const PRESIGNED_URL_DURATION_MS = 30 * 60 * 1000; // 30 minutes
+
+  const getCachedMediaUrl = useCallback((messageId: string): string | null => {
+    try {
+      const cached = sessionStorage.getItem(`${MEDIA_CACHE_PREFIX}${messageId}`);
+      if (!cached) return null;
+      const parsed: { url: string; expiresAt: number } = JSON.parse(cached);
+      if (Date.now() < parsed.expiresAt) {
+        return parsed.url;
+      }
+      // Expired - remove from cache
+      sessionStorage.removeItem(`${MEDIA_CACHE_PREFIX}${messageId}`);
+      return null;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const setCachedMediaUrl = useCallback((messageId: string, url: string) => {
+    try {
+      const entry = {
+        url,
+        expiresAt: Date.now() + PRESIGNED_URL_DURATION_MS,
+      };
+      sessionStorage.setItem(`${MEDIA_CACHE_PREFIX}${messageId}`, JSON.stringify(entry));
+    } catch (error) {
+      console.error('Error caching media URL:', error);
+    }
+  }, []);
+
+  const isCachedUrlExpired = useCallback((messageId: string): boolean => {
+    try {
+      const cached = sessionStorage.getItem(`${MEDIA_CACHE_PREFIX}${messageId}`);
+      if (!cached) return false; // No cache = not expired, just not processed
+      const parsed: { url: string; expiresAt: number } = JSON.parse(cached);
+      return Date.now() >= parsed.expiresAt;
+    } catch {
+      return false;
+    }
+  }, []);
 
   // Handle template message sending
   const handleSendTemplate = async (templateName: string, templateData: WhatsAppTemplate, variables: {
@@ -188,48 +234,24 @@ export function ChatWindow({
     }
   };
 
-  // Auto-refresh failed media URLs when messages change
+  // Load cached media URLs from sessionStorage when messages change
   useEffect(() => {
     if (messages.length === 0) return;
 
-    // Check for media messages that might need URL refresh
+    const cachedUrls: { [key: string]: string } = {};
     messages.forEach(message => {
       if (message.message_type && ['image', 'video', 'audio', 'document'].includes(message.message_type)) {
-        try {
-          let mediaData;
-          if (typeof message.media_data === 'string') {
-            mediaData = JSON.parse(message.media_data);
-          } else {
-            mediaData = message.media_data;
-          }
-
-          // Check if media URL exists and is valid
-          if (mediaData && mediaData.s3_uploaded && mediaData.media_url) {
-            // Test if URL is still valid by checking if it's expired
-            const urlParams = new URLSearchParams(new URL(mediaData.media_url).search);
-            const expiresParam = urlParams.get('X-Amz-Date');
-
-            if (expiresParam) {
-              // Check if URL might be expired (AWS URLs expire after 1 hour by default)
-              const urlDate = new Date(expiresParam.replace(/(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z/, '$1-$2-$3T$4:$5:$6Z'));
-              const now = new Date();
-              const hoursSinceCreation = (now.getTime() - urlDate.getTime()) / (1000 * 60 * 60);
-
-              // If URL is older than 55 minutes, proactively refresh it
-              if (hoursSinceCreation > 0.9) {
-                console.log(`Proactively refreshing URL for message ${message.id} (${hoursSinceCreation.toFixed(1)} hours old)`);
-                setTimeout(() => refreshMediaUrl(message.id), Math.random() * 3000); // Stagger requests over 3 seconds
-              } else {
-                console.log(`URL for message ${message.id} is still fresh (${hoursSinceCreation.toFixed(1)} hours old)`);
-              }
-            }
-          }
-        } catch (error) {
-          console.error('Error checking media URL for message:', message.id, error);
+        const cachedUrl = getCachedMediaUrl(message.id);
+        if (cachedUrl) {
+          cachedUrls[message.id] = cachedUrl;
         }
       }
     });
-  }, [messages]);
+
+    if (Object.keys(cachedUrls).length > 0) {
+      setMediaUrls(prev => ({ ...prev, ...cachedUrls }));
+    }
+  }, [messages, getCachedMediaUrl]);
   // Calculate unread messages
   const unreadMessages = messages.filter(msg =>
     !msg.is_sent_by_me && !msg.is_read
@@ -423,7 +445,7 @@ export function ChatWindow({
       }
     }
 
-    // Use updated URL if available
+    // Use cached URL
     const currentAudioUrl = mediaUrls[messageId] || audioUrl;
 
     // Toggle play/pause for the clicked audio
@@ -433,16 +455,11 @@ export function ChatWindow({
         audio.pause();
         setPlayingAudio(null);
       } else {
-        // Update the source if URL has changed
         if (audio.src !== currentAudioUrl) {
           audio.src = currentAudioUrl;
-          console.log(`Updated audio source for message ${messageId}: ${currentAudioUrl}`);
         }
         audio.play().catch((error) => {
           console.error('Error playing audio:', error);
-          setFailedMedia(prev => new Set(prev).add(messageId));
-          // Try to refresh URL if play fails
-          setTimeout(() => refreshMediaUrl(messageId), 1000);
         });
         setPlayingAudio(messageId);
       }
@@ -450,15 +467,8 @@ export function ChatWindow({
       // Create new audio element
       const newAudio = new Audio(currentAudioUrl);
 
-      // Set up audio event listeners
       newAudio.onloadedmetadata = () => {
         setAudioDurations(prev => ({ ...prev, [messageId]: newAudio.duration }));
-        setFailedMedia(prev => {
-          const newSet = new Set(prev);
-          newSet.delete(messageId);
-          return newSet;
-        });
-        console.log(`Audio metadata loaded for message ${messageId}`);
       };
 
       newAudio.ontimeupdate = () => {
@@ -470,39 +480,21 @@ export function ChatWindow({
         setAudioCurrentTime(prev => ({ ...prev, [messageId]: 0 }));
       };
 
-      newAudio.onerror = (e) => {
-        console.error('Error playing audio:', {
-          messageId,
-          url: currentAudioUrl,
-          error: e
-        });
+      newAudio.onerror = () => {
+        console.error('Error playing audio for message:', messageId);
         setPlayingAudio(null);
-        setFailedMedia(prev => new Set(prev).add(messageId));
-
-        // Auto-retry refresh if not already refreshing
-        if (!refreshingUrls.has(messageId)) {
-          setTimeout(() => {
-            refreshMediaUrl(messageId);
-          }, 2000);
-        }
       };
 
       audioRefs.current[messageId] = newAudio;
       newAudio.play().catch((error) => {
         console.error('Error starting audio playback:', error);
-        setFailedMedia(prev => new Set(prev).add(messageId));
       });
       setPlayingAudio(messageId);
     }
   };
 
-  const downloadMedia = async (originalUrl: string, filename: string, messageId?: string) => {
+  const downloadMedia = async (url: string, filename: string) => {
     try {
-      // Use refreshed URL if available
-      const url = (messageId && mediaUrls[messageId]) || originalUrl;
-      console.log(`Downloading media from: ${url}`);
-
-      // For S3 pre-signed URLs, we can download directly
       const response = await fetch(url, {
         method: 'GET',
         mode: 'cors',
@@ -510,159 +502,63 @@ export function ChatWindow({
       });
 
       if (!response.ok) {
-        // If download fails with refreshed URL, try refreshing it first
-        if (messageId && response.status === 403 && !refreshingUrls.has(messageId)) {
-          console.log('Download failed with 403, refreshing URL and retrying...');
-          await refreshMediaUrl(messageId);
-
-          // Wait a moment for URL refresh and retry
-          setTimeout(() => {
-            const newUrl = mediaUrls[messageId];
-            if (newUrl) {
-              downloadMedia(newUrl, filename, messageId);
-            }
-          }, 1000);
-          return;
-        }
-
         throw new Error(`Failed to download: ${response.status} ${response.statusText}`);
       }
 
       const blob = await response.blob();
-
-      // Create download link
       const downloadUrl = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = downloadUrl;
       link.download = filename || 'download';
       link.style.display = 'none';
-
-      // Trigger download
       document.body.appendChild(link);
       link.click();
-
-      // Cleanup
       document.body.removeChild(link);
       window.URL.revokeObjectURL(downloadUrl);
-
-      console.log('File downloaded successfully:', filename);
     } catch (error) {
       console.error('Error downloading media:', error);
-
-      // Fallback: Open in new tab if direct download fails
+      // Fallback: open in new tab
       try {
-        const fallbackUrl = (messageId && mediaUrls[messageId]) || originalUrl;
-        const newWindow = window.open(fallbackUrl, '_blank');
-        if (!newWindow) {
-          throw new Error('Popup blocked');
-        }
-      } catch (fallbackError) {
-        console.error('Fallback download also failed:', fallbackError);
-        alert('Unable to download file. Please try again or contact support.');
+        window.open(url, '_blank');
+      } catch {
+        alert('Unable to download file. The URL may have expired. Please refresh the media and try again.');
       }
     }
   };
 
-  const refreshMediaUrl = async (messageId: string) => {
-    if (refreshingUrls.has(messageId)) return;
+  const processMediaUrl = async (messageId: string) => {
+    if (processingMedia.has(messageId)) return;
 
-    console.log(`Starting media URL refresh for message: ${messageId}`);
-    setRefreshingUrls(prev => new Set(prev).add(messageId));
-    setFailedMedia(prev => {
-      const newSet = new Set(prev);
-      newSet.delete(messageId);
-      return newSet;
-    });
+    setProcessingMedia(prev => new Set(prev).add(messageId));
 
     try {
       const response = await fetch('/api/media/refresh-url', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messageId }),
       });
 
       const result = await response.json();
 
-      if (response.ok && result.success) {
-        console.log('Media URL refreshed successfully:', {
-          messageId,
-          newUrl: result.mediaUrl,
-          refreshedAt: result.refreshedAt
-        });
-
-        // Update the media URL in local state
-        if (result.mediaUrl) {
-          setMediaUrls(prev => {
-            const updated = {
-              ...prev,
-              [messageId]: result.mediaUrl
-            };
-            console.log('Updated mediaUrls state:', updated);
-            return updated;
-          });
-        }
-
-        // Clear any failed state for this message
-        setFailedMedia(prev => {
-          const newSet = new Set(prev);
-          newSet.delete(messageId);
-          return newSet;
-        });
-
-        // Clear loading state
-        setLoadingMedia(prev => {
-          const newSet = new Set(prev);
-          newSet.delete(messageId);
-          return newSet;
-        });
-
+      if (response.ok && result.success && result.mediaUrl) {
+        // Store in state
+        setMediaUrls(prev => ({ ...prev, [messageId]: result.mediaUrl }));
+        // Cache in sessionStorage
+        setCachedMediaUrl(messageId, result.mediaUrl);
       } else {
-        console.error('Failed to refresh media URL:', result.error || result.message);
-        setFailedMedia(prev => new Set(prev).add(messageId));
-
-        // Show user-friendly error message only for non-404 errors
-        if (response.status !== 404) {
-          console.warn(`Failed to load media: ${result.error || 'Please try again later'}`);
-        }
+        console.error('Failed to generate media URL:', result.error);
+        alert('Failed to process media. Please try again.');
       }
     } catch (error) {
-      console.error('Network error refreshing media URL:', error);
-      setFailedMedia(prev => new Set(prev).add(messageId));
-
-      // Only show network error alerts for repeated failures
-      if (!window.mediaRefreshErrorCount) window.mediaRefreshErrorCount = {};
-      window.mediaRefreshErrorCount[messageId] = (window.mediaRefreshErrorCount[messageId] || 0) + 1;
-
-      if (window.mediaRefreshErrorCount[messageId] <= 2) {
-        console.log('Retrying media refresh for message:', messageId);
-        // Auto-retry after a short delay
-        setTimeout(() => {
-          refreshMediaUrl(messageId);
-        }, 3000); // Increased delay for retries
-      } else {
-        console.warn('Network error: Unable to load media after multiple attempts');
-      }
+      console.error('Error processing media URL:', error);
+      alert('Network error. Please try again.');
     } finally {
-      setRefreshingUrls(prev => {
+      setProcessingMedia(prev => {
         const newSet = new Set(prev);
         newSet.delete(messageId);
         return newSet;
       });
     }
-  };
-
-  const handleMediaLoad = (messageId: string) => {
-    setLoadingMedia(prev => {
-      const newSet = new Set(prev);
-      newSet.delete(messageId);
-      return newSet;
-    });
-  };
-
-  const handleMediaLoadStart = (messageId: string) => {
-    setLoadingMedia(prev => new Set(prev).add(messageId));
   };
 
   const renderMessageContent = (message: Message, isOwn: boolean) => {
@@ -688,32 +584,19 @@ export function ChatWindow({
       : 'bg-white dark:bg-muted border border-border mr-4'
       }`;
 
-    const isRefreshing = refreshingUrls.has(message.id);
-    const isMediaLoading = loadingMedia.has(message.id);
+    const isProcessing = processingMedia.has(message.id);
 
     switch (messageType) {
       case 'image':
-        const currentImageUrl = mediaUrls[message.id] || mediaData?.media_url;
-        const hasValidUrl = currentImageUrl && mediaData?.s3_uploaded;
-        const hasFailed = failedMedia.has(message.id);
+        const currentImageUrl = mediaUrls[message.id];
+        const hasImageUrl = !!currentImageUrl;
 
         return (
           <div className={baseClasses}>
-            {hasValidUrl && !hasFailed ? (
+            {hasImageUrl ? (
               <div className="mb-2 relative overflow-hidden rounded-xl">
-                {/* Loading overlay */}
-                {(isMediaLoading || isRefreshing) && (
-                  <div className="absolute inset-0 bg-gray-200 dark:bg-gray-700 flex items-center justify-center rounded-xl z-10">
-                    <div className="flex flex-col items-center gap-2">
-                      <Loader2 className="h-6 w-6 animate-spin text-gray-500" />
-                      <span className="text-xs text-gray-500">
-                        {isRefreshing ? 'Refreshing...' : 'Loading image...'}
-                      </span>
-                    </div>
-                  </div>
-                )}
                 <Image
-                  key={`${message.id}-${currentImageUrl}`} // Force re-render on URL change
+                  key={`${message.id}-${currentImageUrl}`}
                   src={currentImageUrl}
                   alt={mediaData?.caption || "Shared image"}
                   width={300}
@@ -721,66 +604,48 @@ export function ChatWindow({
                   className="max-w-[300px] max-h-[400px] w-auto h-auto object-cover cursor-pointer rounded-xl"
                   style={{ maxWidth: '100%', height: 'auto' }}
                   onClick={() => window.open(currentImageUrl, '_blank')}
-                  onLoad={() => {
-                    console.log(`Image loaded successfully for message: ${message.id}`);
-                    handleMediaLoad(message.id);
-                    setFailedMedia(prev => {
-                      const newSet = new Set(prev);
-                      newSet.delete(message.id);
-                      return newSet;
+                  onError={() => {
+                    // URL likely expired - clear from state and cache
+                    setMediaUrls(prev => {
+                      const updated = { ...prev };
+                      delete updated[message.id];
+                      return updated;
                     });
-                  }}
-                  onLoadStart={() => {
-                    console.log(`Image loading started for message: ${message.id}`);
-                    handleMediaLoadStart(message.id);
-                  }}
-                  onError={(e) => {
-                    console.error('Image failed to load:', {
-                      messageId: message.id,
-                      url: currentImageUrl,
-                      error: e
-                    });
-                    handleMediaLoad(message.id);
-                    setFailedMedia(prev => new Set(prev).add(message.id));
-
-                    // Auto-retry refresh if not already refreshing
-                    if (!refreshingUrls.has(message.id)) {
-                      setTimeout(() => {
-                        refreshMediaUrl(message.id);
-                      }, 2000); // Increased delay to avoid rapid retries
-                    }
+                    sessionStorage.removeItem(`${MEDIA_CACHE_PREFIX}${message.id}`);
                   }}
                   priority={false}
                   placeholder="blur"
                   blurDataURL="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAhEAACAQMDBQAAAAAAAAAAAAABAgMABAUGIWGRkqGx0f/EABUBAQEAAAAAAAAAAAAAAAAAAAMF/8QAGhEAAgIDAAAAAAAAAAAAAAAAAAECEgMRkf/aAAwDAQACEQMRAD8AltJagyeH0AthI5xdrLcNM91BF5pX2HaH9bcfaSXWGaRmknyJckliyjqTzSlT54b6bk+h0R+Rq19G9D/Z"
-                  unoptimized={true} // Disable optimization for S3 pre-signed URLs
+                  unoptimized={true}
                 />
               </div>
-            ) : (
-              <div className="flex items-center gap-3 p-4 bg-gray-100 dark:bg-gray-800 rounded-xl mb-2">
-                <ImageIcon className="h-8 w-8 text-gray-500" />
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Image</p>
-                  <p className="text-xs text-gray-500">
-                    {isRefreshing ? 'Refreshing...' :
-                      hasFailed ? 'Failed to load' :
-                        mediaData?.s3_uploaded === false ? 'Preparing...' : 'Loading...'}
-                  </p>
+            ) : mediaData?.s3_uploaded ? (
+              <button
+                onClick={() => processMediaUrl(message.id)}
+                disabled={isProcessing}
+                className={`w-full rounded-xl mb-2 transition-all duration-200 active:scale-[0.98] disabled:pointer-events-none ${isOwn ? 'bg-white/[0.08] hover:bg-white/[0.14]' : 'bg-gray-50 hover:bg-gray-100 dark:bg-gray-800/80 dark:hover:bg-gray-750'}`}
+              >
+                <div className="flex flex-col items-center justify-center gap-3 py-10 px-8">
+                  <div className={`p-4 rounded-full transition-transform duration-300 ${isProcessing ? 'animate-pulse' : ''} ${isOwn ? 'bg-white/[0.08]' : 'bg-gray-100 dark:bg-gray-700/60'}`}>
+                    {isProcessing
+                      ? <Loader2 className={`h-6 w-6 animate-spin ${isOwn ? 'text-white/50' : 'text-gray-400'}`} />
+                      : <ImageIcon className={`h-6 w-6 ${isOwn ? 'text-white/60' : 'text-gray-400 dark:text-gray-500'}`} />
+                    }
+                  </div>
+                  <div className="text-center space-y-0.5">
+                    <p className={`text-[13px] font-medium ${isOwn ? 'text-white/75' : 'text-gray-500 dark:text-gray-400'}`}>Photo</p>
+                    <p className={`text-[11px] ${isOwn ? 'text-white/40' : 'text-gray-400 dark:text-gray-500'}`}>
+                      {isProcessing ? 'Loading...' : isCachedUrlExpired(message.id) ? 'Tap to refresh' : 'Tap to load'}
+                    </p>
+                  </div>
                 </div>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="p-2 h-8 w-8"
-                  onClick={() => refreshMediaUrl(message.id)}
-                  disabled={isRefreshing}
-                  title="Retry loading"
-                >
-                  {isRefreshing ? (
-                    <RefreshCw className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <RefreshCw className="h-4 w-4" />
-                  )}
-                </Button>
+              </button>
+            ) : (
+              <div className="flex flex-col items-center justify-center gap-3 py-10 px-8 bg-gray-50 dark:bg-gray-800/80 rounded-xl mb-2">
+                <div className={`p-4 rounded-full ${isOwn ? 'bg-white/[0.08]' : 'bg-gray-100 dark:bg-gray-700/60'}`}>
+                  <ImageIcon className={`h-6 w-6 ${isOwn ? 'text-white/60' : 'text-gray-300 dark:text-gray-600'}`} />
+                </div>
+                <p className={`text-[11px] ${isOwn ? 'text-white/30' : 'text-gray-300 dark:text-gray-600'}`}>Upload pending</p>
               </div>
             )}
             {mediaData?.caption && (
@@ -795,54 +660,70 @@ export function ChatWindow({
         );
 
       case 'document':
+        const currentDocUrl = mediaUrls[message.id];
+        const hasDocUrl = !!currentDocUrl;
+
         return (
           <div className={baseClasses}>
-            <div className="flex items-center gap-4 p-3 bg-gray-50 dark:bg-gray-800 rounded-xl mb-2 min-w-[280px] max-w-[400px]">
-              <div className={`p-3 rounded-full ${isOwn ? 'bg-green-600' : 'bg-blue-500'}`}>
-                <FileText className="h-6 w-6 text-white" />
+            {hasDocUrl ? (
+              <div className="flex items-center gap-4 p-3 bg-gray-50 dark:bg-gray-800 rounded-xl mb-2 min-w-[280px] max-w-[400px]">
+                <div className={`p-3 rounded-full ${isOwn ? 'bg-green-600' : 'bg-blue-500'}`}>
+                  <FileText className="h-6 w-6 text-white" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold truncate text-gray-800 dark:text-gray-200">
+                    {mediaData?.filename || 'Document'}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {mediaData?.mime_type}
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className={`p-2 h-10 w-10 ${isOwn ? 'hover:bg-green-600' : 'hover:bg-gray-200'}`}
+                  onClick={() => downloadMedia(currentDocUrl, mediaData?.filename || 'document')}
+                >
+                  <Download className="h-5 w-5" />
+                </Button>
               </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold truncate text-gray-800 dark:text-gray-200">
-                  {mediaData?.filename || 'Document'}
-                </p>
-                <p className="text-xs text-gray-500 mt-1">
-                  {mediaData?.mime_type}
-                </p>
-                {isMediaLoading && (
-                  <p className="text-xs text-blue-500 mt-1">Preparing download...</p>
+            ) : mediaData?.s3_uploaded ? (
+              <button
+                onClick={() => processMediaUrl(message.id)}
+                disabled={isProcessing}
+                className={`flex items-center gap-4 p-3 rounded-xl mb-2 min-w-[280px] max-w-[400px] w-full transition-all duration-200 active:scale-[0.98] disabled:pointer-events-none ${isOwn ? 'bg-white/[0.08] hover:bg-white/[0.14]' : 'bg-gray-50 hover:bg-gray-100 dark:bg-gray-800/80 dark:hover:bg-gray-750'}`}
+              >
+                <div className={`p-3 rounded-full shrink-0 transition-transform duration-300 ${isProcessing ? 'animate-pulse' : ''} ${isOwn ? 'bg-green-600' : 'bg-blue-500'}`}>
+                  {isProcessing
+                    ? <Loader2 className="h-6 w-6 text-white animate-spin" />
+                    : <FileText className="h-6 w-6 text-white" />
+                  }
+                </div>
+                <div className="flex-1 min-w-0 text-left">
+                  <p className={`text-sm font-semibold truncate ${isOwn ? 'text-white/90' : 'text-gray-800 dark:text-gray-200'}`}>
+                    {mediaData?.filename || 'Document'}
+                  </p>
+                  <p className={`text-xs mt-0.5 ${isOwn ? 'text-white/50' : 'text-gray-400 dark:text-gray-500'}`}>
+                    {isProcessing ? 'Loading...' : isCachedUrlExpired(message.id) ? 'Tap to refresh' : 'Tap to load'}
+                  </p>
+                </div>
+                {!isProcessing && (
+                  <Download className={`h-4 w-4 shrink-0 ${isOwn ? 'text-white/40' : 'text-gray-400'}`} />
                 )}
+              </button>
+            ) : (
+              <div className="flex items-center gap-4 p-3 bg-gray-50 dark:bg-gray-800 rounded-xl mb-2 min-w-[280px] max-w-[400px]">
+                <div className={`p-3 rounded-full ${isOwn ? 'bg-green-600/50' : 'bg-blue-500/50'}`}>
+                  <FileText className="h-6 w-6 text-white/70" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold truncate text-gray-800 dark:text-gray-200">
+                    {mediaData?.filename || 'Document'}
+                  </p>
+                  <p className={`text-xs mt-0.5 ${isOwn ? 'text-white/30' : 'text-gray-300 dark:text-gray-600'}`}>Upload pending</p>
+                </div>
               </div>
-              {mediaData?.media_url && mediaData.s3_uploaded && (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className={`p-2 h-10 w-10 ${isOwn ? 'hover:bg-green-600' : 'hover:bg-gray-200'}`}
-                  onClick={() => downloadMedia(
-                    mediaUrls[message.id] || mediaData.media_url!,
-                    mediaData?.filename || 'document',
-                    message.id
-                  )}
-                  disabled={isRefreshing}
-                >
-                  {isRefreshing ? (
-                    <RefreshCw className="h-5 w-5 animate-spin" />
-                  ) : (
-                    <Download className="h-5 w-5" />
-                  )}
-                </Button>
-              )}
-              {(!mediaData?.media_url || !mediaData.s3_uploaded) && (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className={`p-2 h-10 w-10 ${isOwn ? 'hover:bg-green-600' : 'hover:bg-gray-200'}`}
-                  onClick={() => refreshMediaUrl(message.id)}
-                  disabled={isRefreshing}
-                >
-                  <RefreshCw className={`h-5 w-5 ${isRefreshing ? 'animate-spin' : ''}`} />
-                </Button>
-              )}
-            </div>
+            )}
             <span className={`text-xs block ${isOwn ? 'text-green-100' : 'text-muted-foreground'}`}>
               {formatTime(message.timestamp)}
             </span>
@@ -853,77 +734,90 @@ export function ChatWindow({
         const duration = audioDurations[message.id] || 0;
         const currentTime = audioCurrentTime[message.id] || 0;
         const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
-        const currentAudioUrl = mediaUrls[message.id] || mediaData?.media_url;
-        const hasValidAudioUrl = currentAudioUrl && mediaData?.s3_uploaded;
-        const hasAudioFailed = failedMedia.has(message.id);
+        const currentAudioUrl = mediaUrls[message.id];
+        const hasAudioUrl = !!currentAudioUrl;
 
         return (
           <div className={baseClasses}>
-            <div className="flex items-center gap-4 p-4 bg-gray-50 dark:bg-gray-800 rounded-xl mb-2 min-w-[300px] max-w-[400px]">
-              <Button
-                size="sm"
-                variant="ghost"
-                className={`p-3 rounded-full ${isOwn ? 'bg-green-600 hover:bg-green-700' : 'bg-blue-500 hover:bg-blue-600'} text-white`}
-                onClick={() => hasValidAudioUrl && handleAudioPlay(message.id, currentAudioUrl)}
-                disabled={!hasValidAudioUrl || isRefreshing || hasAudioFailed}
-              >
-                {isRefreshing ? (
-                  <RefreshCw className="h-5 w-5 animate-spin" />
-                ) : playingAudio === message.id ? (
-                  <Pause className="h-5 w-5" />
-                ) : (
-                  <Play className="h-5 w-5" />
-                )}
-              </Button>
-
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-2">
-                  <Volume2 className="h-4 w-4 text-gray-600 dark:text-gray-400" />
-                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                    {mediaData?.voice ? 'Voice Message' : 'Audio'}
-                  </span>
-                  {(!hasValidAudioUrl || hasAudioFailed) && (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="p-1 h-6 w-6 ml-auto"
-                      onClick={() => refreshMediaUrl(message.id)}
-                      disabled={isRefreshing}
-                    >
-                      <RefreshCw className={`h-3 w-3 ${isRefreshing ? 'animate-spin' : ''}`} />
-                    </Button>
+            {hasAudioUrl ? (
+              <div className="flex items-center gap-4 p-4 bg-gray-50 dark:bg-gray-800 rounded-xl mb-2 min-w-[300px] max-w-[400px]">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className={`p-3 rounded-full ${isOwn ? 'bg-green-600 hover:bg-green-700' : 'bg-blue-500 hover:bg-blue-600'} text-white`}
+                  onClick={() => handleAudioPlay(message.id, currentAudioUrl)}
+                >
+                  {playingAudio === message.id ? (
+                    <Pause className="h-5 w-5" />
+                  ) : (
+                    <Play className="h-5 w-5" />
                   )}
-                </div>
-
-                {/* Audio Progress Bar */}
-                <div className="relative">
-                  <div className="h-2 bg-gray-200 dark:bg-gray-600 rounded-full overflow-hidden">
-                    <div
-                      className={`h-full transition-all duration-300 ${isOwn ? 'bg-green-300' : 'bg-blue-400'
-                        }`}
-                      style={{ width: `${progress}%` }}
-                    />
-                  </div>
-                  <div className="flex justify-between mt-1">
-                    <span className="text-xs text-gray-500">
-                      {formatAudioDuration(currentTime)}
-                    </span>
-                    <span className="text-xs text-gray-500">
-                      {duration > 0 ? formatAudioDuration(duration) : '--:--'}
+                </Button>
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Volume2 className="h-4 w-4 text-gray-600 dark:text-gray-400" />
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                      {mediaData?.voice ? 'Voice Message' : 'Audio'}
                     </span>
                   </div>
+                  <div className="relative">
+                    <div className="h-2 bg-gray-200 dark:bg-gray-600 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full transition-all duration-300 ${isOwn ? 'bg-green-300' : 'bg-blue-400'}`}
+                        style={{ width: `${progress}%` }}
+                      />
+                    </div>
+                    <div className="flex justify-between mt-1">
+                      <span className="text-xs text-gray-500">
+                        {formatAudioDuration(currentTime)}
+                      </span>
+                      <span className="text-xs text-gray-500">
+                        {duration > 0 ? formatAudioDuration(duration) : '--:--'}
+                      </span>
+                    </div>
+                  </div>
                 </div>
-
-                {(isMediaLoading || isRefreshing) && (
-                  <p className="text-xs text-blue-500 mt-1">
-                    {isRefreshing ? 'Refreshing audio...' : 'Loading audio...'}
-                  </p>
-                )}
-                {hasAudioFailed && (
-                  <p className="text-xs text-red-500 mt-1">Failed to load audio</p>
-                )}
               </div>
-            </div>
+            ) : mediaData?.s3_uploaded ? (
+              <button
+                onClick={() => processMediaUrl(message.id)}
+                disabled={isProcessing}
+                className={`flex items-center gap-4 p-4 rounded-xl mb-2 min-w-[300px] max-w-[400px] w-full transition-all duration-200 active:scale-[0.98] disabled:pointer-events-none ${isOwn ? 'bg-white/[0.08] hover:bg-white/[0.14]' : 'bg-gray-50 hover:bg-gray-100 dark:bg-gray-800/80 dark:hover:bg-gray-750'}`}
+              >
+                <div className={`p-3 rounded-full shrink-0 transition-transform duration-300 ${isProcessing ? 'animate-pulse' : ''} ${isOwn ? 'bg-green-600' : 'bg-blue-500'}`}>
+                  {isProcessing
+                    ? <Loader2 className="h-5 w-5 text-white animate-spin" />
+                    : <Play className="h-5 w-5 text-white" />
+                  }
+                </div>
+                <div className="flex-1 text-left">
+                  <div className="flex items-center gap-2">
+                    <Volume2 className="h-4 w-4 text-gray-600 dark:text-gray-400" />
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                      {mediaData?.voice ? 'Voice Message' : 'Audio'}
+                    </span>
+                  </div>
+                  <p className={`text-xs mt-1.5 ${isOwn ? 'text-white/50' : 'text-gray-400 dark:text-gray-500'}`}>
+                    {isProcessing ? 'Loading...' : isCachedUrlExpired(message.id) ? 'Tap to refresh' : 'Tap to load'}
+                  </p>
+                </div>
+              </button>
+            ) : (
+              <div className="flex items-center gap-4 p-4 bg-gray-50 dark:bg-gray-800 rounded-xl mb-2 min-w-[300px] max-w-[400px]">
+                <div className={`p-3 rounded-full ${isOwn ? 'bg-green-600/50' : 'bg-blue-500/50'}`}>
+                  <Volume2 className="h-5 w-5 text-white/70" />
+                </div>
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <Volume2 className="h-4 w-4 text-gray-400" />
+                    <span className="text-sm font-medium text-gray-400 dark:text-gray-500">
+                      {mediaData?.voice ? 'Voice Message' : 'Audio'}
+                    </span>
+                  </div>
+                  <p className={`text-xs mt-1 ${isOwn ? 'text-white/30' : 'text-gray-300 dark:text-gray-600'}`}>Upload pending</p>
+                </div>
+              </div>
+            )}
             <span className={`text-xs block ${isOwn ? 'text-green-100' : 'text-muted-foreground'}`}>
               {formatTime(message.timestamp)}
             </span>
@@ -931,89 +825,59 @@ export function ChatWindow({
         );
 
       case 'video':
-        const currentVideoUrl = mediaUrls[message.id] || mediaData?.media_url;
-        const hasValidVideoUrl = currentVideoUrl && mediaData?.s3_uploaded;
-        const hasVideoFailed = failedMedia.has(message.id);
+        const currentVideoUrl = mediaUrls[message.id];
+        const hasVideoUrl = !!currentVideoUrl;
 
         return (
           <div className={baseClasses}>
-            {hasValidVideoUrl && !hasVideoFailed ? (
+            {hasVideoUrl ? (
               <div className="mb-2 relative overflow-hidden rounded-xl max-w-[400px] max-h-[300px]">
-                {/* Loading overlay */}
-                {(isMediaLoading || isRefreshing) && (
-                  <div className="absolute inset-0 bg-gray-200 dark:bg-gray-700 flex items-center justify-center rounded-xl z-10">
-                    <div className="flex flex-col items-center gap-2">
-                      <Loader2 className="h-6 w-6 animate-spin text-gray-500" />
-                      <span className="text-xs text-gray-500">
-                        {isRefreshing ? 'Refreshing...' : 'Loading video...'}
-                      </span>
-                    </div>
-                  </div>
-                )}
                 <video
-                  key={`${message.id}-${currentVideoUrl}`} // Force re-render on URL change
+                  key={`${message.id}-${currentVideoUrl}`}
                   controls
                   className="max-w-[400px] max-h-[300px] w-auto h-auto rounded-xl"
                   preload="metadata"
-                  onLoadStart={() => {
-                    console.log(`Video loading started for message: ${message.id}`);
-                    handleMediaLoadStart(message.id);
-                  }}
-                  onCanPlay={() => {
-                    console.log(`Video loaded successfully for message: ${message.id}`);
-                    handleMediaLoad(message.id);
-                    setFailedMedia(prev => {
-                      const newSet = new Set(prev);
-                      newSet.delete(message.id);
-                      return newSet;
+                  onError={() => {
+                    // URL likely expired - clear from state and cache
+                    setMediaUrls(prev => {
+                      const updated = { ...prev };
+                      delete updated[message.id];
+                      return updated;
                     });
-                  }}
-                  onError={(e) => {
-                    console.error('Video failed to load:', {
-                      messageId: message.id,
-                      url: currentVideoUrl,
-                      error: e
-                    });
-                    handleMediaLoad(message.id);
-                    setFailedMedia(prev => new Set(prev).add(message.id));
-
-                    // Auto-retry refresh if not already refreshing
-                    if (!refreshingUrls.has(message.id)) {
-                      setTimeout(() => {
-                        refreshMediaUrl(message.id);
-                      }, 2000); // Increased delay to avoid rapid retries
-                    }
+                    sessionStorage.removeItem(`${MEDIA_CACHE_PREFIX}${message.id}`);
                   }}
                 >
                   <source src={currentVideoUrl} type={mediaData?.mime_type || 'video/mp4'} />
                   Your browser does not support the video tag.
                 </video>
               </div>
-            ) : (
-              <div className="flex items-center gap-3 p-4 bg-gray-100 dark:bg-gray-800 rounded-xl mb-2">
-                <Play className="h-8 w-8 text-gray-500" />
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Video</p>
-                  <p className="text-xs text-gray-500">
-                    {isRefreshing ? 'Refreshing...' :
-                      hasVideoFailed ? 'Failed to load' :
-                        mediaData?.s3_uploaded === false ? 'Preparing...' : 'Loading...'}
-                  </p>
+            ) : mediaData?.s3_uploaded ? (
+              <button
+                onClick={() => processMediaUrl(message.id)}
+                disabled={isProcessing}
+                className={`w-full rounded-xl mb-2 transition-all duration-200 active:scale-[0.98] disabled:pointer-events-none ${isOwn ? 'bg-white/[0.08] hover:bg-white/[0.14]' : 'bg-gray-50 hover:bg-gray-100 dark:bg-gray-800/80 dark:hover:bg-gray-750'}`}
+              >
+                <div className="flex flex-col items-center justify-center gap-3 py-10 px-8">
+                  <div className={`p-4 rounded-full transition-transform duration-300 ${isProcessing ? 'animate-pulse' : ''} ${isOwn ? 'bg-white/[0.08]' : 'bg-gray-100 dark:bg-gray-700/60'}`}>
+                    {isProcessing
+                      ? <Loader2 className={`h-6 w-6 animate-spin ${isOwn ? 'text-white/50' : 'text-gray-400'}`} />
+                      : <Play className={`h-6 w-6 ${isOwn ? 'text-white/60' : 'text-gray-400 dark:text-gray-500'}`} />
+                    }
+                  </div>
+                  <div className="text-center space-y-0.5">
+                    <p className={`text-[13px] font-medium ${isOwn ? 'text-white/75' : 'text-gray-500 dark:text-gray-400'}`}>Video</p>
+                    <p className={`text-[11px] ${isOwn ? 'text-white/40' : 'text-gray-400 dark:text-gray-500'}`}>
+                      {isProcessing ? 'Loading...' : isCachedUrlExpired(message.id) ? 'Tap to refresh' : 'Tap to load'}
+                    </p>
+                  </div>
                 </div>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="p-2 h-8 w-8"
-                  onClick={() => refreshMediaUrl(message.id)}
-                  disabled={isRefreshing}
-                  title="Retry loading"
-                >
-                  {isRefreshing ? (
-                    <RefreshCw className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <RefreshCw className="h-4 w-4" />
-                  )}
-                </Button>
+              </button>
+            ) : (
+              <div className="flex flex-col items-center justify-center gap-3 py-10 px-8 bg-gray-50 dark:bg-gray-800/80 rounded-xl mb-2">
+                <div className={`p-4 rounded-full ${isOwn ? 'bg-white/[0.08]' : 'bg-gray-100 dark:bg-gray-700/60'}`}>
+                  <Play className={`h-6 w-6 ${isOwn ? 'text-white/60' : 'text-gray-300 dark:text-gray-600'}`} />
+                </div>
+                <p className={`text-[11px] ${isOwn ? 'text-white/30' : 'text-gray-300 dark:text-gray-600'}`}>Upload pending</p>
               </div>
             )}
             {mediaData?.caption && (
@@ -1403,58 +1267,71 @@ export function ChatWindow({
 
       {/* Message Input */}
       <div className="p-4 border-t border-border bg-background">
-        <form onSubmit={handleSendMessage} className="flex gap-3 items-end">
-          {/* Hide media button in broadcast mode, show template button */}
-          {!broadcastGroupName && (
+        {messagingDisabled ? (
+          <div className="flex items-center gap-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-xl px-4 py-3">
+            <AlertTriangle className="h-5 w-5 text-amber-500 flex-shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-amber-800 dark:text-amber-200">Messaging unavailable</p>
+              <p className="text-xs text-amber-600 dark:text-amber-400 truncate">{messagingDisabledReason || 'Your subscription does not allow sending messages.'}</p>
+            </div>
+            <a href="/protected/settings/billing" className="text-xs font-medium text-amber-700 dark:text-amber-300 hover:underline flex-shrink-0">
+              Manage Plan
+            </a>
+          </div>
+        ) : (
+          <form onSubmit={handleSendMessage} className="flex gap-3 items-end">
+            {/* Hide media button in broadcast mode, show template button */}
+            {!broadcastGroupName && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowMediaUpload(true)}
+                className="p-2 hover:bg-muted rounded-full transition-colors"
+                title="Attach media"
+              >
+                <Paperclip className="h-5 w-5" />
+              </Button>
+            )}
+            {/* Template button available for both modes */}
             <Button
               type="button"
               variant="ghost"
               size="sm"
-              onClick={() => setShowMediaUpload(true)}
+              onClick={() => setShowTemplateSelector(true)}
               className="p-2 hover:bg-muted rounded-full transition-colors"
-              title="Attach media"
+              title="Send template"
             >
-              <Paperclip className="h-5 w-5" />
+              <MessageSquare className="h-5 w-5" />
             </Button>
-          )}
-          {/* Template button available for both modes */}
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={() => setShowTemplateSelector(true)}
-            className="p-2 hover:bg-muted rounded-full transition-colors"
-            title="Send template"
-          >
-            <MessageSquare className="h-5 w-5" />
-          </Button>
-          <Input
-            value={messageInput}
-            onChange={(e) => setMessageInput(e.target.value)}
-            placeholder={
-              isLoading || sendingMedia
-                ? "Sending..."
-                : broadcastGroupName
-                  ? "Type broadcast message..."
-                  : "Type a message..."
-            }
-            className="flex-1 border-border focus:ring-green-500 rounded-full px-4 py-2"
-            maxLength={1000}
-            disabled={isLoading || sendingMedia}
-            autoFocus
-          />
-          <Button
-            type="submit"
-            disabled={!messageInput.trim() || isLoading || sendingMedia}
-            className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-full disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-          >
-            {isLoading || sendingMedia ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Send className="h-4 w-4" />
-            )}
-          </Button>
-        </form>
+            <Input
+              value={messageInput}
+              onChange={(e) => setMessageInput(e.target.value)}
+              placeholder={
+                isLoading || sendingMedia
+                  ? "Sending..."
+                  : broadcastGroupName
+                    ? "Type broadcast message..."
+                    : "Type a message..."
+              }
+              className="flex-1 border-border focus:ring-green-500 rounded-full px-4 py-2"
+              maxLength={1000}
+              disabled={isLoading || sendingMedia}
+              autoFocus
+            />
+            <Button
+              type="submit"
+              disabled={!messageInput.trim() || isLoading || sendingMedia}
+              className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-full disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+            >
+              {isLoading || sendingMedia ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Send className="h-4 w-4" />
+              )}
+            </Button>
+          </form>
+        )}
       </div>
 
       {/* Drag and Drop Overlay */}

@@ -20,6 +20,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { verifyWebhookSignature, calculateNextBillingPeriod } from '@/lib/razorpay';
+import { applyPlanLimits, PLAN_DEFAULTS } from '@/lib/plan-limits';
+import type { PlanTier } from '@/lib/plan-limits';
 
 export async function POST(req: NextRequest) {
   try {
@@ -184,13 +186,19 @@ async function handleSubscriptionActivated(subscription: any, payment: any) {
     }
   }
 
-  // Activate user
+  // Activate user and apply plan limits based on subscription plan
+  const plan = await prisma.subscriptionPlan.findUnique({
+    where: { id: userSubscription.planId },
+  });
+
+  const planTier = (plan?.name as PlanTier) || 'SILVER';
+  await applyPlanLimits(userId, planTier);
   await prisma.user.update({
     where: { id: userId },
     data: { isActive: true },
   });
 
-  console.log(`✅ Subscription activated for user: ${userId}`);
+  console.log(`✅ Subscription activated for user: ${userId} (plan: ${planTier})`);
 }
 
 /**
@@ -277,7 +285,12 @@ async function processSubscriptionRenewal(
     });
   }
 
-  // Ensure user is active
+  // Ensure user is active with correct plan limits
+  const plan = await prisma.subscriptionPlan.findUnique({
+    where: { id: userSubscription.planId },
+  });
+  const planTier = (plan?.name as PlanTier) || 'SILVER';
+  await applyPlanLimits(userSubscription.userId, planTier);
   await prisma.user.update({
     where: { id: userSubscription.userId },
     data: { isActive: true },
@@ -320,15 +333,14 @@ async function handleSubscriptionCancelled(subscription: any) {
     },
   });
 
-  // Deactivate user if subscription ended immediately
-  if (ended_at && new Date(ended_at * 1000) <= new Date()) {
-    await prisma.user.update({
-      where: { id: userSubscription.userId },
-      data: { isActive: false },
-    });
-  }
+  // Always downgrade to FREE and deactivate on cancellation
+  await applyPlanLimits(userSubscription.userId, 'FREE');
+  await prisma.user.update({
+    where: { id: userSubscription.userId },
+    data: { isActive: false },
+  });
 
-  console.log(`🚫 Subscription cancelled for user: ${userSubscription.userId}`);
+  console.log(`🚫 Subscription cancelled for user: ${userSubscription.userId} - downgraded to FREE`);
 }
 
 /**
@@ -365,7 +377,13 @@ async function handleSubscriptionPaused(subscription: any) {
     },
   });
 
-  console.log(`⏸️ Subscription paused for user: ${userSubscription.userId}`);
+  // Keep plan limits unchanged but block messaging by marking user inactive
+  await prisma.user.update({
+    where: { id: userSubscription.userId },
+    data: { isActive: false },
+  });
+
+  console.log(`⏸️ Subscription paused for user: ${userSubscription.userId} - messaging blocked, limits preserved`);
 }
 
 /**
@@ -402,13 +420,18 @@ async function handleSubscriptionResumed(subscription: any) {
     },
   });
 
-  // Activate user
+  // Re-apply plan limits and reactivate user
+  const resumedPlan = await prisma.subscriptionPlan.findUnique({
+    where: { id: userSubscription.planId },
+  });
+  const resumedTier = (resumedPlan?.name as PlanTier) || 'SILVER';
+  await applyPlanLimits(userSubscription.userId, resumedTier);
   await prisma.user.update({
     where: { id: userSubscription.userId },
     data: { isActive: true },
   });
 
-  console.log(`▶️ Subscription resumed for user: ${userSubscription.userId}`);
+  console.log(`▶️ Subscription resumed for user: ${userSubscription.userId} (plan: ${resumedTier})`);
 }
 
 /**
@@ -438,13 +461,18 @@ async function handleSubscriptionPending(subscription: any) {
     return;
   }
 
-  // Set to PAST_DUE - payment is being retried
+  // Set to PAST_DUE - payment is being retried, block messaging
   await prisma.subscription.update({
     where: { id: userSubscription.id },
     data: { status: 'PAST_DUE' },
   });
 
-  console.log(`⏳ Subscription pending for user: ${userSubscription.userId}`);
+  await prisma.user.update({
+    where: { id: userSubscription.userId },
+    data: { isActive: false },
+  });
+
+  console.log(`⏳ Subscription pending for user: ${userSubscription.userId} - messaging blocked until payment`);
 }
 
 /**
@@ -483,7 +511,8 @@ async function handleSubscriptionHalted(subscription: any) {
     },
   });
 
-  // Deactivate user
+  // Deactivate user and downgrade to FREE plan
+  await applyPlanLimits(userSubscription.userId, 'FREE');
   await prisma.user.update({
     where: { id: userSubscription.userId },
     data: { isActive: false },

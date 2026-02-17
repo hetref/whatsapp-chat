@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { prisma } from '@/lib/db';
 import { cancelRazorpaySubscription } from '@/lib/razorpay';
+import { applyPlanLimits } from '@/lib/plan-limits';
 
 interface CancelSubscriptionBody {
   cancelAtCycleEnd?: boolean; // If true, subscription ends at current period end
@@ -68,12 +69,13 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // If immediate cancellation, deactivate user
+    // If immediate cancellation, deactivate user and downgrade to FREE limits
     if (!cancelAtCycleEnd) {
       await prisma.user.update({
         where: { id: userId },
         data: { isActive: false },
       });
+      await applyPlanLimits(userId, 'FREE');
     }
 
     return NextResponse.json({
@@ -93,7 +95,7 @@ export async function POST(req: NextRequest) {
   } catch (error: any) {
     console.error('Error cancelling subscription:', error);
     return NextResponse.json(
-      { error: error.message || 'Failed to cancel subscription' },
+      { error: 'Failed to cancel subscription' },
       { status: 500 }
     );
   }

@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
 import Script from "next/script";
 import {
   useSubscription,
@@ -9,6 +8,7 @@ import {
   formatAmount,
   canMakePayment,
 } from "@/hooks/use-subscription";
+import { useSubscriptionStatus } from "@/components/subscription-guard";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -30,6 +30,14 @@ import {
   Pause,
   Play,
   XCircle,
+  Check,
+  X,
+  Crown,
+  Zap,
+  Users,
+  HardDrive,
+  MessageSquare,
+  Key,
 } from "lucide-react";
 
 declare global {
@@ -38,8 +46,50 @@ declare global {
   }
 }
 
+const PLANS = [
+  {
+    tier: "FREE" as const,
+    name: "Free",
+    price: 0,
+    description: "Get started with basic features",
+    features: [
+      { label: "10 Contacts", included: true },
+      { label: "2 Broadcast Groups", included: true },
+      { label: "5 GB Storage", included: true },
+      { label: "Bulk Messaging", included: false },
+      { label: "API Access", included: false },
+    ],
+  },
+  {
+    tier: "SILVER" as const,
+    name: "Silver",
+    price: 499,
+    description: "For growing businesses",
+    popular: true,
+    features: [
+      { label: "15,000 Contacts", included: true },
+      { label: "100 Broadcast Groups", included: true },
+      { label: "40 GB Storage", included: true },
+      { label: "Bulk Messaging (10K)", included: true },
+      { label: "API Access", included: true },
+    ],
+  },
+  {
+    tier: "GOLD" as const,
+    name: "Gold",
+    price: 999,
+    description: "For large-scale operations",
+    features: [
+      { label: "80,000 Contacts", included: true },
+      { label: "500 Broadcast Groups", included: true },
+      { label: "160 GB Storage", included: true },
+      { label: "Bulk Messaging (80K)", included: true },
+      { label: "API Access", included: true },
+    ],
+  },
+];
+
 export default function BillingPage() {
-  const router = useRouter();
   const {
     data,
     payments,
@@ -50,27 +100,28 @@ export default function BillingPage() {
     fetchPayments,
   } = useSubscription();
 
-  const [paymentLoading, setPaymentLoading] = useState(false);
+  const { planTier } = useSubscriptionStatus();
+
+  const [paymentLoading, setPaymentLoading] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
 
-  // Fetch payments on mount
   useEffect(() => {
     fetchPayments();
   }, [fetchPayments]);
 
-  // Handle new subscription
-  const handleSubscribe = async () => {
+  // Handle subscribe to a specific plan
+  const handleSubscribe = async (tier: "SILVER" | "GOLD") => {
     try {
-      setPaymentLoading(true);
+      setPaymentLoading(tier);
       setActionError(null);
       setActionSuccess(null);
 
-      // Create subscription
       const subRes = await fetch("/api/razorpay/create-subscription", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ planTier: tier }),
       });
 
       const subData = await subRes.json();
@@ -79,12 +130,13 @@ export default function BillingPage() {
         throw new Error(subData.error);
       }
 
-      // Open Razorpay checkout for subscription
+      const plan = PLANS.find((p) => p.tier === tier);
+
       const options = {
         key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
         subscription_id: subData.subscription_id,
         name: "WaChat",
-        description: "Premium Subscription - ₹500/month (Auto-renewal)",
+        description: `${plan?.name} Plan - ₹${plan?.price}/month`,
         handler: async function (response: any) {
           try {
             const verifyRes = await fetch("/api/razorpay/verify-subscription", {
@@ -101,10 +153,12 @@ export default function BillingPage() {
 
             if (verifyData.success) {
               setActionSuccess(
-                "Subscription activated! Auto-renewal is enabled.",
+                `${plan?.name} plan activated! Refreshing...`,
               );
               refresh();
               fetchPayments();
+              // Reload to update sidebar
+              setTimeout(() => window.location.reload(), 1500);
             } else {
               setActionError(
                 verifyData.error || "Subscription verification failed",
@@ -116,11 +170,11 @@ export default function BillingPage() {
         },
         modal: {
           ondismiss: function () {
-            setPaymentLoading(false);
+            setPaymentLoading(null);
           },
         },
         theme: {
-          color: "#10B981",
+          color: tier === "GOLD" ? "#d97706" : "#64748b",
         },
       };
 
@@ -129,7 +183,7 @@ export default function BillingPage() {
     } catch (err: any) {
       setActionError(err.message || "Failed to create subscription");
     } finally {
-      setPaymentLoading(false);
+      setPaymentLoading(null);
     }
   };
 
@@ -138,8 +192,8 @@ export default function BillingPage() {
     if (
       !confirm(
         immediately
-          ? "Are you sure you want to cancel immediately? You will lose access right away."
-          : "Are you sure you want to cancel? Your subscription will remain active until the end of the current billing period.",
+          ? "Are you sure you want to cancel immediately? You will be downgraded to the Free plan."
+          : "Are you sure you want to cancel? Your current plan will remain active until the end of the billing period.",
       )
     ) {
       return;
@@ -156,13 +210,13 @@ export default function BillingPage() {
         body: JSON.stringify({ cancelAtCycleEnd: !immediately }),
       });
 
-      const data = await res.json();
+      const result = await res.json();
 
-      if (data.error) {
-        throw new Error(data.error);
+      if (result.error) {
+        throw new Error(result.error);
       }
 
-      setActionSuccess(data.message);
+      setActionSuccess(result.message);
       refresh();
     } catch (err: any) {
       setActionError(err.message || "Failed to cancel subscription");
@@ -171,11 +225,9 @@ export default function BillingPage() {
     }
   };
 
-  // Handle pause subscription
+  // Handle pause
   const handlePause = async () => {
-    if (!confirm("Pause your subscription? You can resume anytime.")) {
-      return;
-    }
+    if (!confirm("Pause your subscription? You can resume anytime.")) return;
 
     try {
       setActionLoading("pause");
@@ -187,13 +239,10 @@ export default function BillingPage() {
         headers: { "Content-Type": "application/json" },
       });
 
-      const data = await res.json();
+      const result = await res.json();
+      if (result.error) throw new Error(result.error);
 
-      if (data.error) {
-        throw new Error(data.error);
-      }
-
-      setActionSuccess(data.message);
+      setActionSuccess(result.message);
       refresh();
     } catch (err: any) {
       setActionError(err.message || "Failed to pause subscription");
@@ -202,7 +251,7 @@ export default function BillingPage() {
     }
   };
 
-  // Handle resume subscription
+  // Handle resume
   const handleResume = async () => {
     try {
       setActionLoading("resume");
@@ -214,13 +263,10 @@ export default function BillingPage() {
         headers: { "Content-Type": "application/json" },
       });
 
-      const data = await res.json();
+      const result = await res.json();
+      if (result.error) throw new Error(result.error);
 
-      if (data.error) {
-        throw new Error(data.error);
-      }
-
-      setActionSuccess(data.message);
+      setActionSuccess(result.message);
       refresh();
     } catch (err: any) {
       setActionError(err.message || "Failed to resume subscription");
@@ -229,7 +275,6 @@ export default function BillingPage() {
     }
   };
 
-  // Format date
   const formatDate = (dateString: string | null) => {
     if (!dateString) return "N/A";
     return new Date(dateString).toLocaleDateString("en-IN", {
@@ -239,20 +284,6 @@ export default function BillingPage() {
     });
   };
 
-  // Get status icon
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case "ACTIVE":
-        return <CheckCircle className="h-5 w-5 text-green-500" />;
-      case "EXPIRED":
-      case "PAST_DUE":
-        return <AlertCircle className="h-5 w-5 text-red-500" />;
-      default:
-        return <Clock className="h-5 w-5 text-muted-foreground" />;
-    }
-  };
-
-  // Payment status badge
   const getPaymentStatusBadge = (status: string) => {
     const variants: Record<
       string,
@@ -276,8 +307,8 @@ export default function BillingPage() {
   }
 
   const subscription = data?.subscription;
-  const status = subscription?.status || "INACTIVE";
-  const statusInfo = formatSubscriptionStatus(status);
+  const status = subscription?.status || "FREE";
+  const currentTier = planTier || "FREE";
 
   return (
     <>
@@ -287,13 +318,13 @@ export default function BillingPage() {
       />
 
       <div className="h-full overflow-auto">
-        <div className="max-w-4xl mx-auto p-6 space-y-6">
+        <div className="max-w-5xl mx-auto p-6 space-y-6">
           {/* Header */}
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-bold">Billing & Subscription</h1>
+              <h1 className="text-2xl font-bold">Plans & Billing</h1>
               <p className="text-muted-foreground">
-                Manage your subscription and view payment history
+                Choose the plan that&apos;s right for your business
               </p>
             </div>
             <Button
@@ -312,214 +343,236 @@ export default function BillingPage() {
           {/* Alerts */}
           {actionError && (
             <div className="bg-destructive/10 border border-destructive/20 text-destructive px-4 py-3 rounded-lg flex items-center gap-2">
-              <AlertCircle className="h-5 w-5" />
+              <AlertCircle className="h-5 w-5 flex-shrink-0" />
               {actionError}
             </div>
           )}
 
           {actionSuccess && (
             <div className="bg-green-500/10 border border-green-500/20 text-green-600 px-4 py-3 rounded-lg flex items-center gap-2">
-              <CheckCircle className="h-5 w-5" />
+              <CheckCircle className="h-5 w-5 flex-shrink-0" />
               {actionSuccess}
             </div>
           )}
 
-          {/* Current Plan Card */}
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  {getStatusIcon(status)}
-                  <div>
-                    <CardTitle className="text-lg">
-                      {subscription?.plan?.name || "Premium"} Plan
-                    </CardTitle>
-                    <CardDescription>
-                      {formatAmount(subscription?.plan?.price || 500)}/month
-                    </CardDescription>
-                  </div>
-                </div>
-                <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
-              </div>
-            </CardHeader>
+          {/* Plan Cards */}
+          <div className="grid md:grid-cols-3 gap-4">
+            {PLANS.map((plan) => {
+              const isCurrent = currentTier === plan.tier;
+              const isDowngrade =
+                (currentTier === "GOLD" && plan.tier === "SILVER") ||
+                (currentTier !== "FREE" && plan.tier === "FREE");
+              const isUpgrade =
+                (currentTier === "FREE" && plan.tier !== "FREE") ||
+                (currentTier === "SILVER" && plan.tier === "GOLD");
 
-            <CardContent className="space-y-4">
-              {/* Subscription Details */}
-              {status === "ACTIVE" && (
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-muted/50 rounded-lg">
-                  <div>
-                    <p className="text-sm text-muted-foreground">Started On</p>
-                    <p className="font-medium">
-                      {formatDate(subscription?.startDate ?? null)}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">
-                      {subscription?.autoRenew ? "Renews On" : "Expires On"}
-                    </p>
-                    <p className="font-medium">
-                      {formatDate(subscription?.currentPeriodEnd ?? null)}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">
-                      Days Remaining
-                    </p>
-                    <p className="font-medium">
-                      {data?.daysRemaining ?? 0} days
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">
-                      Auto-Renewal
-                    </p>
-                    <div className="flex items-center gap-2">
-                      {subscription?.autoRenew ? (
-                        <>
-                          <CheckCircle className="h-4 w-4 text-green-500" />
-                          <span className="font-medium text-green-600">
-                            Enabled
-                          </span>
-                        </>
+              return (
+                <Card
+                  key={plan.tier}
+                  className={`relative ${plan.popular ? "border-primary shadow-md" : ""} ${isCurrent ? "ring-2 ring-primary" : ""}`}
+                >
+                  {plan.popular && (
+                    <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+                      <Badge className="bg-primary text-primary-foreground">
+                        Popular
+                      </Badge>
+                    </div>
+                  )}
+                  {isCurrent && (
+                    <div className="absolute -top-3 right-4">
+                      <Badge variant="outline" className="bg-background">
+                        Current
+                      </Badge>
+                    </div>
+                  )}
+
+                  <CardHeader className="text-center pb-2">
+                    <CardTitle className="text-lg">{plan.name}</CardTitle>
+                    <CardDescription>{plan.description}</CardDescription>
+                    <div className="pt-2">
+                      {plan.price === 0 ? (
+                        <span className="text-3xl font-bold">Free</span>
                       ) : (
                         <>
-                          <AlertCircle className="h-4 w-4 text-amber-500" />
-                          <span className="font-medium text-amber-600">
-                            Disabled
+                          <span className="text-3xl font-bold">
+                            ₹{plan.price}
                           </span>
+                          <span className="text-muted-foreground">/mo</span>
                         </>
                       )}
                     </div>
+                  </CardHeader>
+
+                  <CardContent className="space-y-4">
+                    <Separator />
+                    <ul className="space-y-2">
+                      {plan.features.map((feature, i) => (
+                        <li key={i} className="flex items-center gap-2 text-sm">
+                          {feature.included ? (
+                            <Check className="h-4 w-4 text-green-500 flex-shrink-0" />
+                          ) : (
+                            <X className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                          )}
+                          <span
+                            className={
+                              feature.included
+                                ? ""
+                                : "text-muted-foreground"
+                            }
+                          >
+                            {feature.label}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+
+                    <div className="pt-2">
+                      {isCurrent ? (
+                        <Button variant="outline" className="w-full" disabled>
+                          Current Plan
+                        </Button>
+                      ) : plan.tier === "FREE" ? (
+                        isDowngrade &&
+                        subscription?.razorpaySubscriptionId && (
+                          <Button
+                            variant="outline"
+                            className="w-full text-destructive hover:text-destructive"
+                            onClick={() => handleCancel(false)}
+                            disabled={actionLoading !== null}
+                          >
+                            {actionLoading === "cancel" ? (
+                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            ) : (
+                              <XCircle className="h-4 w-4 mr-2" />
+                            )}
+                            Downgrade
+                          </Button>
+                        )
+                      ) : (
+                        <Button
+                          className={`w-full ${plan.tier === "GOLD" ? "bg-amber-500 hover:bg-amber-600" : ""}`}
+                          onClick={() => handleSubscribe(plan.tier)}
+                          disabled={paymentLoading !== null}
+                        >
+                          {paymentLoading === plan.tier ? (
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          ) : (
+                            <CreditCard className="h-4 w-4 mr-2" />
+                          )}
+                          {isUpgrade ? "Upgrade" : "Subscribe"}
+                        </Button>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+
+          {/* Active Subscription Management */}
+          {subscription &&
+            status !== "FREE" &&
+            status !== "INACTIVE" &&
+            subscription.razorpaySubscriptionId && (
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle className="text-lg">
+                        Subscription Management
+                      </CardTitle>
+                      <CardDescription>
+                        {status === "ACTIVE" && subscription.autoRenew
+                          ? `Renews on ${formatDate(subscription.currentPeriodEnd ?? null)}`
+                          : status === "PAUSED"
+                            ? "Your subscription is paused"
+                            : status === "CANCELLED"
+                              ? `Access until ${formatDate(subscription.currentPeriodEnd ?? null)}`
+                              : ""}
+                      </CardDescription>
+                    </div>
+                    <Badge
+                      variant={
+                        formatSubscriptionStatus(status).variant
+                      }
+                    >
+                      {formatSubscriptionStatus(status).label}
+                    </Badge>
                   </div>
-                </div>
-              )}
-
-              {/* Paused State */}
-              {status === "PAUSED" && (
-                <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-lg text-center">
-                  <Pause className="h-8 w-8 mx-auto text-amber-500 mb-2" />
-                  <p className="font-medium text-amber-600">
-                    Subscription Paused
-                  </p>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    Your subscription is paused. Resume to continue using
-                    WaChat.
-                  </p>
-                </div>
-              )}
-
-              {/* Inactive/Expired State */}
-              {canMakePayment(status) && (
-                <div className="p-4 bg-muted/50 rounded-lg text-center">
-                  <p className="text-muted-foreground mb-4">
-                    {status === "EXPIRED"
-                      ? "Your subscription has expired. Subscribe again to continue using WaChat."
-                      : "Subscribe to access all WaChat features with auto-renewal."}
-                  </p>
-                </div>
-              )}
-
-              <Separator />
-
-              {/* Action Buttons */}
-              <div className="flex flex-wrap gap-3">
-                {/* Subscribe Button - for INACTIVE or EXPIRED */}
-                {canMakePayment(status) && (
-                  <Button onClick={handleSubscribe} disabled={paymentLoading}>
-                    {paymentLoading ? (
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    ) : (
-                      <CreditCard className="h-4 w-4 mr-2" />
+                </CardHeader>
+                <CardContent>
+                  <div className="flex flex-wrap gap-3">
+                    {status === "ACTIVE" && subscription.autoRenew && (
+                      <>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handlePause}
+                          disabled={actionLoading !== null}
+                        >
+                          {actionLoading === "pause" ? (
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          ) : (
+                            <Pause className="h-4 w-4 mr-2" />
+                          )}
+                          Pause
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="text-destructive hover:text-destructive"
+                          onClick={() => handleCancel(false)}
+                          disabled={actionLoading !== null}
+                        >
+                          {actionLoading === "cancel" ? (
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          ) : (
+                            <XCircle className="h-4 w-4 mr-2" />
+                          )}
+                          Cancel
+                        </Button>
+                      </>
                     )}
-                    Subscribe Now (₹500/month)
-                  </Button>
-                )}
 
-                {/* Active + Auto-Renew ON → Show Pause & Cancel */}
-                {status === "ACTIVE" &&
-                  subscription?.autoRenew &&
-                  subscription?.razorpaySubscriptionId && (
-                    <>
-                      <Button
-                        variant="outline"
-                        onClick={handlePause}
-                        disabled={actionLoading !== null}
-                      >
-                        {actionLoading === "pause" ? (
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        ) : (
-                          <Pause className="h-4 w-4 mr-2" />
-                        )}
-                        Pause Subscription
-                      </Button>
-                      <Button
-                        variant="outline"
-                        className="text-destructive hover:text-destructive"
-                        onClick={() => handleCancel(false)}
-                        disabled={actionLoading !== null}
-                      >
-                        {actionLoading === "cancel" ? (
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        ) : (
-                          <XCircle className="h-4 w-4 mr-2" />
-                        )}
-                        Cancel
-                      </Button>
-                    </>
-                  )}
+                    {status === "PAUSED" && (
+                      <>
+                        <Button
+                          size="sm"
+                          onClick={handleResume}
+                          disabled={actionLoading !== null}
+                        >
+                          {actionLoading === "resume" ? (
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          ) : (
+                            <Play className="h-4 w-4 mr-2" />
+                          )}
+                          Resume
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="text-destructive hover:text-destructive"
+                          onClick={() => handleCancel(true)}
+                          disabled={actionLoading !== null}
+                        >
+                          Cancel
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
 
-                {/* Active + Auto-Renew OFF (Cancelled but still in period) → Show Reactivate */}
-                {status === "ACTIVE" &&
-                  !subscription?.autoRenew &&
-                  subscription?.razorpaySubscriptionId && (
-                    <p className="text-sm text-muted-foreground py-2">
-                      Your subscription is cancelled. You have access until{" "}
-                      {formatDate(subscription?.currentPeriodEnd ?? null)}. To
-                      continue after that, subscribe again.
-                    </p>
-                  )}
-
-                {/* Paused Subscription Actions */}
-                {status === "PAUSED" &&
-                  subscription?.razorpaySubscriptionId && (
-                    <>
-                      <Button
-                        onClick={handleResume}
-                        disabled={actionLoading !== null}
-                      >
-                        {actionLoading === "resume" ? (
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        ) : (
-                          <Play className="h-4 w-4 mr-2" />
-                        )}
-                        Resume Subscription
-                      </Button>
-                      <Button
-                        variant="outline"
-                        className="text-destructive hover:text-destructive"
-                        onClick={() => handleCancel(true)}
-                        disabled={actionLoading !== null}
-                      >
-                        {actionLoading === "cancel" ? (
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        ) : (
-                          <XCircle className="h-4 w-4 mr-2" />
-                        )}
-                        Cancel Subscription
-                      </Button>
-                    </>
-                  )}
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Payment History Card */}
+          {/* Payment History */}
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">
                 <div>
                   <CardTitle className="text-lg">Payment History</CardTitle>
-                  <CardDescription>View your past transactions</CardDescription>
+                  <CardDescription>
+                    View your past transactions
+                  </CardDescription>
                 </div>
                 <Button
                   variant="ghost"
@@ -545,52 +598,32 @@ export default function BillingPage() {
                   <p>No payment history yet</p>
                 </div>
               ) : (
-                <div className="space-y-4">
+                <div className="space-y-3">
                   {payments.map((payment) => (
                     <div
                       key={payment.id}
-                      className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors"
+                      className="flex items-center justify-between p-3 border rounded-lg"
                     >
-                      <div className="flex items-center gap-4">
-                        <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
-                          <CreditCard className="h-5 w-5 text-primary" />
+                      <div className="flex items-center gap-3">
+                        <div className="h-9 w-9 rounded-full bg-primary/10 flex items-center justify-center">
+                          <CreditCard className="h-4 w-4 text-primary" />
                         </div>
                         <div>
-                          <p className="font-medium">
+                          <p className="font-medium text-sm">
                             {formatAmount(payment.amount, payment.currency)}
                           </p>
-                          <p className="text-sm text-muted-foreground">
+                          <p className="text-xs text-muted-foreground">
                             {formatDate(payment.createdAt)}
                             {payment.paymentMethod &&
-                              ` • ${payment.paymentMethod}`}
+                              ` · ${payment.paymentMethod}`}
                           </p>
                         </div>
                       </div>
-                      <div className="flex items-center gap-3">
-                        {getPaymentStatusBadge(payment.status)}
-                      </div>
+                      {getPaymentStatusBadge(payment.status)}
                     </div>
                   ))}
                 </div>
               )}
-            </CardContent>
-          </Card>
-
-          {/* Help Section */}
-          <Card>
-            <CardContent className="py-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-medium">Need help with billing?</p>
-                  <p className="text-sm text-muted-foreground">
-                    Contact our support team for assistance
-                  </p>
-                </div>
-                <Button variant="outline" size="sm">
-                  Contact Support
-                  <ArrowRight className="h-4 w-4 ml-2" />
-                </Button>
-              </div>
             </CardContent>
           </Card>
         </div>

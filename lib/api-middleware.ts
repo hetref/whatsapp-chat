@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyApiKey, extractApiKeyFromHeader } from './api-keys';
 import { prisma } from './db';
+import { checkFeatureAccess, checkSubscriptionActive } from './plan-limits';
 
 export interface AuthenticatedRequest {
     userId: string;
@@ -51,6 +52,39 @@ export async function authenticateApiRequest(
                         message: 'Invalid or inactive API key. Please check your API key and try again.'
                     },
                     { status: 401 }
+                )
+            };
+        }
+
+        // Check if user's plan allows API access
+        const hasApiAccess = await checkFeatureAccess(verification.userId, 'apiAccess');
+        if (!hasApiAccess) {
+            return {
+                success: false,
+                response: NextResponse.json(
+                    {
+                        success: false,
+                        error: 'Upgrade Required',
+                        message: 'API access is not available on your current plan. Upgrade to Silver or Gold.'
+                    },
+                    { status: 403 }
+                )
+            };
+        }
+
+        // Check if subscription is active (not paused/expired/cancelled)
+        const subCheck = await checkSubscriptionActive(verification.userId);
+        if (!subCheck.active) {
+            return {
+                success: false,
+                response: NextResponse.json(
+                    {
+                        success: false,
+                        error: 'Messaging Blocked',
+                        message: subCheck.message,
+                        subscriptionStatus: subCheck.status
+                    },
+                    { status: 403 }
                 )
             };
         }

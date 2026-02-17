@@ -5,4 +5,10 @@ declare global {
     }
 }
 
-export { };
+// SessionStorage media cache entry
+interface CachedMediaUrl {
+    url: string;
+    expiresAt: number; // Unix timestamp in ms
+}
+
+export { CachedMediaUrl };

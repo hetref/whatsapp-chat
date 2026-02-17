@@ -7,6 +7,7 @@ import { ChatWindow } from "@/components/chat/chat-window";
 import { Button } from "@/components/ui/button";
 import { AlertCircle, Settings } from "lucide-react";
 import Link from "next/link";
+import { useSubscriptionStatus } from "@/components/subscription-guard";
 
 interface ChatUser {
   id: string;
@@ -60,6 +61,7 @@ export default function ChatPage() {
   const [checkingSetup, setCheckingSetup] = useState(true);
   const [broadcastGroupId, setBroadcastGroupId] = useState<string | null>(null);
   const [broadcastGroupName, setBroadcastGroupName] = useState<string | null>(null);
+  const { messagingBlocked, messagingBlockedReason } = useSubscriptionStatus();
 
   // Define handleBackToUsers early so it can be used in useEffect
   const handleBackToUsers = useCallback(() => {
@@ -703,6 +705,8 @@ export default function ChatPage() {
                 setBroadcastGroupName(null);
               }}
               broadcastGroupName={broadcastGroupName}
+              messagingDisabled={messagingBlocked}
+              messagingDisabledReason={messagingBlockedReason}
             />
           </div>
         </>
@@ -739,6 +743,8 @@ export default function ChatPage() {
                 isLoading={sendingMessage}
                 onUpdateName={handleUpdateName}
                 broadcastGroupName={broadcastGroupName}
+                messagingDisabled={messagingBlocked}
+                messagingDisabledReason={messagingBlockedReason}
               />
             </div>
           )}

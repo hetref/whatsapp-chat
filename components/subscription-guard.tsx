@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useState, ReactNode } from "react";
-import { useRouter, usePathname } from "next/navigation";
+import { usePathname } from "next/navigation";
 import Link from "next/link";
-import { Loader2, AlertTriangle, CreditCard } from "lucide-react";
+import { Loader2, Lock, CreditCard, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -15,49 +15,71 @@ import {
 
 interface SubscriptionGuardProps {
   children: ReactNode;
-  /**
-   * Pages that don't require active subscription
-   * e.g., ["/protected/settings/billing", "/protected/setup"]
-   */
   allowedPaths?: string[];
+}
+
+interface UsageInfo {
+  contactsUsed: number;
+  contactsLimit: number;
+  groupsUsed: number;
+  groupsLimit: number;
+  storageUsed: number;
+  storageLimit: number;
+  storageUsedFormatted: string;
+  storageLimitFormatted: string;
+  bulkSendEnabled: boolean;
+  apiAccessEnabled: boolean;
 }
 
 interface SubscriptionStatus {
   isActive: boolean;
+  planTier: string;
+  usage: UsageInfo | null;
   subscription: {
     status: string;
     currentPeriodEnd: string | null;
   } | null;
   daysRemaining: number | null;
+  messagingBlocked: boolean;
+  messagingBlockedReason: string | null;
 }
+
+// Pages that require specific feature access
+const FEATURE_RESTRICTED_PATHS: Record<string, 'bulkSend' | 'apiAccess'> = {
+  "/protected/bulk-sender": "bulkSend",
+  "/protected/settings": "apiAccess",
+};
 
 /**
  * Subscription Guard Component
- * Wraps protected content and ensures user has an active subscription
- * Shows a paywall for users with inactive/expired subscriptions
+ * In the freemium model, all users can access most pages.
+ * Only specific feature pages (bulk sender, API keys) are locked for free users.
  */
 export function SubscriptionGuard({
   children,
   allowedPaths = [],
 }: SubscriptionGuardProps) {
-  const router = useRouter();
   const pathname = usePathname();
   const [status, setStatus] = useState<SubscriptionStatus | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
-  // Default allowed paths (always accessible without active subscription)
-  const defaultAllowedPaths = [
-    "/protected/settings/billing",
-    "/protected/setup",
+  // Always-allowed paths (exact match only unless they have sub-routes)
+  const alwaysAllowedExact = [
+    "/protected",
+    ...allowedPaths,
   ];
 
-  const allAllowedPaths = [...defaultAllowedPaths, ...allowedPaths];
+  const alwaysAllowedPrefix = [
+    "/protected/settings/billing",
+    "/protected/setup",
+    "/protected/templates",
+  ];
 
-  // Check if current path is allowed without subscription
-  const isAllowedPath = allAllowedPaths.some(
-    (path) => pathname === path || pathname.startsWith(path + "/"),
-  );
+  const isAlwaysAllowed =
+    alwaysAllowedExact.includes(pathname) ||
+    alwaysAllowedPrefix.some(
+      (path) => pathname === path || pathname.startsWith(path + "/"),
+    );
 
   useEffect(() => {
     const checkSubscription = async () => {
@@ -65,15 +87,11 @@ export function SubscriptionGuard({
         setLoading(true);
         const res = await fetch("/api/subscription/status");
         const data = await res.json();
-
-        if (!res.ok) {
-          throw new Error(data.error || "Failed to check subscription");
+        if (res.ok) {
+          setStatus(data);
         }
-
-        setStatus(data);
-      } catch (err: any) {
+      } catch (err) {
         console.error("Subscription check error:", err);
-        setError(err.message);
       } finally {
         setLoading(false);
       }
@@ -82,7 +100,6 @@ export function SubscriptionGuard({
     checkSubscription();
   }, [pathname]);
 
-  // Show loading state
   if (loading) {
     return (
       <div className="h-full flex items-center justify-center">
@@ -91,66 +108,105 @@ export function SubscriptionGuard({
     );
   }
 
-  // If path is allowed or subscription is active, render children
-  if (isAllowedPath || status?.isActive) {
+  // Always allow certain paths
+  if (isAlwaysAllowed) {
     return <>{children}</>;
   }
 
-  // Show paywall for inactive subscriptions
-  return (
-    <div className="h-full flex items-center justify-center p-6">
-      <Card className="max-w-md w-full">
-        <CardHeader className="text-center">
-          <div className="mx-auto w-12 h-12 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center mb-4">
-            <AlertTriangle className="h-6 w-6 text-amber-600 dark:text-amber-500" />
-          </div>
-          <CardTitle>Subscription Required</CardTitle>
-          <CardDescription>
-            {status?.subscription?.status === "EXPIRED"
-              ? "Your subscription has expired. Please renew to continue using WaChat."
-              : status?.subscription?.status === "CANCELLED"
-                ? "Your subscription was cancelled. Please resubscribe to regain access."
-                : "You need an active subscription to access this feature."}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="bg-muted/50 rounded-lg p-4 text-center">
-            <p className="text-2xl font-bold">₹500</p>
-            <p className="text-sm text-muted-foreground">per month</p>
-          </div>
-
-          <Button className="w-full" asChild>
-            <Link href="/protected/settings/billing">
-              <CreditCard className="h-4 w-4 mr-2" />
-              Go to Billing
-            </Link>
-          </Button>
-
-          <Button variant="outline" className="w-full" asChild>
-            <Link href="/pricing">View Pricing Details</Link>
-          </Button>
-        </CardContent>
-      </Card>
-    </div>
+  // Check feature-restricted paths
+  const requiredFeature = Object.entries(FEATURE_RESTRICTED_PATHS).find(
+    ([path]) => pathname === path || pathname.startsWith(path + "/"),
   );
+
+  if (requiredFeature) {
+    const [, feature] = requiredFeature;
+
+    // If status or usage is unavailable, block access by default (fail-closed)
+    if (!status?.usage) {
+      return (
+        <div className="h-full flex items-center justify-center p-6">
+          <Card className="max-w-md w-full">
+            <CardHeader className="text-center">
+              <div className="mx-auto w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-4">
+                <Lock className="h-6 w-6 text-muted-foreground" />
+              </div>
+              <CardTitle className="text-lg">Upgrade Required</CardTitle>
+              <CardDescription>
+                {feature === "bulkSend"
+                  ? "Bulk messaging is available on Silver and Gold plans."
+                  : "API access is available on Silver and Gold plans."}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <Button className="w-full" asChild>
+                <Link href="/protected/settings/billing">
+                  <CreditCard className="h-4 w-4 mr-2" />
+                  View Plans
+                  <ArrowRight className="h-4 w-4 ml-2" />
+                </Link>
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      );
+    }
+
+    const hasAccess =
+      feature === "bulkSend"
+        ? status.usage.bulkSendEnabled
+        : status.usage.apiAccessEnabled;
+
+    if (!hasAccess) {
+      return (
+        <div className="h-full flex items-center justify-center p-6">
+          <Card className="max-w-md w-full">
+            <CardHeader className="text-center">
+              <div className="mx-auto w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-4">
+                <Lock className="h-6 w-6 text-muted-foreground" />
+              </div>
+              <CardTitle className="text-lg">Upgrade Required</CardTitle>
+              <CardDescription>
+                {feature === "bulkSend"
+                  ? "Bulk messaging is available on Silver and Gold plans."
+                  : "API access is available on Silver and Gold plans."}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <Button className="w-full" asChild>
+                <Link href="/protected/settings/billing">
+                  <CreditCard className="h-4 w-4 mr-2" />
+                  View Plans
+                  <ArrowRight className="h-4 w-4 ml-2" />
+                </Link>
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      );
+    }
+  }
+
+  // All other pages are accessible to everyone
+  return <>{children}</>;
 }
 
 /**
- * Hook to check subscription status
- * Lightweight version for conditional UI rendering
+ * Hook to check subscription status with plan info
  */
 export function useSubscriptionStatus() {
-  const [isActive, setIsActive] = useState<boolean | null>(null);
+  const [data, setData] = useState<SubscriptionStatus | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const check = async () => {
       try {
         const res = await fetch("/api/subscription/status");
-        const data = await res.json();
-        setIsActive(data.isActive);
-      } catch (err) {
-        setIsActive(false);
+        const result = await res.json();
+        if (res.ok) {
+          setData(result);
+        }
+      } catch {
+        // Silently fail
       } finally {
         setLoading(false);
       }
@@ -159,5 +215,13 @@ export function useSubscriptionStatus() {
     check();
   }, []);
 
-  return { isActive, loading };
+  return {
+    isActive: data?.isActive ?? null,
+    planTier: data?.planTier ?? "FREE",
+    usage: data?.usage ?? null,
+    subscriptionStatus: data?.subscription?.status ?? null,
+    messagingBlocked: data?.messagingBlocked ?? false,
+    messagingBlockedReason: data?.messagingBlockedReason ?? null,
+    loading,
+  };
 }

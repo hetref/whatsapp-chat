@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { prisma } from '@/lib/db';
 import { generateApiKey, hashApiKey, maskApiKey, getPartialKey, decryptApiKey } from '@/lib/api-keys';
+import { checkFeatureAccess } from '@/lib/plan-limits';
 
 /**
  * GET - List all API keys for the authenticated user OR reveal a specific key
@@ -146,6 +147,15 @@ export async function POST(request: NextRequest) {
             return NextResponse.json(
                 { success: false, error: 'Validation Error', message: 'API key name must be 100 characters or less' },
                 { status: 400 }
+            );
+        }
+
+        // Check if user has API access enabled
+        const hasApiAccess = await checkFeatureAccess(userId, 'apiAccess');
+        if (!hasApiAccess) {
+            return NextResponse.json(
+                { success: false, error: 'Upgrade Required', message: 'API access is not available on your current plan. Upgrade to Silver or Gold to use API keys.' },
+                { status: 403 }
             );
         }
 

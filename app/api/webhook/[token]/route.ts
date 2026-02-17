@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { downloadAndUploadToS3 } from '@/lib/aws-s3';
+import { incrementStorageUsed, checkSubscriptionActive } from '@/lib/plan-limits';
 
 export const runtime = 'nodejs';
 
@@ -51,8 +52,6 @@ export async function GET(
     const mode = searchParams.get('hub.mode');
     const verifyToken = searchParams.get('hub.verify_token');
     const challenge = searchParams.get('hub.challenge');
-    console.log("SEARCHPARAMS:", mode, verifyToken, challenge);
-
     console.log('Webhook verification attempt for token:', webhookToken?.substring(0, 8) + '...');
 
     if (mode !== 'subscribe') {
@@ -77,21 +76,8 @@ export async function GET(
     });
     const error = null;
 
-    console.log("SETTINGS:", settings, error, webhookToken);
-
     if (error || !settings) {
       console.error('Webhook verification failed: webhook token not found');
-      console.error('Error details:', error);
-      console.error('Looking for webhook_token:', webhookToken);
-
-      // Check if there are any settings for debugging
-      const allSettings = await prisma.userSettings.findMany({
-        select: { id: true, webhookToken: true },
-        take: 1
-      });
-
-      console.error('Debug - Sample settings:', allSettings);
-
       return new NextResponse('Forbidden', { status: 403 });
     }
 
@@ -261,15 +247,6 @@ export async function POST(
 
     if (!userSettings) {
       console.error('No user found for webhook token:', webhookToken?.substring(0, 8) + '...');
-
-      // Debug: Check if there are any settings
-      const debugSettings = await prisma.userSettings.findMany({
-        select: { id: true, webhookToken: true },
-        take: 1
-      });
-
-      console.error('Debug - Sample settings:', debugSettings);
-
       // Still acknowledge to avoid retries
       return new NextResponse('OK', { status: 200 });
     }
@@ -279,6 +256,13 @@ export async function POST(
     const apiVersion = userSettings.apiVersion || 'v23.0';
 
     console.log('Found business owner:', businessOwnerId);
+
+    // Check if subscription is active - block receiving when paused/expired/cancelled
+    const subCheck = await checkSubscriptionActive(businessOwnerId);
+    if (!subCheck.active) {
+      console.log(`⛔ Incoming message blocked for user ${businessOwnerId}: subscription ${subCheck.status}`);
+      return new NextResponse('OK', { status: 200 });
+    }
 
     // Extract message data from WhatsApp webhook payload
     const entry = body.entry?.[0];
@@ -311,7 +295,6 @@ export async function POST(
       const { content, messageType, mediaData } = processMessageContent(message);
 
       // Handle media upload to S3 if it's a media message
-      let s3MediaUrl = null;
       let s3UploadSuccess = false;
 
       if (mediaData && mediaData.id && accessToken) {
@@ -334,17 +317,18 @@ export async function POST(
             }
 
             // Download from WhatsApp and upload to S3
-            s3MediaUrl = await downloadAndUploadToS3(
+            const s3UploadedBytes = await downloadAndUploadToS3(
               whatsappMediaUrl,
               phoneNumber,
               mediaData.id,
               mediaData.mime_type || 'application/octet-stream',
               accessToken
             );
+            s3UploadSuccess = s3UploadedBytes > 0;
 
-            if (s3MediaUrl) {
-              console.log(`Successfully uploaded ${messageType} to S3: ${s3MediaUrl}`);
-              s3UploadSuccess = true;
+            if (s3UploadSuccess) {
+              console.log(`Successfully uploaded ${messageType} to S3`);
+              await incrementStorageUsed(businessOwnerId, s3UploadedBytes);
             } else {
               console.error(`Failed to upload ${messageType} to S3`);
             }
@@ -404,7 +388,7 @@ export async function POST(
 
       console.log(`Message receiver identified as: ${receiverId}`);
 
-      // Prepare message object with S3 URL
+      // Prepare message object - metadata only, no presigned URL
       const messageObject = {
         id: message.id,
         user_id: receiverId, // Business owner (platform user)
@@ -416,8 +400,8 @@ export async function POST(
         message_type: messageType,
         media_data: mediaData ? JSON.stringify({
           ...mediaData,
-          media_url: s3MediaUrl,
           s3_uploaded: s3UploadSuccess,
+          s3_owner_id: phoneNumber, // Store S3 owner for URL generation
           upload_timestamp: s3UploadSuccess ? new Date().toISOString() : null,
           upload_error: !s3UploadSuccess && mediaData.id ? 'Failed to upload to S3' : null
         }) : null
@@ -440,11 +424,10 @@ export async function POST(
         });
         console.log(`${messageType} message stored successfully: ${message.id} (from: ${phoneNumber} to: ${receiverId})`);
         if (mediaData) {
-          console.log('Media data stored:', {
+          console.log('Media metadata stored:', {
             type: mediaData.type,
             id: mediaData.id,
-            s3_uploaded: s3UploadSuccess,
-            has_s3_url: !!s3MediaUrl
+            s3_uploaded: s3UploadSuccess
           });
         }
       } catch (messageError) {

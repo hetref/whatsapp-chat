@@ -64,6 +64,12 @@ export async function POST(req: NextRequest) {
       },
     });
 
+    // Deactivate user while paused (matches webhook behavior)
+    await prisma.user.update({
+      where: { id: userId },
+      data: { isActive: false },
+    });
+
     return NextResponse.json({
       success: true,
       message: 'Subscription paused successfully. You can resume anytime.',
@@ -78,7 +84,7 @@ export async function POST(req: NextRequest) {
   } catch (error: any) {
     console.error('Error pausing subscription:', error);
     return NextResponse.json(
-      { error: error.message || 'Failed to pause subscription' },
+      { error: 'Failed to pause subscription' },
       { status: 500 }
     );
   }

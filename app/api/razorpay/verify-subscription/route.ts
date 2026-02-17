@@ -12,6 +12,8 @@ import {
   fetchPaymentDetails,
   calculateBillingPeriod,
 } from '@/lib/razorpay';
+import { applyPlanLimits } from '@/lib/plan-limits';
+import type { PlanTier } from '@/lib/plan-limits';
 
 interface VerifySubscriptionBody {
   razorpay_payment_id: string;
@@ -57,7 +59,7 @@ export async function POST(req: NextRequest) {
 
     // Fetch subscription details from Razorpay
     const rzpSubscription = await fetchSubscriptionDetails(razorpay_subscription_id);
-    
+
     // Valid statuses after payment: created (just paid), authenticated, active
     // Razorpay may take a moment to update status from created → active
     const validStatuses = ['created', 'authenticated', 'active'];
@@ -122,7 +124,9 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // Activate user account
+    // Activate user account and apply plan limits
+    const planTier = (user.subscription.plan.name as string).toUpperCase() as PlanTier;
+    await applyPlanLimits(userId, planTier);
     await prisma.user.update({
       where: { id: userId },
       data: { isActive: true },
@@ -137,7 +141,13 @@ export async function POST(req: NextRequest) {
         currentPeriodStart: updatedSubscription.currentPeriodStart,
         currentPeriodEnd: updatedSubscription.currentPeriodEnd,
         autoRenew: updatedSubscription.autoRenew,
-        plan: user.subscription.plan,
+        plan: {
+          id: user.subscription.plan.id,
+          name: user.subscription.plan.name,
+          displayName: user.subscription.plan.displayName,
+          price: Number(user.subscription.plan.price),
+          currency: user.subscription.plan.currency,
+        },
       },
       payment: {
         id: paymentRecord.id,
@@ -149,7 +159,7 @@ export async function POST(req: NextRequest) {
   } catch (error: any) {
     console.error('Error verifying subscription:', error);
     return NextResponse.json(
-      { error: error.message || 'Failed to verify subscription' },
+      { error: 'Failed to verify subscription' },
       { status: 500 }
     );
   }

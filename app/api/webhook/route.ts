@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { downloadAndUploadToS3 } from '@/lib/aws-s3';
+import { incrementStorageUsed, checkSubscriptionActive } from '@/lib/plan-limits';
 
 export const runtime = 'nodejs';
 
@@ -256,22 +257,6 @@ export async function POST(request: NextRequest) {
 
     if (!userSettings) {
       console.error('No user found for phone_number_id:', phoneNumberIdStr);
-
-      // Debug: Let's check what phone_number_ids exist in the database
-      const allSettings = await prisma.userSettings.findMany({
-        where: { phoneNumberId: { not: null } },
-        select: { id: true, phoneNumberId: true },
-        take: 5
-      });
-
-      if (allSettings.length > 0) {
-        console.log('Available phone_number_ids in database:', allSettings.map(s => ({
-          id: s.id,
-          phone_number_id: s.phoneNumberId,
-          type: typeof s.phoneNumberId
-        })));
-      }
-
       // Still acknowledge the webhook to avoid retries
       return new NextResponse('OK', { status: 200 });
     }
@@ -281,6 +266,13 @@ export async function POST(request: NextRequest) {
     const apiVersion = userSettings.apiVersion || 'v23.0';
 
     console.log('Found business owner:', businessOwnerId);
+
+    // Check if subscription is active - block receiving when paused/expired/cancelled
+    const subCheck = await checkSubscriptionActive(businessOwnerId);
+    if (!subCheck.active) {
+      console.log(`⛔ Incoming message blocked for user ${businessOwnerId}: subscription ${subCheck.status}`);
+      return new NextResponse('OK', { status: 200 });
+    }
 
     // Process each incoming message
     for (const message of messages) {
@@ -297,7 +289,6 @@ export async function POST(request: NextRequest) {
       const { content, messageType, mediaData } = processMessageContent(message);
 
       // Handle media upload to S3 if it's a media message
-      let s3MediaUrl = null;
       let s3UploadSuccess = false;
 
       if (mediaData && mediaData.id && accessToken) {
@@ -320,17 +311,19 @@ export async function POST(request: NextRequest) {
             }
 
             // Download from WhatsApp and upload to S3
-            s3MediaUrl = await downloadAndUploadToS3(
+            const s3UploadedBytes = await downloadAndUploadToS3(
               whatsappMediaUrl,
               phoneNumber, // sender ID for folder structure
               mediaData.id, // media ID for filename
               mediaData.mime_type || 'application/octet-stream',
               accessToken // Pass user-specific access token for authentication
             );
+            s3UploadSuccess = s3UploadedBytes > 0;
 
-            if (s3MediaUrl) {
-              console.log(`Successfully uploaded ${messageType} to S3: ${s3MediaUrl}`);
-              s3UploadSuccess = true;
+            if (s3UploadSuccess) {
+              console.log(`Successfully uploaded ${messageType} to S3`);
+              // Track storage usage for this user
+              await incrementStorageUsed(businessOwnerId, s3UploadedBytes);
             } else {
               console.error(`Failed to upload ${messageType} to S3`);
             }
@@ -391,7 +384,7 @@ export async function POST(request: NextRequest) {
 
       console.log(`Message receiver identified as: ${receiverId}`);
 
-      // Prepare message object for database with S3 URL
+      // Prepare message object for database - metadata only, no presigned URL
       const messageObject = {
         id: message.id, // Use WhatsApp message ID
         user_id: receiverId, // Business owner (platform user)
@@ -403,14 +396,14 @@ export async function POST(request: NextRequest) {
         message_type: messageType,
         media_data: mediaData ? JSON.stringify({
           ...mediaData,
-          media_url: s3MediaUrl, // Use S3 URL instead of WhatsApp URL
-          s3_uploaded: s3UploadSuccess, // Use the success flag instead of just checking URL presence
+          s3_uploaded: s3UploadSuccess,
+          s3_owner_id: phoneNumber, // Store S3 owner for URL generation
           upload_timestamp: s3UploadSuccess ? new Date().toISOString() : null,
           upload_error: !s3UploadSuccess && mediaData.id ? 'Failed to upload to S3' : null
         }) : null
       };
 
-      // Store the incoming message with S3 media URL
+      // Store the incoming message
       try {
         await prisma.message.create({
           data: {
@@ -427,12 +420,10 @@ export async function POST(request: NextRequest) {
         });
         console.log(`${messageType} message stored successfully: ${message.id} (from: ${phoneNumber} to: ${receiverId})`);
         if (mediaData) {
-          console.log('Media data stored with S3 URL:', {
+          console.log('Media metadata stored:', {
             type: mediaData.type,
             id: mediaData.id,
-            s3_uploaded: s3UploadSuccess,
-            has_s3_url: !!s3MediaUrl,
-            upload_success: s3UploadSuccess
+            s3_uploaded: s3UploadSuccess
           });
         }
       } catch (messageError: unknown) {

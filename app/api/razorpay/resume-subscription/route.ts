@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { prisma } from '@/lib/db';
 import { resumeRazorpaySubscription } from '@/lib/razorpay';
+import { applyPlanLimits, PlanTier } from '@/lib/plan-limits';
 
 export async function POST(req: NextRequest) {
   try {
@@ -23,7 +24,9 @@ export async function POST(req: NextRequest) {
     const user = await prisma.user.findUnique({
       where: { id: userId },
       include: {
-        subscription: true,
+        subscription: {
+          include: { plan: true },
+        },
       },
     });
 
@@ -64,11 +67,15 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // Activate user
+    // Activate user and re-apply plan limits
     await prisma.user.update({
       where: { id: userId },
       data: { isActive: true },
     });
+
+    // Re-apply the correct plan limits for the subscription tier
+    const planTier = (subscription.plan?.name as PlanTier) || 'SILVER';
+    await applyPlanLimits(userId, planTier);
 
     return NextResponse.json({
       success: true,
@@ -84,7 +91,7 @@ export async function POST(req: NextRequest) {
   } catch (error: any) {
     console.error('Error resuming subscription:', error);
     return NextResponse.json(
-      { error: error.message || 'Failed to resume subscription' },
+      { error: 'Failed to resume subscription' },
       { status: 500 }
     );
   }

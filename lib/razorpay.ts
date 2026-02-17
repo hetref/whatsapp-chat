@@ -7,12 +7,14 @@ import Razorpay from 'razorpay';
 import crypto from 'crypto';
 
 // Environment variables validation
-const RAZORPAY_KEY_ID = process.env.RAZORPAY_KEY_ID;
+const NEXT_PUBLIC_RAZORPAY_KEY_ID = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID;
 const RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET;
 const RAZORPAY_WEBHOOK_SECRET = process.env.RAZORPAY_WEBHOOK_SECRET;
-const RAZORPAY_PLAN_ID = process.env.RAZORPAY_PLAN_ID; // Monthly plan ID from Razorpay
+const RAZORPAY_PLAN_ID = process.env.RAZORPAY_PLAN_ID; // Legacy / Silver plan ID
+const RAZORPAY_SILVER_PLAN_ID = process.env.RAZORPAY_SILVER_PLAN_ID;
+const RAZORPAY_GOLD_PLAN_ID = process.env.RAZORPAY_GOLD_PLAN_ID;
 
-if (!RAZORPAY_KEY_ID || !RAZORPAY_KEY_SECRET) {
+if (!NEXT_PUBLIC_RAZORPAY_KEY_ID || !RAZORPAY_KEY_SECRET) {
   console.warn('⚠️ Razorpay credentials not configured. Payment features will be disabled.');
 }
 
@@ -20,12 +22,12 @@ if (!RAZORPAY_KEY_ID || !RAZORPAY_KEY_SECRET) {
  * Initialize Razorpay instance
  */
 export function getRazorpayInstance(): Razorpay | null {
-  if (!RAZORPAY_KEY_ID || !RAZORPAY_KEY_SECRET) {
+  if (!NEXT_PUBLIC_RAZORPAY_KEY_ID || !RAZORPAY_KEY_SECRET) {
     return null;
   }
 
   return new Razorpay({
-    key_id: RAZORPAY_KEY_ID,
+    key_id: NEXT_PUBLIC_RAZORPAY_KEY_ID,
     key_secret: RAZORPAY_KEY_SECRET,
   });
 }
@@ -38,24 +40,26 @@ export async function createRazorpaySubscription(
   userId: string,
   customerId?: string,
   options?: {
-    totalCount?: number; // Number of billing cycles (default: 120 = 10 years)
-    startAt?: number; // Unix timestamp for first charge (default: now)
-    expireBy?: number; // Unix timestamp for link expiry
+    totalCount?: number;
+    startAt?: number;
+    expireBy?: number;
+    planTier?: 'SILVER' | 'GOLD';
   }
 ) {
   const razorpay = getRazorpayInstance();
-  
+
   if (!razorpay) {
     throw new Error('Razorpay not configured');
   }
 
-  if (!RAZORPAY_PLAN_ID) {
-    throw new Error('Razorpay Plan ID not configured. Please create a plan in Razorpay Dashboard.');
+  const planId = getRazorpayPlanId(options?.planTier);
+  if (!planId) {
+    throw new Error('Razorpay Plan ID not configured for the selected tier.');
   }
 
   try {
     const subscriptionData: any = {
-      plan_id: RAZORPAY_PLAN_ID,
+      plan_id: planId,
       total_count: options?.totalCount || 120, // 10 years max
       quantity: 1,
       customer_notify: 1, // Razorpay sends email/SMS
@@ -93,7 +97,7 @@ export async function createRazorpaySubscription(
  */
 export async function fetchSubscriptionDetails(subscriptionId: string) {
   const razorpay = getRazorpayInstance();
-  
+
   if (!razorpay) {
     throw new Error('Razorpay not configured');
   }
@@ -116,7 +120,7 @@ export async function cancelRazorpaySubscription(
   cancelAtCycleEnd: boolean = true
 ) {
   const razorpay = getRazorpayInstance();
-  
+
   if (!razorpay) {
     throw new Error('Razorpay not configured');
   }
@@ -135,7 +139,7 @@ export async function cancelRazorpaySubscription(
  */
 export async function pauseRazorpaySubscription(subscriptionId: string) {
   const razorpay = getRazorpayInstance();
-  
+
   if (!razorpay) {
     throw new Error('Razorpay not configured');
   }
@@ -154,7 +158,7 @@ export async function pauseRazorpaySubscription(subscriptionId: string) {
  */
 export async function resumeRazorpaySubscription(subscriptionId: string) {
   const razorpay = getRazorpayInstance();
-  
+
   if (!razorpay) {
     throw new Error('Razorpay not configured');
   }
@@ -173,7 +177,7 @@ export async function resumeRazorpaySubscription(subscriptionId: string) {
  */
 export async function createRazorpayOrder(amount: number, userId: string) {
   const razorpay = getRazorpayInstance();
-  
+
   if (!razorpay) {
     throw new Error('Razorpay not configured');
   }
@@ -182,7 +186,7 @@ export async function createRazorpayOrder(amount: number, userId: string) {
     const shortId = userId.slice(-8);
     const timestamp = Date.now().toString().slice(-10);
     const receipt = `rcpt_${shortId}_${timestamp}`;
-    
+
     const order = await razorpay.orders.create({
       amount: Math.round(amount * 100),
       currency: 'INR',
@@ -281,7 +285,7 @@ export function verifyWebhookSignature(
  */
 export async function fetchPaymentDetails(paymentId: string) {
   const razorpay = getRazorpayInstance();
-  
+
   if (!razorpay) {
     throw new Error('Razorpay not configured');
   }
@@ -304,7 +308,7 @@ export async function createRazorpayCustomer(
   contact?: string
 ) {
   const razorpay = getRazorpayInstance();
-  
+
   if (!razorpay) {
     throw new Error('Razorpay not configured');
   }
@@ -356,14 +360,17 @@ export function formatAmount(amount: number, currency: string = 'INR'): string {
  * Check if Razorpay is properly configured
  */
 export function isRazorpayConfigured(): boolean {
-  return !!(RAZORPAY_KEY_ID && RAZORPAY_KEY_SECRET);
+  return !!(NEXT_PUBLIC_RAZORPAY_KEY_ID && RAZORPAY_KEY_SECRET);
 }
 
 /**
- * Get Razorpay Plan ID
+ * Get Razorpay Plan ID for a specific plan tier
  */
-export function getRazorpayPlanId(): string | undefined {
-  return RAZORPAY_PLAN_ID;
+export function getRazorpayPlanId(tier?: 'SILVER' | 'GOLD'): string | undefined {
+  if (tier === 'GOLD') return RAZORPAY_GOLD_PLAN_ID;
+  if (tier === 'SILVER') return RAZORPAY_SILVER_PLAN_ID || RAZORPAY_PLAN_ID;
+  // Default to Silver / legacy
+  return RAZORPAY_SILVER_PLAN_ID || RAZORPAY_PLAN_ID;
 }
 
 // Keep for backwards compatibility

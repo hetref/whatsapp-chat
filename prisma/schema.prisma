@@ -16,10 +16,17 @@ datasource db {
 /// Platform user (business owner) with Clerk authentication ID only.
 /// These are the actual users of your application.
 model User {
-  id        String   @id @db.Text // Clerk user ID (e.g., "user_...")
-  isActive  Boolean  @default(true) @map("is_active") // Account active status (for SaaS)
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id                String   @id @db.Text // Clerk user ID (e.g., "user_...")
+  isActive          Boolean  @default(true) @map("is_active") // Account active status (for SaaS)
+  storageUsedBytes  BigInt   @default(0) @map("storage_used_bytes") // S3 storage used in bytes
+  planTier          PlanTier @default(FREE) @map("plan_tier") // Current plan tier
+  contactsLimit     Int      @default(10) @map("contacts_limit") // Max contacts allowed (overridable for enterprise)
+  groupsLimit       Int      @default(2) @map("groups_limit") // Max broadcast groups allowed
+  storageLimitBytes BigInt   @default(5368709120) @map("storage_limit_bytes") // 5GB default (overridable)
+  bulkSendEnabled   Boolean  @default(false) @map("bulk_send_enabled") // Bulk messaging access
+  apiAccessEnabled  Boolean  @default(false) @map("api_access_enabled") // API key access
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
 
   // Relations
   contacts Contact[] // WhatsApp contacts owned by this user
@@ -27,13 +34,19 @@ model User {
   groups   ChatGroup[] // Broadcast groups owned by this user
   settings UserSettings? // WhatsApp API settings for this user
   apiKeys  ApiKey[] // API keys for this user
-  
+
   // SaaS Relations
   subscription Subscription? // User's subscription (null until first payment)
   payments     Payment[] // Payment history
   usageRecords UsageRecord[] // Usage analytics
 
   @@map("users")
+}
+
+enum PlanTier {
+  FREE
+  SILVER
+  GOLD
 }
 
 /// WhatsApp contact (phone number) owned by a specific platform user.
@@ -167,17 +180,23 @@ model ApiKey {
   @@map("api_keys")
 }
 
-/// Subscription plan - Single ₹500/month premium plan
+/// Subscription plan - FREE / SILVER / GOLD
 model SubscriptionPlan {
-  id          String   @id @default(uuid()) @db.Uuid
-  name        String   @unique // "PREMIUM"
-  displayName String   @map("display_name")
-  description String?
-  price       Decimal  @db.Decimal(10, 2) // ₹500
-  currency    String   @default("INR")
-  isActive    Boolean  @default(true) @map("is_active")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  id                String   @id @default(uuid()) @db.Uuid
+  name              String   @unique // "FREE", "SILVER", "GOLD"
+  displayName       String   @map("display_name")
+  description       String?
+  price             Decimal  @db.Decimal(10, 2)
+  currency          String   @default("INR")
+  contactsLimit     Int      @default(10) @map("contacts_limit")
+  groupsLimit       Int      @default(2) @map("groups_limit")
+  storageLimitBytes BigInt   @default(5368709120) @map("storage_limit_bytes") // bytes
+  bulkSendEnabled   Boolean  @default(false) @map("bulk_send_enabled")
+  apiAccessEnabled  Boolean  @default(false) @map("api_access_enabled")
+  razorpayPlanId    String?  @map("razorpay_plan_id") // null for FREE
+  isActive          Boolean  @default(true) @map("is_active")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
 
   // Relations
   subscriptions Subscription[]
@@ -202,7 +221,7 @@ model Subscription {
   updatedAt              DateTime           @updatedAt @map("updated_at")
 
   // Relations
-  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   plan         SubscriptionPlan @relation(fields: [planId], references: [id])
   payments     Payment[]
   usageRecords UsageRecord[]
@@ -214,12 +233,12 @@ model Subscription {
 }
 
 enum SubscriptionStatus {
-  INACTIVE  // Not paid yet
-  ACTIVE    // Paid and active
-  PAST_DUE  // Payment failed
+  INACTIVE // Not paid yet
+  ACTIVE // Paid and active
+  PAST_DUE // Payment failed
   CANCELLED // User cancelled
-  EXPIRED   // Subscription ended
-  PAUSED    // User paused
+  EXPIRED // Subscription ended
+  PAUSED // User paused
 }
 
 /// Payment records

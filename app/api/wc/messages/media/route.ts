@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authenticateApiRequest, createErrorResponse, createSuccessResponse } from '@/lib/api-middleware';
 import { prisma } from '@/lib/db';
 import { uploadFileToS3, isWhatsAppSupportedFileType } from '@/lib/aws-s3';
+import { incrementStorageUsed } from '@/lib/plan-limits';
 
 export const runtime = 'nodejs';
 
@@ -278,15 +279,20 @@ export async function POST(request: NextRequest) {
                 }
 
                 // Upload to S3 for our records
-                let s3Url: string | null = null;
+                let s3Uploaded = false;
+                let mediaIdForS3 = '';
                 try {
-                    const mediaIdForS3 = `wc_upload_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-                    s3Url = await uploadFileToS3(file, userId, mediaIdForS3);
+                    mediaIdForS3 = `wc_upload_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                    const s3UploadedBytes = await uploadFileToS3(file, userId, mediaIdForS3);
+                    s3Uploaded = s3UploadedBytes > 0;
+                    if (s3Uploaded) {
+                        await incrementStorageUsed(userId, s3UploadedBytes);
+                    }
                 } catch (s3Error) {
                     console.error('[WC API] S3 upload failed (continuing anyway):', s3Error);
                 }
 
-                // Store in database
+                // Store in database - metadata only, no presigned URL
                 try {
                     await prisma.message.create({
                         data: {
@@ -300,11 +306,12 @@ export async function POST(request: NextRequest) {
                             messageType: mediaType,
                             mediaData: JSON.stringify({
                                 type: mediaType,
+                                id: mediaIdForS3,
                                 mime_type: file.type,
                                 filename: file.name,
                                 caption: caption,
-                                media_url: s3Url,
-                                s3_uploaded: !!s3Url,
+                                s3_uploaded: s3Uploaded,
+                                s3_owner_id: userId,
                                 whatsapp_media_id: mediaUpload.id,
                                 upload_timestamp: timestamp.toISOString()
                             })
@@ -321,7 +328,7 @@ export async function POST(request: NextRequest) {
                     media_type: mediaType,
                     media_id: mediaUpload.id,
                     caption: caption || null,
-                    s3_uploaded: !!s3Url
+                    s3_uploaded: s3Uploaded
                 });
 
             } catch (error) {

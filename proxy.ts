@@ -14,6 +14,7 @@ const isPublicRoute = createRouteMatcher([
     "/api/webhook/(.*)",
     "/api/flow-endpoint/(.*)",
     "/api/wc/(.*)", // WhatsApp Cloud webhooks
+    "/api/razorpay/webhook", // Razorpay webhook (verified by webhook signature)
 ]);
 
 export default clerkMiddleware(async (auth, req) => {

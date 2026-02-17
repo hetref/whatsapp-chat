@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { prisma } from '@/lib/db';
+import { checkFeatureAccess, checkSubscriptionActive } from '@/lib/plan-limits';
 
 /**
  * POST - Broadcast a message to all group members
@@ -17,6 +18,24 @@ export async function POST(
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
+      );
+    }
+
+    // Check subscription is active (not paused/expired/cancelled)
+    const subCheck = await checkSubscriptionActive(userId);
+    if (!subCheck.active) {
+      return NextResponse.json(
+        { error: 'Messaging blocked', message: subCheck.message, subscriptionStatus: subCheck.status },
+        { status: 403 }
+      );
+    }
+
+    // Check if user has bulk send access
+    const hasBulkAccess = await checkFeatureAccess(userId, 'bulkSend');
+    if (!hasBulkAccess) {
+      return NextResponse.json(
+        { error: 'Bulk messaging requires a Silver or Gold plan. Please upgrade.' },
+        { status: 403 }
       );
     }
 

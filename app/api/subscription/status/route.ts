@@ -9,6 +9,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { prisma } from '@/lib/db';
+import { getUserPlanInfo, formatBytes, checkSubscriptionActive } from '@/lib/plan-limits';
 
 export async function GET(req: NextRequest) {
   try {
@@ -59,23 +60,57 @@ export async function GET(req: NextRequest) {
       console.log(`✅ Auto-created user in database: ${userId}`);
     }
 
-    // If no subscription, return inactive status
+    // If no subscription, return as free user
     if (!user.subscription) {
+      const planInfo = await getUserPlanInfo(userId);
+      const subActiveCheck = await checkSubscriptionActive(userId);
       return NextResponse.json({
         hasSubscription: false,
-        isActive: false,
+        isActive: true, // Free users are active
         daysRemaining: null,
-        status: 'INACTIVE',
-        message: 'No subscription found. Please subscribe to access all features.',
+        status: 'FREE',
+        planTier: 'FREE',
+        messagingBlocked: !subActiveCheck.active,
+        messagingBlockedReason: subActiveCheck.active ? null : subActiveCheck.message,
+        usage: planInfo ? {
+          contactsUsed: planInfo.contactsUsed,
+          contactsLimit: planInfo.contactsLimit,
+          groupsUsed: planInfo.groupsUsed,
+          groupsLimit: planInfo.groupsLimit,
+          storageUsed: Number(planInfo.storageUsedBytes),
+          storageLimit: Number(planInfo.storageLimitBytes),
+          storageUsedFormatted: formatBytes(planInfo.storageUsedBytes),
+          storageLimitFormatted: formatBytes(planInfo.storageLimitBytes),
+          bulkSendEnabled: planInfo.bulkSendEnabled,
+          apiAccessEnabled: planInfo.apiAccessEnabled,
+        } : null,
+        message: 'Free plan. Upgrade for more features.',
       });
     }
 
-    // For INACTIVE subscriptions (not yet paid), don't check expiration
+    // For INACTIVE subscriptions (not yet paid), treat as free
     if (user.subscription.status === 'INACTIVE') {
+      const planInfo = await getUserPlanInfo(userId);
+      const subActiveCheck = await checkSubscriptionActive(userId);
       return NextResponse.json({
         hasSubscription: true,
-        isActive: false,
+        isActive: true, // Free users are active
         daysRemaining: null,
+        planTier: user.planTier || 'FREE',
+        messagingBlocked: !subActiveCheck.active,
+        messagingBlockedReason: subActiveCheck.active ? null : subActiveCheck.message,
+        usage: planInfo ? {
+          contactsUsed: planInfo.contactsUsed,
+          contactsLimit: planInfo.contactsLimit,
+          groupsUsed: planInfo.groupsUsed,
+          groupsLimit: planInfo.groupsLimit,
+          storageUsed: Number(planInfo.storageUsedBytes),
+          storageLimit: Number(planInfo.storageLimitBytes),
+          storageUsedFormatted: formatBytes(planInfo.storageUsedBytes),
+          storageLimitFormatted: formatBytes(planInfo.storageLimitBytes),
+          bulkSendEnabled: planInfo.bulkSendEnabled,
+          apiAccessEnabled: planInfo.apiAccessEnabled,
+        } : null,
         subscription: {
           id: user.subscription.id,
           status: 'INACTIVE',
@@ -101,7 +136,7 @@ export async function GET(req: NextRequest) {
 
     // Check if subscription billing period has ended (only for ACTIVE/CANCELLED)
     const now = new Date();
-    const isExpired = user.subscription.currentPeriodEnd 
+    const isExpired = user.subscription.currentPeriodEnd
       ? new Date(user.subscription.currentPeriodEnd) < now
       : false; // If no end date and already active, not expired yet
 
@@ -118,16 +153,15 @@ export async function GET(req: NextRequest) {
     // 1. Status is ACTIVE and billing period hasn't ended
     // 2. Status is CANCELLED but billing period hasn't ended (they paid for this period)
     // 3. Status is PAUSED (paused subscriptions still have access until period ends)
-    const hasAccess = !isExpired && 
-      (user.subscription.status === 'ACTIVE' || 
-       user.subscription.status === 'CANCELLED' ||
-       user.subscription.status === 'PAUSED');
+    const hasAccess = !isExpired &&
+      (user.subscription.status === 'ACTIVE' ||
+        user.subscription.status === 'CANCELLED' ||
+        user.subscription.status === 'PAUSED');
 
-    // If subscription expired, update status in database (lazy expiration)
-    // Only mark as EXPIRED if it was previously ACTIVE or CANCELLED (not INACTIVE)
-    if (isExpired && 
-        user.subscription.status !== 'EXPIRED' && 
-        user.subscription.status !== 'INACTIVE') {
+    // If subscription expired, update status in database and downgrade to FREE
+    if (isExpired &&
+      user.subscription.status !== 'EXPIRED') {
+      const { applyPlanLimits } = await import('@/lib/plan-limits');
       await prisma.$transaction([
         prisma.subscription.update({
           where: { id: user.subscription.id },
@@ -138,9 +172,11 @@ export async function GET(req: NextRequest) {
           data: { isActive: false },
         }),
       ]);
+      await applyPlanLimits(userId, 'FREE');
     }
 
-    // Also sync User.isActive with actual access status
+    // Also sync User.isActive — in the freemium model, users are always "active"
+    // (they just have limited features). We keep isActive to distinguish paid subscribers.
     if (user.isActive !== hasAccess) {
       await prisma.user.update({
         where: { id: userId },
@@ -148,10 +184,28 @@ export async function GET(req: NextRequest) {
       });
     }
 
+    const planInfo = await getUserPlanInfo(userId);
+    const subActiveCheck = await checkSubscriptionActive(userId);
+
     return NextResponse.json({
       hasSubscription: true,
       isActive: hasAccess, // Calculated dynamically, not from DB
       daysRemaining,
+      planTier: user.planTier || 'FREE',
+      messagingBlocked: !subActiveCheck.active,
+      messagingBlockedReason: subActiveCheck.active ? null : subActiveCheck.message,
+      usage: planInfo ? {
+        contactsUsed: planInfo.contactsUsed,
+        contactsLimit: planInfo.contactsLimit,
+        groupsUsed: planInfo.groupsUsed,
+        groupsLimit: planInfo.groupsLimit,
+        storageUsed: Number(planInfo.storageUsedBytes),
+        storageLimit: Number(planInfo.storageLimitBytes),
+        storageUsedFormatted: formatBytes(planInfo.storageUsedBytes),
+        storageLimitFormatted: formatBytes(planInfo.storageLimitBytes),
+        bulkSendEnabled: planInfo.bulkSendEnabled,
+        apiAccessEnabled: planInfo.apiAccessEnabled,
+      } : null,
       subscription: {
         id: user.subscription.id,
         status: isExpired ? 'EXPIRED' : user.subscription.status,

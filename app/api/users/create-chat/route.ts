@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { prisma } from '@/lib/db';
+import { checkContactsLimit } from '@/lib/plan-limits';
 
 /**
  * POST handler to create or get chat(s) with phone number(s)
@@ -105,6 +106,15 @@ async function handleSingleUserCreation(
 
     let isNew = false;
     if (!contact) {
+      // Check contacts limit before creating
+      const contactCheck = await checkContactsLimit(currentUserId);
+      if (!contactCheck.allowed) {
+        return NextResponse.json(
+          { error: `Contacts limit reached (${contactCheck.current}/${contactCheck.limit}). Upgrade your plan to add more contacts.` },
+          { status: 403 }
+        );
+      }
+
       // Create new contact
       contact = await prisma.contact.create({
         data: {
@@ -174,6 +184,15 @@ async function handleBulkUserCreation(
   }
 
   console.log(`Bulk creating ${users.length} contacts for user ${currentUserId}`);
+
+  // Check contacts limit for the entire batch
+  const contactCheck = await checkContactsLimit(currentUserId, users.length);
+  if (!contactCheck.allowed) {
+    return NextResponse.json(
+      { error: `Contacts limit would be exceeded. Current: ${contactCheck.current}, Limit: ${contactCheck.limit}, Requested: ${users.length}. Upgrade your plan.` },
+      { status: 403 }
+    );
+  }
 
   const results = {
     success: [] as Array<{ phoneNumber: string; customName?: string; user: unknown; isNew?: boolean }>,

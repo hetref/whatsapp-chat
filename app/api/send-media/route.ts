@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { prisma } from '@/lib/db';
 import { uploadFileToS3, isWhatsAppSupportedFileType } from '@/lib/aws-s3';
+import { checkContactsLimit, checkStorageLimit, incrementStorageUsed, checkSubscriptionActive } from '@/lib/plan-limits';
 
 export const runtime = 'nodejs';
 
@@ -181,6 +182,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Check subscription is active (not paused/expired/cancelled)
+    const subCheck = await checkSubscriptionActive(userId);
+    if (!subCheck.active) {
+      return NextResponse.json(
+        { error: 'Messaging blocked', message: subCheck.message, subscriptionStatus: subCheck.status },
+        { status: 403 }
+      );
+    }
+
     // Parse form data
     const formData = await request.formData();
     const to = formData.get('to') as string;
@@ -241,6 +251,15 @@ export async function POST(request: NextRequest) {
 
     // Create contact if it doesn't exist
     if (!contact) {
+      // Check contacts limit before creating
+      const contactCheck = await checkContactsLimit(userId);
+      if (!contactCheck.allowed) {
+        return NextResponse.json(
+          { error: `Contacts limit reached (${contactCheck.current}/${contactCheck.limit}). Upgrade your plan to add more contacts.` },
+          { status: 403 }
+        );
+      }
+
       console.log(`Creating new contact ${cleanPhoneNumber} for user ${userId}`);
       try {
         contact = await prisma.contact.create({
@@ -270,6 +289,16 @@ export async function POST(request: NextRequest) {
           unsupportedFiles: unsupportedFiles.map(f => ({ name: f.name, type: f.type }))
         }),
         { status: 400, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Check storage limit before uploading
+    const totalFileSize = files.reduce((sum, f) => sum + f.size, 0);
+    const storageCheck = await checkStorageLimit(userId, totalFileSize);
+    if (!storageCheck.allowed) {
+      return NextResponse.json(
+        { error: 'Storage limit reached. Upgrade your plan for more storage.' },
+        { status: 403 }
       );
     }
 
@@ -309,9 +338,15 @@ export async function POST(request: NextRequest) {
 
         // Upload to S3 for our records
         const mediaIdForS3 = `upload_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-        const s3Url = await uploadFileToS3(file, userId, mediaIdForS3);
+        const s3UploadedBytes = await uploadFileToS3(file, userId, mediaIdForS3);
+        const s3Uploaded = s3UploadedBytes > 0;
 
-        // Store in database with new Contact model structure
+        // Track storage usage
+        if (s3Uploaded) {
+          await incrementStorageUsed(userId, s3UploadedBytes);
+        }
+
+        // Store in database with new Contact model structure - metadata only, no presigned URL
         const messageObject = {
           id: messageId || `outgoing_media_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
           userId: userId, // Current authenticated user (owner)
@@ -327,8 +362,8 @@ export async function POST(request: NextRequest) {
             mime_type: file.type,
             filename: file.name,
             caption: caption,
-            media_url: s3Url,
-            s3_uploaded: !!s3Url,
+            s3_uploaded: s3Uploaded,
+            s3_owner_id: userId,
             upload_timestamp: timestamp.toISOString(),
             whatsapp_media_id: mediaUpload.id,
           }),
@@ -348,7 +383,7 @@ export async function POST(request: NextRequest) {
           filename: file.name,
           messageId: messageId,
           mediaType: mediaType,
-          s3Uploaded: !!s3Url,
+          s3Uploaded: s3Uploaded,
         });
 
       } catch (error: unknown) {

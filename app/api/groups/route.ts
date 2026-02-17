@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { prisma } from '@/lib/db';
+import { checkGroupsLimit } from '@/lib/plan-limits';
 
 /**
  * GET - Fetch all groups for the authenticated user
@@ -98,6 +99,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: 'Group name is required' },
         { status: 400 }
+      );
+    }
+
+    // Check groups limit
+    const groupCheck = await checkGroupsLimit(userId);
+    if (!groupCheck.allowed) {
+      return NextResponse.json(
+        { error: `Groups limit reached (${groupCheck.current}/${groupCheck.limit}). Upgrade your plan to create more groups.` },
+        { status: 403 }
       );
     }
 

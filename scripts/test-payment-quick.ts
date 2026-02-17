@@ -118,7 +118,6 @@ async function main() {
   ];
 
   const optionalEnvVars = [
-    'RAZORPAY_KEY_ID',
     'RAZORPAY_KEY_SECRET',
     'RAZORPAY_WEBHOOK_SECRET',
     'NEXT_PUBLIC_RAZORPAY_KEY_ID',

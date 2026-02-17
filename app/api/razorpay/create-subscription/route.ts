@@ -23,21 +23,30 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Check if Razorpay plan ID is configured
-    const razorpayPlanId = getRazorpayPlanId();
-    if (!razorpayPlanId) {
-      return NextResponse.json(
-        { error: 'Subscription plan not configured. Please set RAZORPAY_PLAN_ID.' },
-        { status: 500 }
-      );
-    }
-
     // Check authentication
     const { userId } = await auth();
     if (!userId) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
+      );
+    }
+
+    // Parse request body for plan tier
+    let planTier: 'SILVER' | 'GOLD' = 'SILVER';
+    try {
+      const body = await req.json();
+      if (body.planTier === 'GOLD') planTier = 'GOLD';
+    } catch {
+      // Default to SILVER if no body
+    }
+
+    // Check if Razorpay plan ID is configured for this tier
+    const razorpayPlanId = getRazorpayPlanId(planTier);
+    if (!razorpayPlanId) {
+      return NextResponse.json(
+        { error: `Subscription plan not configured for ${planTier}. Please set the corresponding Razorpay plan ID.` },
+        { status: 500 }
       );
     }
 
@@ -83,21 +92,21 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Get the subscription plan from database (must exist - seeded)
+    // Get the subscription plan from database
     const subscriptionPlan = await prisma.subscriptionPlan.findFirst({
-      where: { isActive: true },
+      where: { isActive: true, name: planTier },
     });
 
     if (!subscriptionPlan) {
       return NextResponse.json(
-        { error: 'No subscription plan configured. Please run database seed.' },
+        { error: `No ${planTier} plan configured. Please run database seed.` },
         { status: 500 }
       );
     }
 
     // Create or get Razorpay customer
     let razorpayCustomerId = user.subscription?.razorpayCustomerId;
-    
+
     if (!razorpayCustomerId) {
       const email = clerkUser.emailAddresses[0]?.emailAddress || `${userId}@wachat.app`;
       const name = `${clerkUser.firstName || ''} ${clerkUser.lastName || ''}`.trim() || 'WaChat User';
@@ -109,7 +118,7 @@ export async function POST(req: NextRequest) {
 
     // Create or update subscription record in database
     let subscription = user.subscription;
-    
+
     if (!subscription) {
       subscription = await prisma.subscription.create({
         data: {
@@ -129,11 +138,11 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Create Razorpay subscription (this uses RAZORPAY_PLAN_ID from env)
+    // Create Razorpay subscription with specified plan tier
     const rzpSubscription = await createRazorpaySubscription(
       userId,
       razorpayCustomerId,
-      { totalCount: 120 }
+      { totalCount: 120, planTier }
     );
 
     // Store the Razorpay subscription ID
@@ -160,7 +169,7 @@ export async function POST(req: NextRequest) {
   } catch (error: any) {
     console.error('Error creating subscription:', error);
     return NextResponse.json(
-      { error: error.message || 'Failed to create subscription' },
+      { error: 'Failed to create subscription' },
       { status: 500 }
     );
   }

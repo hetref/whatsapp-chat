@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { prisma } from '@/lib/db';
+import { checkSubscriptionActive, checkContactsLimit } from '@/lib/plan-limits';
 
 interface SendTemplateRequest {
   to: string;
@@ -207,6 +208,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Check subscription is active (not paused/expired/cancelled)
+    const subCheck = await checkSubscriptionActive(userId);
+    if (!subCheck.active) {
+      return NextResponse.json(
+        { error: 'Messaging blocked', message: subCheck.message, subscriptionStatus: subCheck.status },
+        { status: 403 }
+      );
+    }
+
     // Parse request body
     const { to, contactName, templateName, templateData, variables, mediaUrl, mediaId }: SendTemplateRequest = await request.json();
 
@@ -264,6 +274,15 @@ export async function POST(request: NextRequest) {
 
     // Create contact if it doesn't exist (DO NOT update existing contacts unless provided)
     if (!contact) {
+      // Check contacts limit before creating a new contact
+      const contactsCheck = await checkContactsLimit(userId);
+      if (!contactsCheck.allowed) {
+        return NextResponse.json(
+          { error: `Contacts limit reached (${contactsCheck.current}/${contactsCheck.limit}). Upgrade your plan to add more contacts.` },
+          { status: 403 }
+        );
+      }
+
       console.log(`Creating new contact ${cleanPhoneNumber} for user ${userId} with name: ${contactName || cleanPhoneNumber}`);
       try {
         contact = await prisma.contact.create({

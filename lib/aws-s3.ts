@@ -1,9 +1,9 @@
-import { 
-  S3Client, 
-  PutObjectCommand, 
-  GetObjectCommand, 
-  HeadObjectCommand, 
-  DeleteObjectCommand 
+import {
+  S3Client,
+  PutObjectCommand,
+  GetObjectCommand,
+  HeadObjectCommand,
+  DeleteObjectCommand
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
@@ -84,7 +84,7 @@ export function isWhatsAppSupportedFileType(mimeType: string): boolean {
   const supportedTypes = [
     // Audio
     'audio/aac',
-    'audio/mp4', 
+    'audio/mp4',
     'audio/mpeg',
     'audio/amr',
     'audio/ogg',
@@ -106,13 +106,14 @@ export function isWhatsAppSupportedFileType(mimeType: string): boolean {
     'video/mp4',
     'video/3gpp',
   ];
-  
+
   return supportedTypes.includes(mimeType.toLowerCase());
 }
 
 /**
  * Download file from WhatsApp and upload to S3
  * Handles authentication for WhatsApp media URLs
+ * Returns the number of bytes uploaded, or -1 on failure
  */
 export async function downloadAndUploadToS3(
   fileUrl: string,
@@ -120,33 +121,33 @@ export async function downloadAndUploadToS3(
   mediaId: string,
   mimeType: string,
   whatsappAccessToken?: string
-): Promise<string | null> {
+): Promise<number> {
   try {
     console.log(`Downloading file from URL: ${fileUrl}`);
-    
+
     // Security validation
     if (!fileUrl || !senderId || !mediaId || !mimeType) {
       throw new Error('Missing required parameters for S3 upload');
     }
-    
+
     // Validate sender ID format (should be a phone number)
     if (!/^\d{10,15}$/.test(senderId)) {
       throw new Error(`Invalid sender ID format: ${senderId}`);
     }
-    
+
     // Validate media ID format (should be numeric)
     if (!/^\d+$/.test(mediaId)) {
       throw new Error(`Invalid media ID format: ${mediaId}`);
     }
-    
+
     // Check if file type is supported by WhatsApp
     if (!isWhatsAppSupportedFileType(mimeType)) {
       throw new Error(`Unsupported file type: ${mimeType}`);
     }
-    
+
     // Prepare headers for WhatsApp authentication
     const headers: Record<string, string> = {};
-    
+
     // Check if this is a WhatsApp media URL and add authentication
     if (fileUrl.includes('lookaside.fbsbx.com') || fileUrl.includes('graph.facebook.com')) {
       if (whatsappAccessToken) {
@@ -156,19 +157,19 @@ export async function downloadAndUploadToS3(
         throw new Error('WhatsApp media URL detected but no access token provided');
       }
     }
-    
+
     // Download the file with proper authentication and timeout
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
-    
+
     const response = await fetch(fileUrl, {
       method: 'GET',
       headers: headers,
       signal: controller.signal,
     });
-    
+
     clearTimeout(timeoutId);
-    
+
     if (!response.ok) {
       throw new Error(`Failed to download file: ${response.status} ${response.statusText}`);
     }
@@ -181,19 +182,19 @@ export async function downloadAndUploadToS3(
 
     const arrayBuffer = await response.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
-    
+
     // Validate file size (25MB limit for WhatsApp)
     const maxSize = 25 * 1024 * 1024; // 25MB
     if (buffer.length > maxSize) {
       throw new Error(`File too large: ${buffer.length} bytes (max: ${maxSize})`);
     }
-    
+
     if (buffer.length === 0) {
       throw new Error('Downloaded file is empty');
     }
-    
+
     console.log(`Downloaded file: ${buffer.length} bytes`);
-    
+
     // Generate S3 key with sanitized sender ID
     const fileExtension = getFileExtensionFromMimeType(mimeType);
     const sanitizedSenderId = senderId.replace(/[^0-9]/g, ''); // Remove non-numeric chars
@@ -221,24 +222,24 @@ export async function downloadAndUploadToS3(
     await s3Client.send(uploadCommand);
     console.log('S3 upload successful');
 
-    // Generate presigned URL
-    const presignedUrl = await generatePresignedUrl(sanitizedSenderId, mediaId, mimeType);
-    return presignedUrl;
+    // Return the number of bytes uploaded
+    return buffer.length;
 
   } catch (error) {
     console.error('Error in downloadAndUploadToS3:', error);
-    return null;
+    return -1;
   }
 }
 
 /**
  * Upload a File object directly to S3
+ * Returns the number of bytes uploaded, or -1 on failure
  */
 export async function uploadFileToS3(
   file: File,
   senderId: string,
   mediaId: string
-): Promise<string | null> {
+): Promise<number> {
   try {
     const fileExtension = getFileExtensionFromMimeType(file.type);
     const s3Key = `${senderId}/${mediaId}.${fileExtension}`;
@@ -263,12 +264,11 @@ export async function uploadFileToS3(
     await s3Client.send(uploadCommand);
     console.log('S3 file upload successful');
 
-    const presignedUrl = await generatePresignedUrl(senderId, mediaId, file.type);
-    return presignedUrl;
+    return buffer.length;
 
   } catch (error) {
     console.error('Error in uploadFileToS3:', error);
-    return null;
+    return -1;
   }
 }
 
@@ -292,7 +292,7 @@ export async function generatePresignedUrl(
 
     const presignedUrl = await getSignedUrl(s3Client, command, { expiresIn });
     console.log(`Generated presigned URL for ${s3Key} (expires in ${expiresIn}s)`);
-    
+
     return presignedUrl;
   } catch (error) {
     console.error('Error generating presigned URL:', error);
