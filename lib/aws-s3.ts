@@ -348,4 +348,62 @@ export async function deleteFromS3(
     console.error('Error deleting from S3:', error);
     return false;
   }
+}
+
+/**
+ * Generate a presigned PUT URL for direct client-side upload to S3.
+ * This allows clients to upload files directly without going through the serverless function,
+ * bypassing body size limits (e.g. Vercel's 4.5MB limit).
+ */
+export async function generatePresignedUploadUrl(
+  senderId: string,
+  mediaId: string,
+  mimeType: string,
+  fileSize: number,
+  expiresIn: number = 600
+): Promise<{ uploadUrl: string; s3Key: string } | null> {
+  try {
+    const fileExtension = getFileExtensionFromMimeType(mimeType);
+    const s3Key = `${senderId}/${mediaId}.${fileExtension}`;
+
+    const command = new PutObjectCommand({
+      Bucket: BUCKET_NAME,
+      Key: s3Key,
+      ContentType: mimeType,
+      ACL: 'private',
+      ContentLength: fileSize,
+      Metadata: {
+        'upload-timestamp': new Date().toISOString(),
+        'file-size': fileSize.toString(),
+        'content-type': mimeType,
+      },
+    });
+
+    const uploadUrl = await getSignedUrl(s3Client, command, { expiresIn });
+    return { uploadUrl, s3Key };
+  } catch (error) {
+    console.error('Error generating presigned upload URL:', error);
+    return null;
+  }
+}
+
+/**
+ * Generate a public presigned GET URL for an S3 key (for WhatsApp to fetch the file)
+ */
+export async function generatePresignedUrlByKey(
+  s3Key: string,
+  expiresIn: number = 3600
+): Promise<string | null> {
+  try {
+    const command = new GetObjectCommand({
+      Bucket: BUCKET_NAME,
+      Key: s3Key,
+    });
+
+    const presignedUrl = await getSignedUrl(s3Client, command, { expiresIn });
+    return presignedUrl;
+  } catch (error) {
+    console.error('Error generating presigned URL by key:', error);
+    return null;
+  }
 } 

@@ -353,37 +353,96 @@ export function ChatWindow({
     setSendingMedia(true);
 
     try {
-      const formData = new FormData();
-      formData.append('to', selectedUser.phone_number);
+      const totalSize = mediaFiles.reduce((sum, mf) => sum + mf.file.size, 0);
 
-      mediaFiles.forEach((mediaFile) => {
-        formData.append('files', mediaFile.file);
-        formData.append('captions', mediaFile.caption || '');
-      });
+      // Use presigned URL flow for large payloads (>3MB), direct FormData for small ones
+      if (totalSize > 3 * 1024 * 1024) {
+        // Step 1: Get presigned upload URLs from server
+        const uploadUrlRes = await fetch('/api/send-media/upload-url', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            files: mediaFiles.map(mf => ({
+              fileName: mf.file.name,
+              fileSize: mf.file.size,
+              mimeType: mf.file.type,
+            })),
+          }),
+        });
 
-      const response = await fetch('/api/send-media', {
-        method: 'POST',
-        body: formData,
-      });
+        const uploadUrlData = await uploadUrlRes.json();
+        if (!uploadUrlRes.ok) {
+          throw new Error(uploadUrlData.error || 'Failed to get upload URLs');
+        }
 
-      const result = await response.json();
+        // Step 2: Upload each file directly to S3 via presigned PUT URL
+        const s3Files = [];
+        for (let i = 0; i < mediaFiles.length; i++) {
+          const mf = mediaFiles[i];
+          const urlInfo = uploadUrlData.uploadUrls[i];
 
-      if (!response.ok) {
-        throw new Error(result.error || 'Failed to send media');
+          const uploadRes = await fetch(urlInfo.uploadUrl, {
+            method: 'PUT',
+            headers: { 'Content-Type': mf.file.type },
+            body: mf.file,
+          });
+
+          if (!uploadRes.ok) {
+            throw new Error(`Failed to upload ${mf.file.name} to storage`);
+          }
+
+          s3Files.push({
+            s3Key: urlInfo.s3Key,
+            mediaId: urlInfo.mediaId,
+            fileName: mf.file.name,
+            mimeType: mf.file.type,
+            fileSize: mf.file.size,
+            caption: mf.caption || '',
+          });
+        }
+
+        // Step 3: Send message via server with S3 references
+        const response = await fetch('/api/send-media', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            to: selectedUser.phone_number,
+            files: s3Files,
+          }),
+        });
+
+        const result = await response.json();
+        if (!response.ok) {
+          throw new Error(result.error || 'Failed to send media');
+        }
+
+        if (result.failureCount > 0) {
+          alert(`Failed to send ${result.failureCount} files. Please try again.`);
+        }
+      } else {
+        // Small files: use direct FormData upload (legacy flow)
+        const formData = new FormData();
+        formData.append('to', selectedUser.phone_number);
+
+        mediaFiles.forEach((mediaFile) => {
+          formData.append('files', mediaFile.file);
+          formData.append('captions', mediaFile.caption || '');
+        });
+
+        const response = await fetch('/api/send-media', {
+          method: 'POST',
+          body: formData,
+        });
+
+        const result = await response.json();
+        if (!response.ok) {
+          throw new Error(result.error || 'Failed to send media');
+        }
+
+        if (result.failureCount > 0) {
+          alert(`Failed to send ${result.failureCount} files. Please try again.`);
+        }
       }
-
-      console.log('Media sent successfully:', result);
-
-      // Show success message
-      if (result.successCount > 0) {
-        // You might want to show a toast notification here
-        console.log(`Successfully sent ${result.successCount} of ${result.totalFiles} files`);
-      }
-
-      if (result.failureCount > 0) {
-        alert(`Failed to send ${result.failureCount} files. Please try again.`);
-      }
-
     } catch (error) {
       console.error('Error sending media:', error);
       alert(`Failed to send media: ${error instanceof Error ? error.message : 'Unknown error'}`);
