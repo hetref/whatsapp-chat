@@ -5,13 +5,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
-    "seed": "tsx prisma/seed.ts",
-    "test:payment": "tsx scripts/test-payment-quick.ts",
-    "test:payment:manual": "tsx scripts/test-payment-flow.ts"
-  },
-  "prisma": {
-    "seed": "tsx prisma/seed.ts"
+    "lint": "next lint"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.858.0",

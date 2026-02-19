@@ -206,6 +206,14 @@ export default function BillingPage() {
       const result = await res.json();
 
       if (result.error) {
+        if (result.code === "UPI_PLAN_CHANGE_NOT_SUPPORTED") {
+          setActionError(
+            result.error +
+            " You can cancel your subscription below and then re-subscribe directly to the Gold plan."
+          );
+          setPaymentLoading(null);
+          return;
+        }
         throw new Error(result.error);
       }
 
@@ -403,6 +411,8 @@ export default function BillingPage() {
   // show FREE as the billing plan. Features still work via the effective plan tier.
   const isCancelledWithBenefits = status === "CANCELLED" && subscription?.currentPeriodEnd
     && new Date(subscription.currentPeriodEnd) > new Date();
+  // Cancellation is scheduled but not yet effective (ACTIVE + autoRenew=false)
+  const isCancellingAtPeriodEnd = status === "ACTIVE" && !subscription?.autoRenew && !!subscription?.razorpaySubscriptionId;
   const displayTier = status === "CANCELLED" ? "FREE" : currentTier;
   const hasActiveSubscription = status === "ACTIVE" && subscription?.autoRenew && !!subscription?.razorpaySubscriptionId;
 
@@ -523,7 +533,24 @@ export default function BillingPage() {
                     </ul>
 
                     <div className="pt-2">
-                      {isCurrent ? (
+                      {loading ? (
+                        <Button variant="outline" className="w-full" disabled>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        </Button>
+                      ) : isCurrent && isCancellingAtPeriodEnd && plan.tier !== "FREE" ? (
+                        <Button
+                          className="w-full"
+                          onClick={() => handleSubscribe(plan.tier as "SILVER" | "GOLD")}
+                          disabled={paymentLoading !== null}
+                        >
+                          {paymentLoading === plan.tier ? (
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          ) : (
+                            <CreditCard className="h-4 w-4 mr-2" />
+                          )}
+                          Re-subscribe
+                        </Button>
+                      ) : isCurrent ? (
                         <Button variant="outline" className="w-full" disabled>
                           Current Plan
                         </Button>
@@ -575,7 +602,11 @@ export default function BillingPage() {
                           ) : (
                             <CreditCard className="h-4 w-4 mr-2" />
                           )}
-                          {isUpgrade ? "Upgrade" : isCancelledWithBenefits ? "Re-subscribe" : "Subscribe"}
+                          {isCancelledWithBenefits
+                            ? "Re-subscribe"
+                            : hasActiveSubscription && isUpgrade
+                              ? "Upgrade"
+                              : "Subscribe"}
                         </Button>
                       )}
                     </div>
@@ -641,15 +672,29 @@ export default function BillingPage() {
                     )}
 
                     {status === "ACTIVE" && !subscription.autoRenew && (
-                      <p className="text-sm text-muted-foreground">
-                        Cancellation scheduled. Your plan benefits remain active until {formatDate(subscription.currentPeriodEnd ?? null)}.
-                      </p>
+                      <div className="space-y-1">
+                        <p className="text-sm text-muted-foreground">
+                          Cancellation scheduled. Your plan benefits remain active until {formatDate(subscription.currentPeriodEnd ?? null)}.
+                        </p>
+                        <p className="text-sm font-medium">
+                          Changed your mind? Click <strong>Re-subscribe</strong> on your current plan above to continue without interruption.
+                        </p>
+                      </div>
                     )}
 
                     {status === "CANCELLED" && (
-                      <p className="text-sm text-muted-foreground">
-                        Your subscription has been cancelled. Plan benefits remain active until {formatDate(subscription.currentPeriodEnd ?? null)}. After that you will be moved to the Free plan.
-                      </p>
+                      <div className="space-y-2">
+                        <p className="text-sm text-muted-foreground">
+                          {isCancelledWithBenefits
+                            ? `Your subscription has been cancelled but your plan benefits remain active until ${formatDate(subscription.currentPeriodEnd ?? null)}. After that you will be moved to the Free plan.`
+                            : "Your subscription has been cancelled and you have been moved to the Free plan."}
+                        </p>
+                        {isCancelledWithBenefits && (
+                          <p className="text-sm font-medium">
+                            Want to continue uninterrupted? Choose a plan above to re-subscribe.
+                          </p>
+                        )}
+                      </div>
                     )}
 
                     {status === "PAUSED" && (

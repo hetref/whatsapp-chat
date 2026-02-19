@@ -111,12 +111,24 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Update Razorpay subscription to the new plan (billing changes at next cycle)
-    await updateRazorpaySubscriptionPlan(
-      subscription.razorpaySubscriptionId,
-      newPlanTier,
-      'cycle_end'
-    );
+    // Update Razorpay subscription to the new plan (billing changes at next cycle).
+    // If the subscription was paid via UPI, Razorpay rejects plan changes — in that
+    // case we still grant the plan locally since the user already paid.
+    let razorpayPlanUpdated = true;
+    try {
+      await updateRazorpaySubscriptionPlan(
+        subscription.razorpaySubscriptionId,
+        newPlanTier,
+        'cycle_end'
+      );
+    } catch (updateError: any) {
+      if (updateError.code === 'UPI_PLAN_CHANGE_NOT_SUPPORTED') {
+        razorpayPlanUpdated = false;
+        // User already paid — continue to grant access, just skip Razorpay plan update
+      } else {
+        throw updateError;
+      }
+    }
 
     // Update local DB with the new plan
     await prisma.subscription.update({
@@ -144,9 +156,13 @@ export async function POST(req: NextRequest) {
     // Apply new plan limits immediately
     await applyPlanLimits(userId, newPlanTier as PlanTier);
 
+    const message = razorpayPlanUpdated
+      ? `Upgraded to ${newPlan.displayName}! Your features are active now. From your next billing cycle you will be charged ₹${newPlan.price}/month.`
+      : `Upgraded to ${newPlan.displayName}! Your features are active now. However, your subscription was created with UPI so your next renewal will still be charged at the previous rate. To fix this permanently, cancel your subscription and re-subscribe to the Gold plan.`;
+
     return NextResponse.json({
       success: true,
-      message: `Upgraded to ${newPlan.displayName}! Your features are active now. From your next billing cycle you will be charged ₹${newPlan.price}/month.`,
+      message,
     });
   } catch (error: any) {
     console.error('Error verifying upgrade:', error);

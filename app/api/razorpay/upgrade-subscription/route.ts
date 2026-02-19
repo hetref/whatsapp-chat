@@ -99,6 +99,26 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Block UPI subscriptions from the upgrade flow — Razorpay doesn't allow plan
+    // changes on UPI-backed subscriptions, so we'd take their money and give nothing.
+    const lastPayment = await prisma.payment.findFirst({
+      where: {
+        subscriptionId: subscription.id,
+        status: 'CAPTURED',
+        NOT: { paymentMethod: { startsWith: 'event_' } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (lastPayment?.paymentMethod === 'upi') {
+      return NextResponse.json(
+        {
+          error: 'Your subscription was created with UPI which does not support plan changes. To upgrade, please cancel your current subscription first, then re-subscribe to the Gold plan.',
+          code: 'UPI_PLAN_CHANGE_NOT_SUPPORTED',
+        },
+        { status: 422 }
+      );
+    }
+
     // Create a one-time Razorpay order for the difference amount
     const order = await createRazorpayOrder(upgradeCost, userId);
 
