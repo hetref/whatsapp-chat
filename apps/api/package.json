@@ -1,0 +1,25 @@
+{
+    "name": "@repo/api",
+    "version": "1.0.0",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "dev": "nodemon src/index.js",
+        "start": "node src/index.js"
+    },
+    "dependencies": {
+        "@aws-sdk/client-s3": "^3.916.0",
+        "@aws-sdk/s3-request-presigner": "^3.916.0",
+        "@repo/db": "file:../../packages/db",
+        "cors": "^2.8.5",
+        "dotenv": "^16.6.1",
+        "express": "^4.21.2",
+        "express-rate-limit": "^7.5.0",
+        "helmet": "^8.1.0",
+        "morgan": "^1.10.0",
+        "multer": "^2.0.2"
+    },
+    "devDependencies": {
+        "nodemon": "^3.1.10"
+    }
+}

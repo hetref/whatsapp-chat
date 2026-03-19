@@ -1,0 +1,19 @@
+{
+    "name": "@repo/db",
+    "version": "0.0.0",
+    "private": true,
+    "type": "module",
+    "main": "index.js",
+    "types": "index.d.ts",
+    "scripts": {
+        "generate": "prisma generate --schema prisma/schema.prisma",
+        "migrate:dev": "prisma migrate dev --schema prisma/schema.prisma",
+        "migrate:deploy": "prisma migrate deploy --schema prisma/schema.prisma"
+    },
+    "dependencies": {
+        "@prisma/client": "^6.19.0"
+    },
+    "devDependencies": {
+        "prisma": "^6.19.0"
+    }
+}

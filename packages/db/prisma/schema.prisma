@@ -1,0 +1,324 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// Platform user (business owner) with Clerk authentication ID only.
+/// These are the actual users of your application.
+model User {
+  id                String   @id @db.Text // Clerk user ID (e.g., "user_...")
+  isActive          Boolean  @default(true) @map("is_active") // Account active status (for SaaS)
+  storageUsedBytes  BigInt   @default(0) @map("storage_used_bytes") // S3 storage used in bytes
+  planTier          PlanTier @default(FREE) @map("plan_tier") // Current plan tier
+  contactsLimit     Int      @default(10) @map("contacts_limit") // Max contacts allowed (overridable for enterprise)
+  groupsLimit       Int      @default(2) @map("groups_limit") // Max broadcast groups allowed
+  storageLimitBytes BigInt   @default(5368709120) @map("storage_limit_bytes") // 5GB default (overridable)
+  bulkSendEnabled   Boolean  @default(false) @map("bulk_send_enabled") // Bulk messaging access
+  apiAccessEnabled  Boolean  @default(false) @map("api_access_enabled") // API key access
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  contacts   Contact[] // WhatsApp contacts owned by this user
+  messages   Message[] // Messages owned by this user
+  groups     ChatGroup[] // Broadcast groups owned by this user
+  settings   UserSettings? // WhatsApp API settings for this user
+  apiKeys    ApiKey[] // API keys for this user
+  mediaFiles MediaFile[] // Media files uploaded by this user
+
+  // SaaS Relations
+  subscription Subscription? // User's subscription (null until first payment)
+  payments     Payment[] // Payment history
+  usageRecords UsageRecord[] // Usage analytics
+
+  @@map("users")
+}
+
+enum PlanTier {
+  FREE
+  SILVER
+  GOLD
+}
+
+/// WhatsApp contact (phone number) owned by a specific platform user.
+/// Each platform user has their own isolated set of contacts.
+model Contact {
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String   @map("user_id") // Platform user who owns this contact
+  phoneNumber  String   @map("phone_number") // WhatsApp phone number (e.g., "918097296453")
+  customName   String?  @map("custom_name") // User-defined name for this contact
+  whatsappName String?  @map("whatsapp_name") // Name from WhatsApp profile
+  lastActive   DateTime @default(now()) @map("last_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  // Relations
+  owner            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages         Message[] // All messages for this contact
+  groupMemberships GroupMember[] // Group memberships for this contact
+
+  @@unique([userId, phoneNumber], name: "contacts_user_id_phone_number_key")
+  @@index([userId], name: "idx_contacts_user_id")
+  @@index([phoneNumber], name: "idx_contacts_phone_number")
+  @@map("contacts")
+}
+
+/// Messages exchanged between a platform user and their WhatsApp contacts.
+/// Each message is owned by a specific platform user and involves one of their contacts.
+model Message {
+  id          String    @id @db.Text
+  userId      String    @map("user_id") // Platform user who owns this message
+  contactId   String    @map("contact_id") @db.Uuid // Contact involved in this message
+  content     String
+  timestamp   DateTime  @default(now())
+  isSentByMe  Boolean   @default(false) @map("is_sent_by_me") // true = user sent, false = contact sent
+  messageType String    @default("text") @map("message_type")
+  mediaData   Json?     @map("media_data")
+  isRead      Boolean   @default(false) @map("is_read")
+  readAt      DateTime? @map("read_at")
+
+  // Relations
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([userId], name: "idx_messages_user_id")
+  @@index([contactId], name: "idx_messages_contact_id")
+  @@index([timestamp(sort: Desc)], name: "idx_messages_timestamp")
+  @@index([isRead], name: "idx_messages_is_read")
+  @@index([userId, contactId, timestamp(sort: Desc)], name: "idx_messages_user_contact_conversation")
+  @@map("messages")
+}
+
+/// Broadcast group owned by a platform user.
+model ChatGroup {
+  id          String   @id @default(uuid()) @db.Uuid
+  ownerId     String   @map("owner_id") // Platform user who owns this group
+  name        String
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @default(now()) @map("updated_at")
+
+  // Relations
+  owner   User          @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  members GroupMember[]
+
+  @@index([ownerId], name: "idx_chat_groups_owner_id")
+  @@map("chat_groups")
+}
+
+/// Member of a broadcast group, pointing to a contact owned by the group owner.
+model GroupMember {
+  id        String   @id @default(uuid()) @db.Uuid
+  groupId   String   @map("group_id") @db.Uuid
+  contactId String   @map("contact_id") @db.Uuid
+  addedAt   DateTime @default(now()) @map("added_at")
+
+  group   ChatGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  contact Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, contactId], name: "group_members_group_id_contact_id_key")
+  @@index([groupId], name: "idx_group_members_group_id")
+  @@index([contactId], name: "idx_group_members_contact_id")
+  @@map("group_members")
+}
+
+/// Per-business user WhatsApp and webhook configuration.
+model UserSettings {
+  id                String   @id @db.Text
+  accessToken       String?  @map("access_token")
+  phoneNumberId     String?  @map("phone_number_id")
+  businessAccountId String?  @map("business_account_id")
+  verifyToken       String?  @map("verify_token")
+  webhookToken      String?  @map("webhook_token")
+  apiVersion        String   @default("v23.0") @map("api_version")
+  webhookVerified   Boolean  @default(false) @map("webhook_verified")
+  accessTokenAdded  Boolean  @default(false) @map("access_token_added")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @default(now()) @map("updated_at")
+
+  // Additional fields used by the UI
+  phoneNumber String? @map("phone_number")
+  fullName    String? @map("full_name")
+
+  // Relations
+  user User @relation(fields: [id], references: [id], onDelete: Cascade)
+
+  @@unique([webhookToken], name: "user_settings_webhook_token_key")
+  @@index([phoneNumberId], name: "idx_user_settings_phone_number_id")
+  @@index([webhookToken], name: "idx_user_settings_webhook_token")
+  @@index([businessAccountId], name: "idx_user_settings_business_account_id")
+  @@map("user_settings")
+}
+
+/// API Keys for external API access to WhatsApp Cloud features
+model ApiKey {
+  id           String    @id @default(uuid()) @db.Uuid
+  userId       String    @map("user_id") @db.Text
+  name         String // User-friendly name for the API key
+  key          String    @unique @db.Text // The actual API key (hashed)
+  encryptedKey String?   @map("encrypted_key") @db.Text // Encrypted version for reveal functionality
+  prefix       String    @db.Text // First 8 characters for display (e.g., "wc_live_")
+  lastUsed     DateTime? @map("last_used")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @default(now()) @map("updated_at")
+  isActive     Boolean   @default(true) @map("is_active")
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId], name: "idx_api_keys_user_id")
+  @@index([key], name: "idx_api_keys_key")
+  @@index([isActive], name: "idx_api_keys_is_active")
+  @@map("api_keys")
+}
+
+/// Subscription plan - FREE / SILVER / GOLD
+model SubscriptionPlan {
+  id                String   @id @default(uuid()) @db.Uuid
+  name              String   @unique // "FREE", "SILVER", "GOLD"
+  displayName       String   @map("display_name")
+  description       String?
+  price             Decimal  @db.Decimal(10, 2)
+  currency          String   @default("INR")
+  contactsLimit     Int      @default(10) @map("contacts_limit")
+  groupsLimit       Int      @default(2) @map("groups_limit")
+  storageLimitBytes BigInt   @default(5368709120) @map("storage_limit_bytes") // bytes
+  bulkSendEnabled   Boolean  @default(false) @map("bulk_send_enabled")
+  apiAccessEnabled  Boolean  @default(false) @map("api_access_enabled")
+  razorpayPlanId    String?  @map("razorpay_plan_id") // null for FREE
+  isActive          Boolean  @default(true) @map("is_active")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  subscriptions Subscription[]
+
+  @@map("subscription_plans")
+}
+
+/// User subscription
+model Subscription {
+  id                     String             @id @default(uuid()) @db.Uuid
+  userId                 String             @unique @map("user_id") @db.Text
+  planId                 String             @map("plan_id") @db.Uuid
+  status                 SubscriptionStatus @default(INACTIVE)
+  startDate              DateTime?          @map("start_date") // When first payment made
+  currentPeriodStart     DateTime?          @map("current_period_start")
+  currentPeriodEnd       DateTime?          @map("current_period_end")
+  cancelledAt            DateTime?          @map("cancelled_at")
+  razorpaySubscriptionId String?            @unique @map("razorpay_subscription_id")
+  razorpayCustomerId     String?            @map("razorpay_customer_id")
+  autoRenew              Boolean            @default(true) @map("auto_renew")
+  createdAt              DateTime           @default(now()) @map("created_at")
+  updatedAt              DateTime           @updatedAt @map("updated_at")
+
+  // Relations
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan         SubscriptionPlan @relation(fields: [planId], references: [id])
+  payments     Payment[]
+  usageRecords UsageRecord[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([currentPeriodEnd])
+  @@map("subscriptions")
+}
+
+enum SubscriptionStatus {
+  INACTIVE // Not paid yet
+  ACTIVE // Paid and active
+  PAST_DUE // Payment failed
+  CANCELLED // User cancelled
+  EXPIRED // Subscription ended
+  PAUSED // User paused
+}
+
+/// Payment records
+model Payment {
+  id                 String        @id @default(uuid()) @db.Uuid
+  subscriptionId     String        @map("subscription_id") @db.Uuid
+  userId             String        @map("user_id") @db.Text
+  amount             Decimal       @db.Decimal(10, 2)
+  currency           String        @default("INR")
+  status             PaymentStatus @default(PENDING)
+  razorpayPaymentId  String?       @unique @map("razorpay_payment_id")
+  razorpayOrderId    String?       @map("razorpay_order_id")
+  razorpaySignature  String?       @map("razorpay_signature") @db.Text
+  paymentMethod      String?       @map("payment_method") // card, netbanking, upi, etc.
+  billingPeriodStart DateTime      @map("billing_period_start")
+  billingPeriodEnd   DateTime      @map("billing_period_end")
+  failureReason      String?       @map("failure_reason")
+  createdAt          DateTime      @default(now()) @map("created_at")
+  updatedAt          DateTime      @updatedAt @map("updated_at")
+
+  // Relations
+  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([subscriptionId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("payments")
+}
+
+enum PaymentStatus {
+  PENDING
+  AUTHORIZED
+  CAPTURED
+  FAILED
+  REFUNDED
+}
+
+/// Media files uploaded to S3 by a platform user.
+/// Tracks all media for the Media Library page and reuse across chats/templates.
+model MediaFile {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Text
+  s3Key     String   @map("s3_key") // Full S3 object key
+  fileName  String   @map("file_name")
+  mimeType  String   @map("mime_type")
+  fileSize  Int      @map("file_size") // bytes
+  mediaType String   @map("media_type") // image, video, audio, document
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, mediaType], name: "idx_media_files_user_type")
+  @@index([userId, createdAt(sort: Desc)], name: "idx_media_files_user_created")
+  @@map("media_files")
+}
+
+/// Usage tracking records (optional analytics)
+model UsageRecord {
+  id             String   @id @default(uuid()) @db.Uuid
+  userId         String   @map("user_id") @db.Text
+  subscriptionId String   @map("subscription_id") @db.Uuid
+  messagesCount  Int      @default(0) @map("messages_count")
+  contactsCount  Int      @default(0) @map("contacts_count")
+  apiCallsCount  Int      @default(0) @map("api_calls_count")
+  mediaStorageMB Int      @default(0) @map("media_storage_mb")
+  periodStart    DateTime @map("period_start")
+  periodEnd      DateTime @map("period_end")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, periodStart])
+  @@index([userId])
+  @@index([subscriptionId])
+  @@index([periodStart])
+  @@map("usage_records")
+}

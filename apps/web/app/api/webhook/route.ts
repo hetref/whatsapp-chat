@@ -1,0 +1,441 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+import { downloadAndUploadToS3 } from '@/lib/aws-s3';
+import { incrementStorageUsed, checkSubscriptionActive } from '@/lib/plan-limits';
+
+export const runtime = 'nodejs';
+
+/**
+ * DEPRECATED: This webhook endpoint is deprecated.
+ * Please use the new user-specific webhook endpoint: /api/webhook/[token]
+ * This endpoint is kept for backward compatibility but may be removed in the future.
+ */
+
+// TypeScript interfaces for webhook payload
+interface WhatsAppContact {
+  wa_id: string;
+  profile?: {
+    name: string;
+  };
+}
+
+interface MediaInfo {
+  id: string;
+  mime_type: string;
+  sha256: string;
+  filename?: string;
+  caption?: string;
+  voice?: boolean;
+}
+
+interface WhatsAppMessage {
+  id: string;
+  from: string;
+  timestamp: string;
+  type: 'text' | 'image' | 'document' | 'audio' | 'video' | 'sticker';
+  text?: {
+    body: string;
+  };
+  image?: MediaInfo;
+  document?: MediaInfo;
+  audio?: MediaInfo;
+  video?: MediaInfo;
+  sticker?: MediaInfo;
+}
+
+/**
+ * GET handler for WhatsApp webhook verification
+ * WhatsApp will call this endpoint to verify your webhook URL
+ * Now supports multi-tenant verification with user-specific tokens
+ * 
+ * @deprecated Use /api/webhook/[token] instead for better security
+ */
+export async function GET(request: NextRequest) {
+  try {
+    console.warn('DEPRECATED: Using legacy webhook endpoint. Please migrate to /api/webhook/[token]');
+
+    const searchParams = request.nextUrl.searchParams;
+    const mode = searchParams.get('hub.mode');
+    const token = searchParams.get('hub.verify_token');
+    const challenge = searchParams.get('hub.challenge');
+
+    console.log('Webhook verification attempt (legacy):', { mode, token: token ? '***' : null });
+
+    if (mode !== 'subscribe') {
+      console.log('Invalid mode:', mode);
+      return new NextResponse('Forbidden', { status: 403 });
+    }
+
+    if (!token) {
+      console.log('No token provided');
+      return new NextResponse('Forbidden', { status: 403 });
+    }
+
+    // Check if the token matches any user's verify token
+    const settings = await prisma.userSettings.findFirst({
+      where: { verifyToken: token },
+      select: { id: true, verifyToken: true }
+    });
+
+    if (!settings) {
+      console.log('Webhook verification failed: token not found');
+      return new NextResponse('Forbidden', { status: 403 });
+    }
+
+    console.log('Webhook verified successfully for user:', settings.id);
+
+    // Mark webhook as verified for this user
+    await prisma.userSettings.update({
+      where: { id: settings.id },
+      data: {
+        webhookVerified: true,
+        updatedAt: new Date()
+      }
+    });
+
+    return new NextResponse(challenge, { status: 200 });
+  } catch (error: unknown) {
+    console.error('Error in webhook verification:', error);
+    return new NextResponse('Internal Server Error', { status: 500 });
+  }
+}
+
+/**
+ * Get media URL from WhatsApp API using user-specific access token
+ */
+async function getWhatsAppMediaUrl(
+  mediaId: string,
+  accessToken: string,
+  apiVersion: string
+): Promise<string | null> {
+  try {
+    if (!accessToken) {
+      console.error('WhatsApp access token not provided');
+      return null;
+    }
+
+    // Get media info from WhatsApp API
+    const mediaInfoResponse = await fetch(
+      `https://graph.facebook.com/${apiVersion}/${mediaId}`,
+      {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+        },
+      }
+    );
+
+    if (!mediaInfoResponse.ok) {
+      console.error('Failed to get media info:', await mediaInfoResponse.text());
+      return null;
+    }
+
+    const mediaInfo = await mediaInfoResponse.json();
+    console.log('WhatsApp media info retrieved:', { id: mediaId, url: mediaInfo.url });
+
+    return mediaInfo.url;
+  } catch (error: unknown) {
+    console.error('Error getting WhatsApp media URL:', error);
+    return null;
+  }
+}
+
+/**
+ * Process different message types and extract content
+ */
+function processMessageContent(message: WhatsAppMessage) {
+  let content = '';
+  const messageType = message.type;
+  let mediaData = null;
+
+  switch (message.type) {
+    case 'text':
+      content = message.text?.body || '';
+      break;
+
+    case 'image':
+      content = message.image?.caption || '[Image]';
+      mediaData = {
+        type: 'image',
+        id: message.image?.id,
+        mime_type: message.image?.mime_type,
+        sha256: message.image?.sha256,
+        caption: message.image?.caption,
+      };
+      break;
+
+    case 'document':
+      content = `[Document: ${message.document?.filename || 'Unknown'}]`;
+      mediaData = {
+        type: 'document',
+        id: message.document?.id,
+        mime_type: message.document?.mime_type,
+        sha256: message.document?.sha256,
+        filename: message.document?.filename,
+      };
+      break;
+
+    case 'audio':
+      content = message.audio?.voice ? '[Voice Message]' : '[Audio]';
+      mediaData = {
+        type: 'audio',
+        id: message.audio?.id,
+        mime_type: message.audio?.mime_type,
+        sha256: message.audio?.sha256,
+        voice: message.audio?.voice,
+      };
+      break;
+
+    case 'video':
+      content = message.video?.caption || '[Video]';
+      mediaData = {
+        type: 'video',
+        id: message.video?.id,
+        mime_type: message.video?.mime_type,
+        sha256: message.video?.sha256,
+        caption: message.video?.caption,
+      };
+      break;
+
+    case 'sticker':
+      content = '[Sticker]';
+      mediaData = {
+        type: 'sticker',
+        id: message.sticker?.id,
+        mime_type: message.sticker?.mime_type,
+        sha256: message.sticker?.sha256,
+      };
+      break;
+
+    default:
+      content = `[Unsupported message type: ${message.type}]`;
+      console.warn('Unsupported message type:', message.type);
+  }
+
+  return { content, messageType, mediaData };
+}
+
+/**
+ * POST handler for incoming WhatsApp messages
+ * WhatsApp will send message data to this endpoint
+ * Now supports multi-tenant with user-specific credentials
+ * 
+ * @deprecated Use /api/webhook/[token] instead for better security
+ */
+export async function POST(request: NextRequest) {
+  try {
+    console.warn('DEPRECATED: Using legacy webhook endpoint. Please migrate to /api/webhook/[token]');
+
+    const body = await request.json();
+
+    console.log('Received webhook payload (legacy):', JSON.stringify(body, null, 2));
+
+    // Extract message data from WhatsApp webhook payload
+    const entry = body.entry?.[0];
+    const changes = entry?.changes?.[0];
+    const value = changes?.value;
+    const messages: WhatsAppMessage[] = value?.messages || [];
+    const contacts: WhatsAppContact[] = value?.contacts || [];
+
+    // Extract the phone number ID that received the message (WhatsApp Business Account)
+    const phoneNumberId = value?.metadata?.phone_number_id;
+
+    // Convert to string to ensure type consistency with database
+    const phoneNumberIdStr = phoneNumberId ? String(phoneNumberId) : null;
+
+    console.log('Incoming message for phone_number_id:', phoneNumberIdStr, '(type:', typeof phoneNumberId, ')');
+
+    if (!phoneNumberIdStr) {
+      console.error('No phone_number_id in webhook payload');
+      return new NextResponse('OK', { status: 200 });
+    }
+
+    // Find the user who owns this phone number ID
+    const userSettings = await prisma.userSettings.findFirst({
+      where: { phoneNumberId: phoneNumberIdStr },
+      select: { id: true, accessToken: true, apiVersion: true, phoneNumberId: true }
+    });
+
+    if (!userSettings) {
+      console.error('No user found for phone_number_id:', phoneNumberIdStr);
+      // Still acknowledge the webhook to avoid retries
+      return new NextResponse('OK', { status: 200 });
+    }
+
+    const businessOwnerId = userSettings.id;
+    const accessToken = userSettings.accessToken;
+    const apiVersion = userSettings.apiVersion || 'v23.0';
+
+    console.log('Found business owner:', businessOwnerId);
+
+    // Check if subscription is active - block receiving when paused/expired/cancelled
+    const subCheck = await checkSubscriptionActive(businessOwnerId);
+    if (!subCheck.active) {
+      console.log(`⛔ Incoming message blocked for user ${businessOwnerId}: subscription ${subCheck.status}`);
+      return new NextResponse('OK', { status: 200 });
+    }
+
+    // Process each incoming message
+    for (const message of messages) {
+      const phoneNumber = message.from;
+      const messageTimestamp = new Date(parseInt(message.timestamp) * 1000).toISOString();
+
+      // Find contact information
+      const contact = contacts.find((c: WhatsAppContact) => c.wa_id === phoneNumber);
+      const contactName = contact?.profile?.name || phoneNumber;
+
+      console.log(`Processing ${message.type} message from ${contactName} (${phoneNumber})`);
+
+      // Process message content based on type
+      const { content, messageType, mediaData } = processMessageContent(message);
+
+      // Handle media upload to S3 if it's a media message
+      let s3UploadSuccess = false;
+
+      if (mediaData && mediaData.id && accessToken) {
+        console.log(`Processing media upload for ${messageType}: ${mediaData.id}`);
+
+        try {
+          // Get WhatsApp media URL first using user-specific credentials
+          const whatsappMediaUrl = await getWhatsAppMediaUrl(
+            mediaData.id,
+            accessToken,
+            apiVersion
+          );
+
+          if (whatsappMediaUrl) {
+            console.log(`Downloading and uploading ${messageType} to S3...`);
+
+            // Validate media ID format (should be numeric)
+            if (!/^\d+$/.test(mediaData.id)) {
+              throw new Error(`Invalid media ID format: ${mediaData.id}`);
+            }
+
+            // Download from WhatsApp and upload to S3
+            const s3UploadedBytes = await downloadAndUploadToS3(
+              whatsappMediaUrl,
+              phoneNumber, // sender ID for folder structure
+              mediaData.id, // media ID for filename
+              mediaData.mime_type || 'application/octet-stream',
+              accessToken // Pass user-specific access token for authentication
+            );
+            s3UploadSuccess = s3UploadedBytes > 0;
+
+            if (s3UploadSuccess) {
+              console.log(`Successfully uploaded ${messageType} to S3`);
+              // Track storage usage for this user
+              await incrementStorageUsed(businessOwnerId, s3UploadedBytes);
+            } else {
+              console.error(`Failed to upload ${messageType} to S3`);
+            }
+          } else {
+            console.error(`Failed to get WhatsApp media URL for ${mediaData.id}`);
+          }
+        } catch (error: unknown) {
+          console.error(`Error processing media upload for ${mediaData.id}:`, error);
+          // Continue processing the message even if media upload fails
+        }
+      }
+
+      // Check if contact exists for this business owner
+      let existingContact = await prisma.contact.findUnique({
+        where: {
+          contacts_user_id_phone_number_key: {
+            userId: businessOwnerId,
+            phoneNumber: phoneNumber
+          }
+        }
+      });
+
+      // Create contact if they don't exist
+      if (!existingContact) {
+        console.log(`Creating new contact for business owner ${businessOwnerId}: ${contactName}`);
+        try {
+          existingContact = await prisma.contact.create({
+            data: {
+              userId: businessOwnerId,
+              phoneNumber: phoneNumber,
+              whatsappName: contactName !== phoneNumber ? contactName : null,
+              lastActive: new Date(messageTimestamp)
+            }
+          });
+        } catch (contactError: unknown) {
+          console.error('Error creating contact:', contactError);
+          continue; // Skip this message if contact creation fails
+        }
+      } else {
+        // Update last_active timestamp for existing contact
+        try {
+          await prisma.contact.update({
+            where: {
+              id: existingContact.id
+            },
+            data: {
+              lastActive: new Date(messageTimestamp),
+              whatsappName: contactName !== phoneNumber ? contactName : existingContact.whatsappName
+            }
+          });
+        } catch (updateError: unknown) {
+          console.error('Error updating contact last_active:', updateError);
+        }
+      }
+
+      // The receiver is the business owner who owns this phone number ID
+      const receiverId = businessOwnerId;
+
+      console.log(`Message receiver identified as: ${receiverId}`);
+
+      // Prepare message object for database - metadata only, no presigned URL
+      const messageObject = {
+        id: message.id, // Use WhatsApp message ID
+        user_id: receiverId, // Business owner (platform user)
+        contact_id: existingContact.id, // The contact who sent the message
+        content: content,
+        timestamp: messageTimestamp,
+        is_sent_by_me: false, // Received from contact
+        is_read: false, // Mark incoming messages as unread by default
+        message_type: messageType,
+        media_data: mediaData ? JSON.stringify({
+          ...mediaData,
+          s3_uploaded: s3UploadSuccess,
+          s3_owner_id: phoneNumber, // Store S3 owner for URL generation
+          upload_timestamp: s3UploadSuccess ? new Date().toISOString() : null,
+          upload_error: !s3UploadSuccess && mediaData.id ? 'Failed to upload to S3' : null
+        }) : null
+      };
+
+      // Store the incoming message
+      try {
+        await prisma.message.create({
+          data: {
+            id: messageObject.id,
+            userId: messageObject.user_id,
+            contactId: messageObject.contact_id,
+            content: messageObject.content,
+            timestamp: new Date(messageObject.timestamp),
+            isSentByMe: messageObject.is_sent_by_me,
+            isRead: messageObject.is_read,
+            messageType: messageObject.message_type,
+            mediaData: messageObject.media_data || undefined
+          }
+        });
+        console.log(`${messageType} message stored successfully: ${message.id} (from: ${phoneNumber} to: ${receiverId})`);
+        if (mediaData) {
+          console.log('Media metadata stored:', {
+            type: mediaData.type,
+            id: mediaData.id,
+            s3_uploaded: s3UploadSuccess
+          });
+        }
+      } catch (messageError: unknown) {
+        console.error('Error storing message:', messageError);
+      }
+    }
+
+    // Acknowledge receipt to WhatsApp
+    return new NextResponse('OK', { status: 200 });
+
+  } catch (error: unknown) {
+    console.error('Error processing webhook:', error);
+    return new NextResponse('Internal Server Error', { status: 500 });
+  }
+}
