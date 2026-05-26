@@ -1,5 +1,5 @@
 import { randomBytes, createHash, createCipheriv, createDecipheriv } from 'crypto';
-import { prisma } from './db';
+import { prisma } from './prisma';
 
 // Encryption key - should be 32 bytes for AES-256
 // In production, use a strong secret from environment variable

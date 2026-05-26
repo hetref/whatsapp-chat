@@ -16,6 +16,7 @@ import {
 import { Navbar } from "@/components/navbar";
 import { Footer } from "@/components/footer";
 import { Button } from "@/components/ui/button";
+import { InteractivePricingCard } from "@/components/ui/pricing";
 import {
   Card,
   CardContent,
@@ -75,6 +76,14 @@ const PLANS = [
   },
 ];
 
+const CUSTOM_PLAN_FEATURES = [
+  { label: "Flexible contacts from 15 upward", included: true },
+  { label: "Storage from 10 GB to 250 GB", included: true },
+  { label: "Bulk Messaging", included: true },
+  { label: "API Access", included: true },
+  { label: "Monthly billing in INR", included: true },
+];
+
 export default function PricingPage() {
   const router = useRouter();
   const { isLoaded, isSignedIn } = useAuth();
@@ -131,6 +140,15 @@ export default function PricingPage() {
     router.push("/protected/billing");
   };
 
+  const handleCustomPlan = async () => {
+    if (!isSignedIn) {
+      router.push("/sign-in?redirect_url=/pricing");
+      return;
+    }
+
+    router.push("/protected/billing");
+  };
+
   return (
     <>
       <Script
@@ -157,125 +175,68 @@ export default function PricingPage() {
           </div>
 
           {/* Pricing Cards */}
-          <div className="max-w-5xl mx-auto grid md:grid-cols-3 gap-6">
+          <div className="max-w-6xl mx-auto grid gap-6 md:grid-cols-3">
             {PLANS.map((plan) => {
               const isCurrent = currentPlan === plan.tier;
               const isPopular = "popular" in plan && plan.popular;
+              const planCtaText = isCurrent
+                ? "Current Plan"
+                : plan.tier === "FREE"
+                  ? "Get Started"
+                  : "Subscribe";
 
               return (
-                <Card
+                <InteractivePricingCard
                   key={plan.tier}
-                  className={`relative overflow-hidden shadow-lg ${isPopular
-                    ? "border-2 border-primary/40 scale-105"
-                    : "border"
+                  planName={plan.name}
+                  planDescription={plan.description}
+                  fixedPrice={plan.price}
+                  features={plan.features}
+                  ctaText={planCtaText}
+                  onCtaClick={() => handleSubscribe(plan.tier)}
+                  ctaDisabled={loading === plan.tier || checkingStatus || isCurrent}
+                  currency="₹"
+                  highlighted={isPopular || plan.tier === "GOLD"}
+                  showSlider={false}
+                  fullWidth
+                  className={`relative overflow-hidden ${plan.tier === "GOLD"
+                    ? "border-amber-500 dark:border-amber-400"
+                    : isPopular
+                      ? "border-primary/50"
+                      : "border-border"
                     }`}
-                >
-                  {isPopular && (
-                    <div className="absolute top-0 right-0 bg-primary text-primary-foreground px-4 py-1 text-sm font-medium rounded-bl-lg">
-                      Most Popular
-                    </div>
-                  )}
-
-                  {plan.tier === "GOLD" && (
-                    <div className="absolute top-0 right-0 bg-amber-500 text-white px-4 py-1 text-sm font-medium rounded-bl-lg flex items-center gap-1">
-                      <Crown className="h-3 w-3" />
-                      Premium
-                    </div>
-                  )}
-
-                  <CardHeader className="text-center pb-2 pt-8">
-                    <CardTitle className="text-2xl">{plan.name}</CardTitle>
-                    <CardDescription className="mt-1">
-                      {plan.description}
-                    </CardDescription>
-                  </CardHeader>
-
-                  <CardContent className="text-center pb-4">
-                    <div className="mb-6">
-                      {plan.price === 0 ? (
-                        <span className="text-5xl font-bold">Free</span>
-                      ) : (
-                        <>
-                          <span className="text-5xl font-bold">
-                            ₹{plan.price}
-                          </span>
-                          <span className="text-muted-foreground">/month</span>
-                        </>
-                      )}
-                    </div>
-
-                    <ul className="space-y-3 text-left">
-                      {plan.features.map((feature, index) => (
-                        <li key={index} className="flex items-center gap-3">
-                          <div
-                            className={`h-5 w-5 rounded-full flex items-center justify-center ${feature.included
-                              ? "bg-primary/10"
-                              : "bg-muted"
-                              }`}
-                          >
-                            {feature.included ? (
-                              <Check className="h-3 w-3 text-primary" />
-                            ) : (
-                              <X className="h-3 w-3 text-muted-foreground" />
-                            )}
-                          </div>
-                          <span
-                            className={`text-sm ${feature.included
-                              ? ""
-                              : "text-muted-foreground"
-                              }`}
-                          >
-                            {feature.label}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  </CardContent>
-
-                  <CardFooter className="flex flex-col gap-4 pb-8">
-                    {error && (
-                      <p className="text-sm text-destructive text-center">
-                        {error}
-                      </p>
-                    )}
-
-                    <Button
-                      className={`w-full h-12 text-lg ${plan.tier === "GOLD"
-                        ? "bg-amber-500 hover:bg-amber-600"
-                        : ""
-                        }`}
-                      variant={plan.tier === "FREE" ? "outline" : "default"}
-                      onClick={() => handleSubscribe(plan.tier)}
-                      disabled={
-                        loading === plan.tier || checkingStatus || isCurrent
-                      }
-                    >
-                      {loading === plan.tier || checkingStatus ? (
-                        <Loader2 className="h-5 w-5 animate-spin" />
-                      ) : isCurrent ? (
-                        "Current Plan"
-                      ) : plan.tier === "FREE" ? (
-                        <>
-                          Get Started
-                          <ArrowRight className="ml-2 h-5 w-5" />
-                        </>
-                      ) : (
-                        <>
-                          Subscribe
-                          <ArrowRight className="ml-2 h-5 w-5" />
-                        </>
-                      )}
-                    </Button>
-
-                    {plan.price > 0 && (
-                      <p className="text-xs text-muted-foreground text-center">
-                        Auto-renews monthly. Cancel anytime.
-                      </p>
-                    )}
-                  </CardFooter>
-                </Card>
+                />
               );
             })}
+          </div>
+
+          <div className="mt-10 max-w-3xl mx-auto">
+            <InteractivePricingCard
+              planName="Build Your Plan"
+              planDescription="Adjust contacts and storage to fit your workspace, with monthly pricing in INR."
+              fixedPrice={499}
+              pricePerUnit={0.75}
+              unitName="contact"
+              minUnits={15}
+              maxUnits={100000}
+              initialUnits={15}
+              step={5}
+              secondaryUnitName="GB storage"
+              secondaryLabel="Storage"
+              secondaryMinUnits={10}
+              secondaryMaxUnits={250}
+              secondaryInitialUnits={10}
+              secondaryPricePerUnit={8}
+              secondaryStep={5}
+              features={CUSTOM_PLAN_FEATURES}
+              ctaText="Continue to Billing"
+              onCtaClick={handleCustomPlan}
+              currency="₹"
+              highlighted
+              showSlider
+              fullWidth
+              className="border-primary/40"
+            />
           </div>
 
           {/* Trust Badges */}

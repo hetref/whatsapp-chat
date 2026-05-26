@@ -7,6 +7,8 @@ import { createSecurityMiddleware } from './middleware/security.js';
 import { errorHandler, notFoundHandler } from './middleware/error-handler.js';
 import flowEndpointRouter from './routes/flow-endpoint.routes.js';
 import razorpayWebhookRouter from './routes/razorpay-webhook.routes.js';
+import razorpayRouter from './routes/razorpay.routes.js';
+import subscriptionRouter from './routes/subscription.routes.js';
 import wachatRouter from './routes/wachat.routes.js';
 
 const app = express();
@@ -37,6 +39,8 @@ app.use('/api/razorpay/webhook', express.raw({ type: 'application/json' }), razo
 app.use(express.json({ limit: '2mb' }));
 
 app.use('/api/flow-endpoint', flowEndpointRouter);
+app.use('/api', razorpayRouter);
+app.use('/api', subscriptionRouter);
 app.use('/api', wachatRouter);
 
 app.get('/health', (_req, res) => {

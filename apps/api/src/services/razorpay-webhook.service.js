@@ -33,7 +33,7 @@ const SUBSCRIPTION_STATUS_MAP = {
     'subscription.paused': 'PAUSED',
     'subscription.resumed': 'ACTIVE',
     'subscription.pending': 'PAST_DUE',
-    'subscription.halted': 'INACTIVE',
+    'subscription.halted': 'PAST_DUE',
 };
 
 function epochToDate(value) {
@@ -140,20 +140,24 @@ async function syncUserPlanLimits(subscription, status) {
     });
 
     const tier = plan?.name && PLAN_DEFAULTS[plan.name] ? plan.name : 'FREE';
-    const defaults = PLAN_DEFAULTS[tier];
+    const now = new Date();
+    const periodEnd = subscription.currentPeriodEnd ? new Date(subscription.currentPeriodEnd) : null;
+    const hasGraceAccess = status === 'CANCELLED' && periodEnd && periodEnd > now;
+    const shouldKeepPaidPlan = status === 'ACTIVE' || hasGraceAccess;
 
-    const isActive = status === 'ACTIVE' || status === 'CANCELLED';
+    const effectiveTier = shouldKeepPaidPlan ? tier : 'FREE';
+    const defaults = PLAN_DEFAULTS[effectiveTier];
 
     await prisma.user.update({
         where: { id: subscription.userId },
         data: {
-            planTier: tier,
+            planTier: effectiveTier,
             contactsLimit: defaults.contactsLimit,
             groupsLimit: defaults.groupsLimit,
             storageLimitBytes: defaults.storageLimitBytes,
             bulkSendEnabled: defaults.bulkSendEnabled,
             apiAccessEnabled: defaults.apiAccessEnabled,
-            isActive,
+            isActive: shouldKeepPaidPlan,
         },
     });
 }
@@ -169,16 +173,13 @@ async function updateSubscriptionFromEvent({ event, payload, subscription, razor
 
     const currentPeriodStart = epochToDate(subscriptionEntity?.current_start) || subscription.currentPeriodStart;
     const currentPeriodEnd = epochToDate(subscriptionEntity?.current_end) || subscription.currentPeriodEnd;
-    const endedAt = epochToDate(subscriptionEntity?.ended_at);
-
     const data = {
         status: mappedStatus,
         razorpaySubscriptionId: razorpaySubscriptionId || subscription.razorpaySubscriptionId,
         razorpayCustomerId: subscriptionEntity?.customer_id || subscription.razorpayCustomerId,
         currentPeriodStart,
         currentPeriodEnd,
-        autoRenew: mappedStatus !== 'CANCELLED' && mappedStatus !== 'INACTIVE',
-        endDate: endedAt || (mappedStatus === 'CANCELLED' ? currentPeriodEnd : subscription.endDate),
+        autoRenew: mappedStatus !== 'CANCELLED' && mappedStatus !== 'PAST_DUE',
         updatedAt: new Date(),
     };
 
@@ -211,6 +212,19 @@ async function handleLegacyPaymentEvent(event, payload) {
         fallbackStatus,
         fallbackOrderId: paymentEntity.order_id,
     });
+
+    if (event === 'payment.failed') {
+        await prisma.subscription.update({
+            where: { id: subscription.id },
+            data: {
+                status: 'PAST_DUE',
+                autoRenew: true,
+                updatedAt: new Date(),
+            },
+        });
+
+        await syncUserPlanLimits({ ...subscription, status: 'PAST_DUE' }, 'PAST_DUE');
+    }
 }
 
 export async function processRazorpayWebhook(rawBody, signature) {

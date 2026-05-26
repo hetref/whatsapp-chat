@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyApiKey, extractApiKeyFromHeader } from './api-keys';
-import { prisma } from './db';
+import { prisma } from './prisma';
 import { checkFeatureAccess, checkSubscriptionActive } from './plan-limits';
 
 export interface AuthenticatedRequest {

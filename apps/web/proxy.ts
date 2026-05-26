@@ -10,6 +10,7 @@ const isPublicRoute = createRouteMatcher([
     "/pricing",
     "/open-source",
     "/",
+    "/test",
 
     // Webhooks - no auth (validated by webhook signature/key or identifier)
     "/api/clerk-webhook",
