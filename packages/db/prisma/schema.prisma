@@ -83,6 +83,7 @@ model Message {
   isSentByMe  Boolean   @default(false) @map("is_sent_by_me") // true = user sent, false = contact sent
   messageType String    @default("text") @map("message_type")
   mediaData   Json?     @map("media_data")
+  reactions   Json?     @map("reactions")
   isRead      Boolean   @default(false) @map("is_read")
   readAt      DateTime? @map("read_at")
 

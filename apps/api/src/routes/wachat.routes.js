@@ -181,6 +181,31 @@ function formatComponents(components) {
     return formatted;
 }
 
+function normalizeReactions(raw) {
+    if (!raw) return [];
+    if (Array.isArray(raw)) {
+        return raw
+            .map((entry) => ({
+                emoji: String(entry?.emoji || ''),
+                from: String(entry?.from || ''),
+                timestamp: String(entry?.timestamp || ''),
+            }))
+            .filter((entry) => entry.emoji || entry.from || entry.timestamp);
+    }
+    return [];
+}
+
+function upsertReactionList({ reactions, emoji, from, timestamp }) {
+    const current = normalizeReactions(reactions);
+    const filtered = current.filter((reaction) => reaction.from !== from);
+
+    if (emoji) {
+        filtered.push({ emoji, from, timestamp });
+    }
+
+    return filtered;
+}
+
 async function sendTextMessage({ to, message, accessToken, phoneNumberId, apiVersion }) {
     const response = await fetch(`https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`, {
         method: 'POST',
@@ -193,6 +218,31 @@ async function sendTextMessage({ to, message, accessToken, phoneNumberId, apiVer
             to,
             type: 'text',
             text: { body: message },
+        }),
+    });
+
+    if (!response.ok) {
+        throw new Error(await response.text());
+    }
+
+    return response.json();
+}
+
+async function sendReactionMessage({ to, messageId, emoji, accessToken, phoneNumberId, apiVersion }) {
+    const response = await fetch(`https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`, {
+        method: 'POST',
+        headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            messaging_product: 'whatsapp',
+            to,
+            type: 'reaction',
+            reaction: {
+                message_id: messageId,
+                emoji: emoji || '',
+            },
         }),
     });
 
@@ -416,6 +466,7 @@ router.get('/messages', async (req, res, next) => {
                 isRead: true,
                 messageType: true,
                 mediaData: true,
+                reactions: true,
                 readAt: true,
             },
         });
@@ -430,10 +481,96 @@ router.get('/messages', async (req, res, next) => {
             is_read: msg.isRead,
             message_type: msg.messageType,
             media_data: msg.mediaData,
+            reactions: msg.reactions,
             read_at: msg.readAt?.toISOString() || null,
         })).reverse();
 
         res.json({ messages: formatted });
+    } catch (error) {
+        next(error);
+    }
+});
+
+router.post('/messages/react', async (req, res, next) => {
+    try {
+        const userId = getUserId(req, res);
+        if (!userId) return;
+
+        const messageId = String(req.body?.messageId || '').trim();
+        const emoji = String(req.body?.emoji || '').trim();
+
+        if (!messageId) {
+            res.status(400).json({ error: 'messageId is required' });
+            return;
+        }
+
+        const message = await prisma.message.findUnique({
+            where: { id: messageId },
+            select: { id: true, userId: true, contactId: true, reactions: true, mediaData: true },
+        });
+
+        if (!message) {
+            res.status(404).json({ error: 'Message not found' });
+            return;
+        }
+
+        if (message.userId !== userId) {
+            res.status(403).json({ error: 'Access denied' });
+            return;
+        }
+
+        if (message.mediaData) {
+            try {
+                const parsed = typeof message.mediaData === 'string' ? JSON.parse(message.mediaData) : message.mediaData;
+                if (parsed?.broadcast_group_id) {
+                    res.status(400).json({ error: 'Reactions are not supported for broadcast messages' });
+                    return;
+                }
+            } catch {
+                // ignore
+            }
+        }
+
+        const contact = await prisma.contact.findFirst({ where: { id: message.contactId, userId } });
+        if (!contact) {
+            res.status(404).json({ error: 'Contact not found for message' });
+            return;
+        }
+
+        const settings = await getUserSettings(userId);
+        if (!settings?.accessToken || !settings.phoneNumberId) {
+            res.status(400).json({ error: 'WhatsApp credentials not configured. Please complete setup.' });
+            return;
+        }
+
+        const apiVersion = settings.apiVersion || 'v23.0';
+        await sendReactionMessage({
+            to: cleanPhoneNumber(contact.phoneNumber),
+            messageId,
+            emoji,
+            accessToken: settings.accessToken,
+            phoneNumberId: settings.phoneNumberId,
+            apiVersion,
+        });
+
+        const updatedReactions = upsertReactionList({
+            reactions: message.reactions,
+            emoji,
+            from: userId,
+            timestamp: new Date().toISOString(),
+        });
+
+        await prisma.message.update({
+            where: { id: messageId },
+            data: { reactions: updatedReactions },
+        });
+
+        res.json({
+            success: true,
+            messageId,
+            reactions: updatedReactions,
+            timestamp: new Date().toISOString(),
+        });
     } catch (error) {
         next(error);
     }
@@ -753,6 +890,7 @@ router.get('/groups/:id/messages', async (req, res, next) => {
             is_sent_by_me: true,
             message_type: msg.messageType,
             media_data: msg.mediaData,
+            reactions: msg.reactions,
             is_read: true,
         }));
 

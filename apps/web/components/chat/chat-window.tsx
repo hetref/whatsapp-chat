@@ -51,6 +51,13 @@ interface Message {
   is_read?: boolean;
   read_at?: string | null;
   isOptimistic?: boolean; // Flag for optimistic messages
+  reactions?: ReactionEntry[] | null;
+}
+
+interface ReactionEntry {
+  emoji: string;
+  from: string;
+  timestamp: string;
 }
 
 interface MediaData {
@@ -104,6 +111,8 @@ interface ChatWindowProps {
   selectedUser: ChatUser | null;
   messages: Message[];
   onSendMessage: (content: string) => void;
+  onReactToMessage?: (messageId: string, emoji: string) => void;
+  currentUserId: string;
   onBack?: () => void;
   onClose?: () => void;
   isMobile?: boolean;
@@ -118,6 +127,8 @@ export function ChatWindow({
   selectedUser,
   messages,
   onSendMessage,
+  onReactToMessage,
+  currentUserId,
   onBack,
   onClose,
   isMobile = false,
@@ -142,6 +153,34 @@ export function ChatWindow({
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const unreadIndicatorRef = useRef<HTMLDivElement>(null);
   const audioRefs = useRef<{ [key: string]: HTMLAudioElement }>({});
+  const REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
+
+  const normalizeReactions = useCallback((raw?: ReactionEntry[] | null) => {
+    if (!raw || !Array.isArray(raw)) return [] as ReactionEntry[];
+    return raw.filter((entry) => entry?.from);
+  }, []);
+
+  const getReactionSummary = useCallback((raw?: ReactionEntry[] | null) => {
+    const reactions = normalizeReactions(raw);
+    const counts = reactions.reduce((acc: Record<string, number>, reaction) => {
+      acc[reaction.emoji] = (acc[reaction.emoji] || 0) + 1;
+      return acc;
+    }, {});
+
+    return Object.entries(counts).map(([emoji, count]) => ({ emoji, count }));
+  }, [normalizeReactions]);
+
+  const getUserReaction = useCallback((raw?: ReactionEntry[] | null) => {
+    const reactions = normalizeReactions(raw);
+    return reactions.find((reaction) => reaction.from === currentUserId) || null;
+  }, [currentUserId, normalizeReactions]);
+
+  const handleReactionClick = useCallback((message: Message, emoji: string) => {
+    if (!onReactToMessage || message.isOptimistic || broadcastGroupName) return;
+    const currentReaction = getUserReaction(message.reactions);
+    const nextEmoji = currentReaction?.emoji === emoji ? '' : emoji;
+    onReactToMessage(message.id, nextEmoji);
+  }, [broadcastGroupName, getUserReaction, onReactToMessage]);
 
   // SessionStorage helpers for caching presigned URLs
   const MEDIA_CACHE_PREFIX = 'media_url_';
@@ -1337,7 +1376,40 @@ export function ChatWindow({
                         )}
 
                         <div className={`flex ${isOwn ? 'justify-end' : 'justify-start'}`}>
-                          {renderMessageContent(message, isOwn)}
+                          <div className="group">
+                            {renderMessageContent(message, isOwn)}
+                            {getReactionSummary(message.reactions).length > 0 && (
+                              <div className={`mt-1 flex flex-wrap gap-1 ${isOwn ? 'justify-end' : 'justify-start'}`}>
+                                {getReactionSummary(message.reactions).map((reaction) => (
+                                  <span
+                                    key={`${message.id}-${reaction.emoji}`}
+                                    className="px-2 py-0.5 text-xs rounded-full bg-muted text-foreground border border-border"
+                                  >
+                                    {reaction.emoji} {reaction.count}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                            {onReactToMessage && !broadcastGroupName && !message.isOptimistic && (
+                              <div className={`mt-1 flex gap-1 ${isOwn ? 'justify-end' : 'justify-start'} opacity-0 group-hover:opacity-100 transition-opacity`}>
+                                {REACTION_EMOJIS.map((emoji) => {
+                                  const current = getUserReaction(message.reactions);
+                                  const isSelected = current?.emoji === emoji;
+                                  return (
+                                    <button
+                                      key={`${message.id}-${emoji}`}
+                                      type="button"
+                                      className={`px-2 py-0.5 text-sm rounded-full border transition-colors ${isSelected ? 'bg-green-100 border-green-300' : 'bg-background border-border hover:bg-muted'}`}
+                                      onClick={() => handleReactionClick(message, emoji)}
+                                      title={isSelected ? 'Remove reaction' : 'React'}
+                                    >
+                                      {emoji}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </div>
                     );

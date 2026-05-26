@@ -23,6 +23,12 @@ interface ChatUser {
   last_message_sender?: string;
 }
 
+interface ReactionEntry {
+  emoji: string;
+  from: string;
+  timestamp: string;
+}
+
 interface Message {
   id: string;
   sender_id: string;
@@ -32,6 +38,7 @@ interface Message {
   is_sent_by_me: boolean;
   message_type?: string;
   media_data?: string | null;
+  reactions?: ReactionEntry[] | null;
   isOptimistic?: boolean;
 }
 
@@ -62,6 +69,58 @@ export default function ChatPage() {
   const [broadcastGroupId, setBroadcastGroupId] = useState<string | null>(null);
   const [broadcastGroupName, setBroadcastGroupName] = useState<string | null>(null);
   const { messagingBlocked, messagingBlockedReason } = useSubscriptionStatus();
+
+  const normalizeReactions = useCallback((raw?: ReactionEntry[] | null) => {
+    if (!raw || !Array.isArray(raw)) return [] as ReactionEntry[];
+    return raw.filter((entry) => entry?.from);
+  }, []);
+
+  const upsertReactionList = useCallback((params: {
+    reactions?: ReactionEntry[] | null;
+    emoji: string;
+    from: string;
+    timestamp: string;
+  }) => {
+    const current = normalizeReactions(params.reactions);
+    const filtered = current.filter((reaction) => reaction.from !== params.from);
+
+    if (params.emoji) {
+      filtered.push({
+        emoji: params.emoji,
+        from: params.from,
+        timestamp: params.timestamp,
+      });
+    }
+
+    return filtered;
+  }, [normalizeReactions]);
+
+  const refreshMessages = useCallback(async () => {
+    if (!selectedUser || !user) return;
+
+    try {
+      const response = await fetch(`/api/messages?conversationId=${selectedUser.id}&limit=50`);
+      const result = await response.json();
+
+      if (response.ok && result.messages) {
+        const mappedMessages = result.messages.map((msg: Message) => ({
+          ...msg,
+          is_sent_by_me: msg.sender_id === user.id,
+        }));
+
+        setMessages((prevMessages) => {
+          const optimisticMessages = prevMessages.filter(msg => msg.isOptimistic);
+          return [...mappedMessages, ...optimisticMessages];
+        });
+      } else {
+        console.error('Error fetching messages:', result.error);
+        setMessages([]);
+      }
+    } catch (error) {
+      console.error('Error fetching messages:', error);
+      setMessages([]);
+    }
+  }, [selectedUser, user]);
 
   // Define handleBackToUsers early so it can be used in useEffect
   const handleBackToUsers = useCallback(() => {
@@ -177,59 +236,15 @@ export default function ChatPage() {
       return;
     }
 
-    const fetchMessages = async () => {
-      console.log(`Fetching messages between ${user.id} and ${selectedUser.id}`);
-
-      try {
-        const response = await fetch(`/api/messages?conversationId=${selectedUser.id}&limit=50`);
-        const result = await response.json();
-
-        if (response.ok && result.messages) {
-          console.log(`Fetched ${result.messages.length} messages`);
-
-          // Ensure is_sent_by_me is set correctly
-          const mappedMessages = result.messages.map((msg: Message) => ({
-            ...msg,
-            is_sent_by_me: msg.sender_id === user.id
-          }));
-
-          // Preserve optimistic messages during polling updates
-          setMessages((prevMessages) => {
-            const optimisticMessages = prevMessages.filter(msg => msg.isOptimistic);
-            // No need to reverse - API now returns messages in chronological order (oldest to newest)
-
-            // Combine real messages with optimistic ones, avoiding duplicates
-            return [...mappedMessages, ...optimisticMessages];
-          });
-
-          // Debug: Log first few messages
-          if (mappedMessages.length > 0) {
-            console.log('Sample messages:', mappedMessages.slice(0, 3).map((m: Message) => ({
-              id: m.id,
-              sender_id: m.sender_id,
-              is_sent_by_me: m.is_sent_by_me,
-              content: m.content?.substring(0, 20)
-            })));
-          }
-        } else {
-          console.error('Error fetching messages:', result.error);
-          setMessages([]);
-        }
-      } catch (error) {
-        console.error('Error fetching messages:', error);
-        setMessages([]);
-      }
-    };
-
-    fetchMessages();
+    refreshMessages();
 
     // Set up polling for message updates
-    const interval = setInterval(fetchMessages, 5000); // Poll every 5 seconds
+    const interval = setInterval(refreshMessages, 5000); // Poll every 5 seconds
 
     return () => {
       clearInterval(interval);
     };
-  }, [selectedUser, user]);
+  }, [selectedUser, user, refreshMessages]);
 
   // Fetch broadcast messages when broadcast group is selected
   useEffect(() => {
@@ -625,6 +640,51 @@ export default function ChatPage() {
     }
   };
 
+  const handleReactToMessage = useCallback(async (messageId: string, emoji: string) => {
+    if (!user || sendingMessage) return;
+
+    const timestamp = new Date().toISOString();
+
+    setMessages((prev) => prev.map((msg) => {
+      if (msg.id !== messageId) return msg;
+      return {
+        ...msg,
+        reactions: upsertReactionList({
+          reactions: msg.reactions || [],
+          emoji,
+          from: user.id,
+          timestamp,
+        }),
+      };
+    }));
+
+    try {
+      const response = await fetch('/api/messages/react', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ messageId, emoji }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || result.message || 'Failed to react');
+      }
+
+      if (result.reactions) {
+        setMessages((prev) => prev.map((msg) => (
+          msg.id === messageId ? { ...msg, reactions: result.reactions } : msg
+        )));
+      }
+    } catch (error) {
+      console.error('Error reacting to message:', error);
+      alert(`Failed to react: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      await refreshMessages();
+    }
+  }, [refreshMessages, sendingMessage, upsertReactionList, user]);
+
   // Show loading state while checking setup
   if (!user || checkingSetup) {
     return (
@@ -696,6 +756,8 @@ export default function ChatPage() {
               selectedUser={selectedUser}
               messages={messages}
               onSendMessage={handleSendMessage}
+              onReactToMessage={handleReactToMessage}
+              currentUserId={user.id}
               isLoading={sendingMessage}
               onUpdateName={handleUpdateName}
               onClose={() => {
@@ -734,6 +796,8 @@ export default function ChatPage() {
                 selectedUser={selectedUser}
                 messages={messages}
                 onSendMessage={handleSendMessage}
+                onReactToMessage={handleReactToMessage}
+                currentUserId={user.id}
                 onBack={() => {
                   handleBackToUsers();
                   setBroadcastGroupId(null);

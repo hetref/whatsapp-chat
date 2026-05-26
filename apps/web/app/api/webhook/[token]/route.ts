@@ -22,11 +22,16 @@ interface MediaInfo {
   voice?: boolean;
 }
 
+interface WhatsAppReaction {
+  message_id: string;
+  emoji?: string;
+}
+
 interface WhatsAppMessage {
   id: string;
   from: string;
   timestamp: string;
-  type: 'text' | 'image' | 'document' | 'audio' | 'video' | 'sticker';
+  type: 'text' | 'image' | 'document' | 'audio' | 'video' | 'sticker' | 'reaction';
   text?: {
     body: string;
   };
@@ -35,6 +40,52 @@ interface WhatsAppMessage {
   audio?: MediaInfo;
   video?: MediaInfo;
   sticker?: MediaInfo;
+  reaction?: WhatsAppReaction;
+}
+
+function normalizeReactions(raw: unknown): Array<{ emoji: string; from: string; timestamp: string }> {
+  if (!raw) return [];
+  if (Array.isArray(raw)) {
+    return raw
+      .map((entry) => ({
+        emoji: String(entry?.emoji || ''),
+        from: String(entry?.from || ''),
+        timestamp: String(entry?.timestamp || ''),
+      }))
+      .filter((entry) => entry.emoji || entry.from || entry.timestamp);
+  }
+  return [];
+}
+
+async function upsertMessageReaction(params: {
+  userId: string;
+  messageId: string;
+  emoji: string;
+  from: string;
+  timestamp: string;
+}) {
+  const message = await prisma.message.findUnique({
+    where: { id: params.messageId },
+    select: { id: true, userId: true, reactions: true },
+  });
+
+  if (!message || message.userId !== params.userId) {
+    return { updated: false, reason: 'not_found' as const };
+  }
+
+  const current = normalizeReactions(message.reactions);
+  const filtered = current.filter((reaction) => reaction.from !== params.from);
+
+  if (params.emoji) {
+    filtered.push({ emoji: params.emoji, from: params.from, timestamp: params.timestamp });
+  }
+
+  await prisma.message.update({
+    where: { id: params.messageId },
+    data: { reactions: filtered },
+  });
+
+  return { updated: true };
 }
 
 /**
@@ -291,6 +342,75 @@ export async function POST(
 
       console.log(`Processing ${message.type} message from ${contactName} (${phoneNumber})`);
 
+      // Check if contact exists for this business owner
+      let existingContact = await prisma.contact.findUnique({
+        where: {
+          contacts_user_id_phone_number_key: {
+            userId: businessOwnerId,
+            phoneNumber: phoneNumber
+          }
+        }
+      });
+
+      // Create contact if they don't exist
+      if (!existingContact) {
+        console.log(`Creating new contact for business owner ${businessOwnerId}: ${contactName}`);
+        try {
+          existingContact = await prisma.contact.create({
+            data: {
+              userId: businessOwnerId,
+              phoneNumber: phoneNumber,
+              whatsappName: contactName !== phoneNumber ? contactName : null,
+              lastActive: new Date(messageTimestamp)
+            }
+          });
+        } catch (contactError) {
+          console.error('Error creating contact:', contactError);
+          continue;
+        }
+      } else {
+        // Update last_active timestamp and whatsapp name if changed
+        try {
+          await prisma.contact.update({
+            where: {
+              id: existingContact.id
+            },
+            data: {
+              lastActive: new Date(messageTimestamp),
+              whatsappName: contactName !== phoneNumber ? contactName : existingContact.whatsappName
+            }
+          });
+        } catch (updateError: unknown) {
+          console.error('Error updating contact last_active:', updateError);
+        }
+      }
+
+      if (message.type === 'reaction') {
+        const reactionTargetId = message.reaction?.message_id;
+        const emoji = message.reaction?.emoji || '';
+
+        if (!reactionTargetId) {
+          console.warn('Reaction message missing target message_id', message.id);
+          continue;
+        }
+
+        const result = await upsertMessageReaction({
+          userId: businessOwnerId,
+          messageId: reactionTargetId,
+          emoji,
+          from: phoneNumber,
+          timestamp: messageTimestamp,
+        });
+
+        if (result.updated) {
+          console.log(`Reaction updated successfully: ${reactionTargetId} (${emoji || 'removed'})`);
+        } else {
+          console.warn(`Reaction target not found for message: ${reactionTargetId}`);
+        }
+
+        continue;
+      }
+
       // Process message content based on type
       const { content, messageType, mediaData } = processMessageContent(message);
 
@@ -337,49 +457,6 @@ export async function POST(
           }
         } catch (error) {
           console.error(`Error processing media upload for ${mediaData.id}:`, error);
-        }
-      }
-
-      // Check if contact exists for this business owner
-      let existingContact = await prisma.contact.findUnique({
-        where: {
-          contacts_user_id_phone_number_key: {
-            userId: businessOwnerId,
-            phoneNumber: phoneNumber
-          }
-        }
-      });
-
-      // Create contact if they don't exist  
-      if (!existingContact) {
-        console.log(`Creating new contact for business owner ${businessOwnerId}: ${contactName}`);
-        try {
-          existingContact = await prisma.contact.create({
-            data: {
-              userId: businessOwnerId,
-              phoneNumber: phoneNumber,
-              whatsappName: contactName !== phoneNumber ? contactName : null,
-              lastActive: new Date(messageTimestamp)
-            }
-          });
-        } catch (contactError) {
-          console.error('Error creating contact:', contactError);
-          continue;
-        }
-      } else {
-        // Update last_active timestamp and whatsapp name if changed
-        try {
-          await prisma.contact.update({
-            where: {
-              id: existingContact.id
-            },
-            data: {
-              lastActive: new Date(messageTimestamp),
-              whatsappName: contactName !== phoneNumber ? contactName : existingContact.whatsappName
-            }
-          });
-        } catch (updateError: unknown) {
-          console.error('Error updating contact last_active:', updateError);
         }
       }
 
