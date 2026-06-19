@@ -14,8 +14,11 @@ import {
   X,
   Check,
   Paperclip,
+  AlertCircle,
 } from "lucide-react";
 import Image from "next/image";
+
+import { compressImageIfNeeded } from "@/lib/image-compression";
 
 interface MediaItem {
   id: string;
@@ -44,6 +47,7 @@ interface MediaPickerDialogProps {
   /** Filter to a single media type, e.g. 'image', 'video', 'document' */
   mediaTypeFilter?: string;
   title?: string;
+  isTemplateImageHeader?: boolean;
 }
 
 // WhatsApp supported types
@@ -70,6 +74,7 @@ export function MediaPickerDialog({
   onSelect,
   mediaTypeFilter,
   title = "Select Media",
+  isTemplateImageHeader = false,
 }: MediaPickerDialogProps) {
   const [tab, setTab] = useState<string>("library");
   const [items, setItems] = useState<MediaItem[]>([]);
@@ -81,9 +86,101 @@ export function MediaPickerDialog({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [isCompressing, setIsCompressing] = useState(false);
+  const [compressionStatus, setCompressionStatus] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const observerRef = useRef<IntersectionObserver | null>(null);
+
+  const handleCompressLibraryImage = async (item: MediaItem) => {
+    const url = presignedUrls[item.id];
+    if (!url) return;
+
+    setIsCompressing(true);
+    setCompressionStatus("Downloading original image...");
+
+    try {
+      // 1. Download original image via proxy endpoint to avoid CORS issues
+      const response = await fetch(`/api/media/download?id=${item.id}`);
+      if (!response.ok) throw new Error("Failed to download original image.");
+      const blob = await response.blob();
+
+      // Create file object
+      const originalFile = new File([blob], item.fileName, { type: item.mimeType });
+
+      setCompressionStatus("Compressing to under 5MB...");
+      // 2. Compress using our utility
+      const compressedFile = await compressImageIfNeeded(originalFile);
+
+      setCompressionStatus("Uploading compressed image...");
+      // 3. Request upload URL
+      const uploadRes = await fetch('/api/media', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          files: [{
+            fileName: compressedFile.name,
+            fileSize: compressedFile.size,
+            mimeType: compressedFile.type,
+          }],
+        }),
+      });
+      const data = await uploadRes.json();
+      if (!uploadRes.ok) throw new Error(data.error || 'Failed to prepare S3 upload');
+
+      const upload = data.uploads[0];
+
+      // 4. Upload to S3
+      const putRes = await fetch(upload.uploadUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': compressedFile.type },
+        body: compressedFile,
+      });
+
+      if (!putRes.ok) throw new Error('Failed to upload compressed image to storage');
+
+      // 5. Confirm storage usage
+      await fetch('/api/media/confirm-upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: [upload.id] }),
+      });
+
+      setCompressionStatus("Refreshing library...");
+      // 6. Refresh list so the new image is shown in the grid
+      await fetchMedia();
+
+      // 7. Get new presigned URL for this new media item
+      const presignedRes = await fetch('/api/media/presigned-urls', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: [upload.id] }),
+      });
+      const presignedData = await presignedRes.json();
+      const newUrl = presignedData.urls?.[upload.id];
+
+      if (newUrl) {
+        setSelectedId(upload.id);
+        onSelect({
+          url: newUrl,
+          s3Key: upload.s3Key,
+          fileName: upload.fileName,
+          mimeType: upload.mimeType,
+          fileSize: compressedFile.size,
+          mediaFileId: upload.id,
+        });
+        onClose();
+      } else {
+        throw new Error("Failed to retrieve URL for compressed file");
+      }
+    } catch (e) {
+      console.error('[LibraryImageCompression] Error:', e);
+      alert(e instanceof Error ? e.message : 'Compression/upload failed');
+    } finally {
+      setIsCompressing(false);
+      setCompressionStatus("");
+    }
+  };
 
   const fetchMedia = useCallback(async (cursor?: string | null, append = false) => {
     if (!append) setLoading(true);
@@ -211,12 +308,27 @@ export function MediaPickerDialog({
     setUploading(true);
 
     try {
+      // Compress images on-the-fly if they exceed 5MB (Meta's limit)
+      const processedFiles = await Promise.all(
+        validFiles.map(async (file) => {
+          if (file.type.startsWith('image/')) {
+            try {
+              return await compressImageIfNeeded(file);
+            } catch (err) {
+              console.error('[MediaPickerDialog] Compression failed for', file.name, err);
+              return file;
+            }
+          }
+          return file;
+        })
+      );
+
       // Get upload URLs
       const res = await fetch('/api/media', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          files: validFiles.map(f => ({ fileName: f.name, fileSize: f.size, mimeType: f.type })),
+          files: processedFiles.map(f => ({ fileName: f.name, fileSize: f.size, mimeType: f.type })),
         }),
       });
       const data = await res.json();
@@ -224,8 +336,8 @@ export function MediaPickerDialog({
 
       // Upload to S3
       const uploadedIds: string[] = [];
-      for (let i = 0; i < validFiles.length; i++) {
-        const file = validFiles[i];
+      for (let i = 0; i < processedFiles.length; i++) {
+        const file = processedFiles[i];
         const upload = data.uploads[i];
 
         const putRes = await fetch(upload.uploadUrl, {
@@ -251,6 +363,7 @@ export function MediaPickerDialog({
       // If single file, auto-select it and return
       if (uploadedIds.length === 1) {
         const upload = data.uploads[0];
+        const compressedFile = processedFiles[0];
         // Generate presigned URL for the newly uploaded file
         const urlRes = await fetch('/api/media/presigned-urls', {
           method: 'POST',
@@ -266,7 +379,7 @@ export function MediaPickerDialog({
             s3Key: upload.s3Key,
             fileName: upload.fileName,
             mimeType: upload.mimeType,
-            fileSize: validFiles[0].size,
+            fileSize: compressedFile.size,
             mediaFileId: upload.id,
           });
           onClose();
@@ -460,27 +573,76 @@ export function MediaPickerDialog({
         </Tabs>
 
         {/* Footer - show when in library tab with selection */}
-        {tab === 'library' && selectedId && (
-          <div className="flex items-center justify-between p-4 border-t bg-muted/30">
-            <p className="text-sm text-muted-foreground">
-              {items.find(i => i.id === selectedId)?.fileName}
-            </p>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={() => setSelectedId(null)}>
-                Cancel
-              </Button>
-              <Button
-                size="sm"
-                className="bg-green-600 hover:bg-green-700 gap-1.5"
-                onClick={handleConfirmSelection}
-                disabled={!presignedUrls[selectedId]}
-              >
-                <Check className="h-4 w-4" />
-                Use this media
-              </Button>
+        {tab === 'library' && selectedId && (() => {
+          const selectedItem = items.find(i => i.id === selectedId);
+          const isImageOver5MB = isTemplateImageHeader && selectedItem?.mediaType === 'image' && selectedItem.fileSize > 5 * 1024 * 1024;
+
+          return (
+            <div className="flex flex-col p-4 border-t bg-muted/30 gap-3">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium truncate max-w-[70%]">
+                  {selectedItem?.fileName}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {selectedItem && formatBytes(selectedItem.fileSize)}
+                </p>
+              </div>
+
+              {isImageOver5MB && (
+                <div className="bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-900 rounded-lg p-2.5 text-xs text-yellow-800 dark:text-yellow-200 flex items-start gap-2">
+                  <AlertCircle className="h-4 w-4 shrink-0 text-yellow-600 dark:text-yellow-400 mt-0.5" />
+                  <div>
+                    <p className="font-semibold">Image exceeds 5MB limit</p>
+                    <p className="opacity-90">WhatsApp requires template header images to be under 5MB. Click <strong>Compress & Use</strong> to create and use a compressed copy.</p>
+                  </div>
+                </div>
+              )}
+
+              {isCompressing && (
+                <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900 rounded-lg p-2.5 text-xs text-blue-800 dark:text-blue-200 flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin text-blue-600 dark:text-blue-400" />
+                  <span>{compressionStatus}</span>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSelectedId(null)}
+                  disabled={isCompressing}
+                >
+                  Cancel
+                </Button>
+                {isImageOver5MB ? (
+                  <Button
+                    size="sm"
+                    className="bg-yellow-600 hover:bg-yellow-700 text-white gap-1.5"
+                    onClick={() => selectedItem && handleCompressLibraryImage(selectedItem)}
+                    disabled={isCompressing || !presignedUrls[selectedId]}
+                  >
+                    {isCompressing ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Upload className="h-4 w-4" />
+                    )}
+                    Compress & Use
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm"
+                    className="bg-green-600 hover:bg-green-700 gap-1.5"
+                    onClick={handleConfirmSelection}
+                    disabled={isCompressing || !presignedUrls[selectedId]}
+                  >
+                    <Check className="h-4 w-4" />
+                    Use this media
+                  </Button>
+                )}
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* Hidden file input */}
         <input

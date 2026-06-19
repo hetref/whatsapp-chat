@@ -1099,13 +1099,81 @@ router.post('/templates/create', async (req, res, next) => {
             return;
         }
 
+        const apiVersion = settings.apiVersion || 'v23.0';
+
+        // Process media headers (IMAGE, VIDEO, DOCUMENT) if headerMedia is provided
+        if (Array.isArray(templateData.components)) {
+            const processedComponents = [];
+            for (const comp of templateData.components) {
+                const component = { ...comp };
+                if (component.headerMedia) {
+                    const { s3Key, fileName, mimeType } = component.headerMedia;
+                    if (s3Key && component.type === 'HEADER' && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(String(component.format || '').toUpperCase())) {
+                        try {
+                            // 1. Generate presigned GET URL and fetch file binary from S3
+                            const presignedUrl = await generatePresignedGetUrlByKey(s3Key);
+                            const fileResponse = await fetch(presignedUrl);
+                            if (!fileResponse.ok) {
+                                throw new Error(`Failed to fetch media file from S3: ${fileResponse.statusText}`);
+                            }
+                            const fileBuffer = Buffer.from(await fileResponse.arrayBuffer());
+
+                            // 2. Initiate Resumable Upload Session with Facebook
+                            const initUrl = `https://graph.facebook.com/${apiVersion}/app/uploads?file_name=${encodeURIComponent(fileName)}&file_length=${fileBuffer.length}&file_type=${encodeURIComponent(mimeType)}&access_token=${settings.accessToken}`;
+                            const initRes = await fetch(initUrl, { method: 'POST' });
+                            if (!initRes.ok) {
+                                const err = await initRes.json().catch(() => ({}));
+                                throw new Error(`Facebook upload session initiation failed: ${err.error?.message || initRes.statusText}`);
+                            }
+                            const initData = await initRes.json();
+                            const uploadSessionId = initData.id;
+
+                            // 3. Upload Binary File to Facebook Session
+                            const uploadRes = await fetch(`https://graph.facebook.com/${apiVersion}/${uploadSessionId}`, {
+                                method: 'POST',
+                                headers: {
+                                    'Authorization': `OAuth ${settings.accessToken}`,
+                                    'file_offset': '0',
+                                    'Content-Type': mimeType
+                                },
+                                body: fileBuffer
+                            });
+                            if (!uploadRes.ok) {
+                                const err = await uploadRes.json().catch(() => ({}));
+                                throw new Error(`Facebook media upload failed: ${err.error?.message || uploadRes.statusText}`);
+                            }
+                            const uploadData = await uploadRes.json();
+                            const fileHandle = uploadData.h;
+
+                            // 4. Attach example header_handle to component
+                            component.example = {
+                                header_handle: [fileHandle]
+                            };
+                        } catch (mediaError) {
+                            console.error('Error uploading template media example to Facebook:', mediaError);
+                            res.status(500).json({
+                                success: false,
+                                error: 'Media Upload Failed',
+                                message: `Failed to upload example media to Facebook: ${mediaError instanceof Error ? mediaError.message : 'Unknown error'}`,
+                                processedByNewBackend: true
+                            });
+                            return;
+                        }
+                    }
+                    // Always delete the custom frontend field to prevent Meta schema validation errors
+                    delete component.headerMedia;
+                }
+                processedComponents.push(component);
+            }
+            templateData.components = processedComponents;
+        }
+
         const validationError = validateTemplateComponents(templateData.components);
         if (validationError) {
-            res.status(400).json({ error: 'Invalid components', message: validationError });
+            res.status(400).json({ error: 'Invalid components', message: validationError, processedByNewBackend: true });
             return;
         }
 
-        const apiVersion = settings.apiVersion || 'v23.0';
         const response = await fetch(`https://graph.facebook.com/${apiVersion}/${settings.businessAccountId}/message_templates`, {
             method: 'POST',
             headers: {
@@ -1125,7 +1193,7 @@ router.post('/templates/create', async (req, res, next) => {
         if (!response.ok) {
             const userErrorMessage = responseData?.error?.error_user_msg || responseData?.error?.message || 'Failed to create template';
             const userErrorTitle = responseData?.error?.error_user_title || 'Template Creation Failed';
-            res.status(response.status).json({ success: false, error: userErrorTitle, message: userErrorMessage, details: responseData });
+            res.status(response.status).json({ success: false, error: userErrorTitle, message: userErrorMessage, details: responseData, processedByNewBackend: true });
             return;
         }
 
@@ -1140,6 +1208,7 @@ router.post('/templates/create', async (req, res, next) => {
                 components: templateData.components,
             },
             message: 'Template created successfully',
+            processedByNewBackend: true,
             timestamp: new Date().toISOString(),
         });
     } catch (error) {

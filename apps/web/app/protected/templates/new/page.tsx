@@ -15,10 +15,13 @@ import {
   FileText,
   Loader2,
   AlertCircle,
-  Info
+  Info,
+  Image as ImageIcon,
+  Video
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { MediaUpload } from "@/components/chat/media-upload";
 
 // Type definitions
 interface TemplateComponent {
@@ -82,6 +85,99 @@ export default function NewTemplatePage() {
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [showPreview, setShowPreview] = useState(false);
   const router = useRouter();
+
+  const [showMediaUpload, setShowMediaUpload] = useState(false);
+  const [selectedHeaderMedia, setSelectedHeaderMedia] = useState<{
+    s3Key: string;
+    fileName: string;
+    mimeType: string;
+    previewUrl?: string;
+  } | null>(null);
+
+  const handleSelectHeaderMedia = async (mediaFiles: any[]) => {
+    if (mediaFiles.length === 0) return;
+    const mf = mediaFiles[0];
+
+    if (mf.s3Key) {
+      try {
+        const urlRes = await fetch('/api/media/presigned-urls', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids: [mf.id] }),
+        });
+        const urlData = await urlRes.json();
+        const previewUrl = urlData.urls?.[mf.id];
+        setSelectedHeaderMedia({
+          s3Key: mf.s3Key,
+          fileName: mf.file.name,
+          mimeType: mf.s3MimeType || mf.file.type,
+          previewUrl: previewUrl || undefined,
+        });
+      } catch (error) {
+        console.error('Error fetching preview URL:', error);
+        setSelectedHeaderMedia({
+          s3Key: mf.s3Key,
+          fileName: mf.file.name,
+          mimeType: mf.s3MimeType || mf.file.type,
+        });
+      }
+    } else {
+      try {
+        const mediaRes = await fetch('/api/media', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            files: [{
+              fileName: mf.file.name,
+              fileSize: mf.file.size,
+              mimeType: mf.file.type,
+            }],
+          }),
+        });
+
+        const mediaData = await mediaRes.json();
+        if (!mediaRes.ok) {
+          throw new Error(mediaData.error || 'Failed to prepare upload');
+        }
+
+        const upload = mediaData.uploads[0];
+
+        const uploadRes = await fetch(upload.uploadUrl, {
+          method: 'PUT',
+          headers: { 'Content-Type': mf.file.type },
+          body: mf.file,
+        });
+
+        if (!uploadRes.ok) {
+          throw new Error(`Failed to upload ${mf.file.name} to storage`);
+        }
+
+        await fetch('/api/media/confirm-upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids: [upload.id] }),
+        });
+
+        const urlRes = await fetch('/api/media/presigned-urls', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids: [upload.id] }),
+        });
+        const urlData = await urlRes.json();
+        const previewUrl = urlData.urls?.[upload.id];
+
+        setSelectedHeaderMedia({
+          s3Key: upload.s3Key,
+          fileName: mf.file.name,
+          mimeType: mf.file.type,
+          previewUrl: previewUrl || undefined,
+        });
+      } catch (error) {
+        console.error('Error uploading new media:', error);
+        alert(`Failed to upload media: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    }
+  };
 
   // Extract variables from text (e.g., {{1}}, {{2}})
   const extractVariables = (text: string): number[] => {
@@ -148,6 +244,10 @@ export default function NewTemplatePage() {
 
       if (component.type === 'HEADER' && component.format === 'TEXT' && !component.text?.trim()) {
         errors.push(`Header text is required when format is TEXT`);
+      }
+
+      if (component.type === 'HEADER' && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(component.format || '') && !selectedHeaderMedia) {
+        errors.push(`Header media example is required when format is ${component.format}`);
       }
 
       if (component.type === 'FOOTER' && !component.text?.trim()) {
@@ -249,17 +349,37 @@ export default function NewTemplatePage() {
     setIsCreating(true);
 
     try {
-      console.log('Creating template:', templateData);
+      const requestComponents = templateData.components.map(comp => {
+        if (comp.type === 'HEADER' && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(comp.format || '')) {
+          return {
+            ...comp,
+            headerMedia: selectedHeaderMedia ? {
+              s3Key: selectedHeaderMedia.s3Key,
+              fileName: selectedHeaderMedia.fileName,
+              mimeType: selectedHeaderMedia.mimeType,
+            } : undefined
+          };
+        }
+        return comp;
+      });
+
+      const payload = {
+        ...templateData,
+        components: requestComponents
+      };
+
+      console.log('Creating template:', payload);
 
       const response = await fetch('/api/templates/create', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(templateData),
+        body: JSON.stringify(payload),
       });
 
       const result = await response.json();
+      console.log('API Response Result:', result);
 
       if (!response.ok) {
         // Extract detailed error information from the API response
@@ -623,24 +743,95 @@ export default function NewTemplatePage() {
                           </div>
                         )}
 
-                        {/* Info about media headers */}
+                        {/* Choose Media for Template Header */}
                         {component.format && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(component.format.toUpperCase()) && (
-                          <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-                            <div className="flex items-start gap-2">
-                              <Info className="h-4 w-4 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
-                              <div>
-                                <p className="text-sm font-medium text-blue-900 dark:text-blue-100 mb-1">
-                                  Media Header Information
-                                </p>
-                                <p className="text-xs text-blue-700 dark:text-blue-300">
-                                  When sending this template, you'll need to provide a publicly accessible URL for the {component.format.toLowerCase()}.
-                                  The URL must be accessible by WhatsApp's servers and in a supported format.
-                                </p>
-                                <ul className="text-xs text-blue-700 dark:text-blue-300 mt-2 space-y-1 list-disc list-inside">
-                                  <li>IMAGE: JPG, PNG (max 5MB)</li>
-                                  <li>VIDEO: MP4, 3GP (max 16MB)</li>
-                                  <li>DOCUMENT: PDF, DOC, DOCX, etc. (max 100MB)</li>
-                                </ul>
+                          <div className="space-y-4">
+                            <div className="border border-border bg-card rounded-lg p-4 shadow-sm">
+                              <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                                <FileText className="h-4 w-4 text-blue-500" />
+                                Header {component.format.toLowerCase()} example
+                              </h4>
+
+                              {selectedHeaderMedia ? (
+                                <div className="flex items-start gap-4 p-3 bg-muted/30 border border-border rounded-lg">
+                                  {/* Preview */}
+                                  {component.format === 'IMAGE' && selectedHeaderMedia.previewUrl ? (
+                                    <div className="relative w-24 h-24 rounded-lg overflow-hidden border border-border bg-background shrink-0">
+                                      <img
+                                        src={selectedHeaderMedia.previewUrl}
+                                        alt={selectedHeaderMedia.fileName}
+                                        className="w-full h-full object-cover"
+                                      />
+                                    </div>
+                                  ) : (
+                                    <div className="w-16 h-16 rounded-lg bg-muted flex items-center justify-center shrink-0 border border-border">
+                                      {component.format === 'IMAGE' ? (
+                                        <ImageIcon className="h-8 w-8 text-muted-foreground/50" />
+                                      ) : component.format === 'VIDEO' ? (
+                                        <Video className="h-8 w-8 text-muted-foreground/50" />
+                                      ) : (
+                                        <FileText className="h-8 w-8 text-muted-foreground/50" />
+                                      )}
+                                    </div>
+                                  )}
+
+                                  {/* Info */}
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-sm font-medium truncate">{selectedHeaderMedia.fileName}</p>
+                                    <p className="text-xs text-muted-foreground uppercase mt-0.5">{selectedHeaderMedia.mimeType}</p>
+                                    <div className="flex gap-2 mt-3">
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => setShowMediaUpload(true)}
+                                      >
+                                        Change File
+                                      </Button>
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20"
+                                        onClick={() => setSelectedHeaderMedia(null)}
+                                      >
+                                        Remove
+                                      </Button>
+                                    </div>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="text-center py-6 border border-dashed border-border rounded-lg bg-muted/10">
+                                  <p className="text-sm text-muted-foreground mb-4">
+                                    Please upload or choose a {component.format.toLowerCase()} to use as an example header media.
+                                  </p>
+                                  <Button
+                                    variant="outline"
+                                    onClick={() => setShowMediaUpload(true)}
+                                    className="gap-2"
+                                  >
+                                    <Plus className="h-4 w-4" />
+                                    Choose File from Media
+                                  </Button>
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+                              <div className="flex items-start gap-2">
+                                <Info className="h-4 w-4 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
+                                <div>
+                                  <p className="text-sm font-medium text-blue-900 dark:text-blue-100 mb-1">
+                                    Media Header Information
+                                  </p>
+                                  <p className="text-xs text-blue-700 dark:text-blue-300">
+                                    WhatsApp requires an example file to approve message templates with media headers.
+                                    The selected file will be uploaded to Meta as the example.
+                                  </p>
+                                  <ul className="text-xs text-blue-700 dark:text-blue-300 mt-2 space-y-1 list-disc list-inside">
+                                    <li>IMAGE: JPG, PNG (max 5MB)</li>
+                                    <li>VIDEO: MP4, 3GP (max 16MB)</li>
+                                    <li>DOCUMENT: PDF, DOC, DOCX, etc. (max 100MB)</li>
+                                  </ul>
+                                </div>
                               </div>
                             </div>
                           </div>
@@ -863,6 +1054,17 @@ export default function NewTemplatePage() {
                             </div>
                           );
                         } else if (headerComp.format && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(headerComp.format)) {
+                          if (headerComp.format === 'IMAGE' && selectedHeaderMedia?.previewUrl) {
+                            return (
+                              <div className="relative h-40 w-full bg-black/10 border-b border-white/10 flex items-center justify-center overflow-hidden">
+                                <img
+                                  src={selectedHeaderMedia.previewUrl}
+                                  alt="Header example"
+                                  className="w-full h-full object-cover"
+                                />
+                              </div>
+                            );
+                          }
                           return (
                             <div className="bg-gray-200 h-40 flex items-center justify-center text-gray-600 border-b border-white/10">
                               <div className="text-center">
@@ -874,7 +1076,7 @@ export default function NewTemplatePage() {
                                   {headerComp.format} Media
                                 </div>
                                 <div className="text-xs mt-1 text-gray-500">
-                                  Preview placeholder
+                                  {selectedHeaderMedia ? selectedHeaderMedia.fileName : 'Preview placeholder'}
                                 </div>
                               </div>
                             </div>
@@ -987,6 +1189,12 @@ export default function NewTemplatePage() {
           )}
         </div>
       </div>
+      <MediaUpload
+        isOpen={showMediaUpload}
+        onClose={() => setShowMediaUpload(false)}
+        onSend={handleSelectHeaderMedia}
+        selectedUser={null}
+      />
     </div>
   );
 } 

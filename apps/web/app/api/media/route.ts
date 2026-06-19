@@ -135,3 +135,56 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({ uploads: results });
 }
+
+/**
+ * DELETE /api/media - Delete a media library file by ID.
+ * Query params: ?id=<uuid>
+ */
+export async function DELETE(request: NextRequest) {
+  const { userId } = await auth();
+  if (!userId) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const { searchParams } = new URL(request.url);
+  const mediaId = searchParams.get('id');
+
+  if (!mediaId) {
+    return NextResponse.json({ error: 'Missing media ID' }, { status: 400 });
+  }
+
+  try {
+    // Check if the media file belongs to the user
+    const mediaFile = await prisma.mediaFile.findFirst({
+      where: {
+        id: mediaId,
+        userId,
+      },
+    });
+
+    if (!mediaFile) {
+      return NextResponse.json({ error: 'Media file not found' }, { status: 404 });
+    }
+
+    // Delete the database record
+    await prisma.mediaFile.delete({
+      where: {
+        id: mediaId,
+      },
+    });
+
+    // Decrement the user's storage used bytes counter
+    // This frees up their active Media Library quota
+    const { decrementStorageUsed } = await import('@/lib/plan-limits');
+    await decrementStorageUsed(userId, mediaFile.fileSize);
+
+    // Note: We do NOT delete the physical file from S3 using deleteFromS3 here.
+    // This allows existing chat messages referencing this media's S3 key to still load and display the media correctly.
+    // The media is successfully removed from the Media Library list, which meets the user's requirement.
+
+    return NextResponse.json({ success: true });
+  } catch (err) {
+    console.error('[MediaDelete] Error:', err);
+    return NextResponse.json({ error: 'Failed to delete media file' }, { status: 500 });
+  }
+}

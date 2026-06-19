@@ -16,8 +16,10 @@ import {
   Copy,
   Check,
   Filter,
+  Trash,
 } from "lucide-react";
 import Image from "next/image";
+import { compressImageIfNeeded } from "@/lib/image-compression";
 
 interface MediaItem {
   id: string;
@@ -70,9 +72,34 @@ export default function MediaPage() {
   const [loadingUrls, setLoadingUrls] = useState<Set<string>>(new Set());
   const [uploading, setUploading] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const observerRef = useRef<IntersectionObserver | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this media? It will be removed from your media library, but messages in existing chats will still be able to display it.")) return;
+
+    setDeletingId(id);
+    try {
+      const res = await fetch(`/api/media?id=${id}`, {
+        method: "DELETE",
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to delete media file");
+      }
+
+      // Refresh media items list
+      setItems(prev => prev.filter(item => item.id !== id));
+    } catch (e) {
+      console.error("Delete error:", e);
+      alert(e instanceof Error ? e.message : "Failed to delete media");
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   // Fetch media list
   const fetchMedia = useCallback(async (cursor?: string | null, append = false) => {
@@ -190,12 +217,27 @@ export default function MediaPage() {
     setUploading(true);
 
     try {
+      // Compress images on-the-fly if they exceed 5MB (Meta's limit)
+      const processedFiles = await Promise.all(
+        validFiles.map(async (file) => {
+          if (file.type.startsWith('image/')) {
+            try {
+              return await compressImageIfNeeded(file);
+            } catch (err) {
+              console.error('[MediaPage] Compression failed for', file.name, err);
+              return file;
+            }
+          }
+          return file;
+        })
+      );
+
       // Step 1: Get presigned upload URLs
       const res = await fetch('/api/media', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          files: validFiles.map(f => ({
+          files: processedFiles.map(f => ({
             fileName: f.name,
             fileSize: f.size,
             mimeType: f.type,
@@ -208,8 +250,8 @@ export default function MediaPage() {
 
       // Step 2: Upload each file to S3
       const uploadedIds: string[] = [];
-      for (let i = 0; i < validFiles.length; i++) {
-        const file = validFiles[i];
+      for (let i = 0; i < processedFiles.length; i++) {
+        const file = processedFiles[i];
         const upload = data.uploads[i];
 
         const putRes = await fetch(upload.uploadUrl, {
@@ -304,19 +346,32 @@ export default function MediaPage() {
             </div>
           )}
 
-          {/* Copy URL overlay */}
+          {/* Copy URL & Delete overlay */}
           {url && (
-            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex flex-col items-center justify-center gap-2 opacity-0 group-hover:opacity-100">
               <Button
                 size="sm"
                 variant="secondary"
-                className="gap-1.5 text-xs"
+                className="gap-1.5 text-xs w-[110px]"
                 onClick={() => copyUrl(item.id)}
               >
                 {copiedId === item.id ? (
                   <><Check className="h-3 w-3" /> Copied</>
                 ) : (
                   <><Copy className="h-3 w-3" /> Copy URL</>
+                )}
+              </Button>
+              <Button
+                size="sm"
+                variant="destructive"
+                className="gap-1.5 text-xs w-[110px] bg-red-600 hover:bg-red-700 text-white"
+                onClick={() => handleDelete(item.id)}
+                disabled={deletingId === item.id}
+              >
+                {deletingId === item.id ? (
+                  <><Loader2 className="h-3 w-3 animate-spin" /> Deleting</>
+                ) : (
+                  <><Trash className="h-3 w-3" /> Delete</>
                 )}
               </Button>
             </div>

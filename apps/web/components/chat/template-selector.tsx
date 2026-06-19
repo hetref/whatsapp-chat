@@ -603,6 +603,7 @@ export function TemplateSelector({ isOpen, onClose, onSendTemplate, selectedUser
                               setMediaPickerOpen(false);
                             }}
                             mediaTypeFilter={typeFilter}
+                            isTemplateImageHeader={headerComp.format?.toUpperCase() === 'IMAGE'}
                             title={`Select ${headerComp.format?.toLowerCase()} for header`}
                           />
                         </div>

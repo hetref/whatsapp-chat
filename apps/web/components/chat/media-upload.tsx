@@ -8,6 +8,8 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { X, Upload, Image as ImageIcon, FileText, Music, Video, Send, Loader2, Paperclip, Check } from "lucide-react";
 import Image from "next/image";
 
+import { compressImageIfNeeded } from "@/lib/image-compression";
+
 interface MediaFile {
   id: string;
   file: File;
@@ -226,7 +228,16 @@ export function MediaUpload({ isOpen, onClose, onSend, selectedUser }: MediaUplo
     const validFiles: MediaFile[] = [];
     const errors: string[] = [];
 
-    for (const file of filesArray) {
+    for (let file of filesArray) {
+      // Compress image on-the-fly if it exceeds 5MB (Meta's limit)
+      if (file.type.startsWith('image/')) {
+        try {
+          file = await compressImageIfNeeded(file);
+        } catch (err) {
+          console.error('[MediaUpload] Compression failed for', file.name, err);
+        }
+      }
+
       // Check file size (25MB limit)
       if (file.size > 25 * 1024 * 1024) {
         errors.push(`${file.name}: File size exceeds 25MB limit`);

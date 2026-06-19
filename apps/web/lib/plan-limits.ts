@@ -156,6 +156,27 @@ export async function incrementStorageUsed(userId: string, bytes: number): Promi
 }
 
 /**
+ * Decrement user's storage used counter
+ */
+export async function decrementStorageUsed(userId: string, bytes: number): Promise<void> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { storageUsedBytes: true },
+  });
+  
+  if (!user) return;
+  const currentBytes = Number(user.storageUsedBytes);
+  const decrementVal = Math.min(bytes, currentBytes);
+
+  await prisma.user.update({
+    where: { id: userId },
+    data: {
+      storageUsedBytes: { decrement: decrementVal },
+    },
+  });
+}
+
+/**
  * Apply plan tier defaults to a user (used on subscription change)
  */
 export async function applyPlanLimits(userId: string, tier: PlanTier): Promise<void> {
