@@ -10,7 +10,7 @@
     "dependencies": {
         "@aws-sdk/client-s3": "^3.916.0",
         "@aws-sdk/s3-request-presigner": "^3.916.0",
-        "@repo/db": "file:../../packages/db",
+        "@repo/db": "*",
         "cors": "^2.8.5",
         "dotenv": "^16.6.1",
         "express": "^4.21.2",

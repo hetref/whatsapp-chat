@@ -1,26 +1,32 @@
 {
     "name": "whatsapp-monorepo",
     "private": true,
+    "packageManager": "npm@10.8.2",
     "workspaces": [
         "apps/*",
         "packages/*"
     ],
     "scripts": {
-        "dev": "npm run dev --workspace @repo/web",
+        "build": "turbo build",
+        "dev": "turbo dev",
         "dev:all": "concurrently \"npm run dev:web\" \"npm run dev:api\"",
-        "dev:web": "npm run dev --workspace @repo/web",
-        "dev:api": "npm run dev --workspace @repo/api",
-        "build": "npm run build --workspace @repo/web",
+        "dev:web": "turbo dev --filter=@repo/web",
+        "dev:api": "turbo dev --filter=@repo/api",
         "start:web": "npm run start --workspace @repo/web",
         "start:api": "npm run start --workspace @repo/api",
-        "lint": "npm run lint --workspace @repo/web",
-        "db:generate": "npm run generate --workspace @repo/db",
+        "lint": "turbo lint",
+        "check-types": "turbo check-types",
+        "db:generate": "turbo run generate --filter=@repo/db",
         "db:migrate:dev": "npm run migrate:dev --workspace @repo/db",
-        "db:migrate:deploy": "npm run migrate:deploy --workspace @repo/db"
+        "db:migrate:deploy": "npm run migrate:deploy --workspace @repo/db",
+        "db:push": "npm run db:push --workspace @repo/db",
+        "db:studio": "npm run studio --workspace @repo/db",
+        "postinstall": "npm run db:generate"
     },
     "devDependencies": {
         "baseline-browser-mapping": "^2.10.38",
         "concurrently": "^9.2.1",
-        "shadcn": "^4.5.0"
+        "shadcn": "^4.5.0",
+        "turbo": "^2.4.4"
     }
 }

@@ -1,5 +1,17 @@
 node_modules
+.turbo
 
+# Environment variables
 apps/api/.env
 apps/crm/.env
 packages/db/.env
+apps/web/.env
+apps/web/.env*.local
+.env
+.env*.local
+
+# Next.js and build outputs
+.next
+out
+dist
+build

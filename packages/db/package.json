@@ -5,15 +5,25 @@
     "type": "module",
     "main": "index.js",
     "types": "index.d.ts",
+    "exports": {
+        ".": {
+            "types": "./index.d.ts",
+            "import": "./index.js",
+            "default": "./index.js"
+        }
+    },
     "scripts": {
+        "build": "prisma generate --schema prisma/schema.prisma",
         "generate": "prisma generate --schema prisma/schema.prisma",
         "migrate:dev": "prisma migrate dev --schema prisma/schema.prisma",
-        "migrate:deploy": "prisma migrate deploy --schema prisma/schema.prisma"
+        "migrate:deploy": "prisma migrate deploy --schema prisma/schema.prisma",
+        "db:push": "prisma db push --schema prisma/schema.prisma",
+        "studio": "prisma studio --schema prisma/schema.prisma"
     },
     "dependencies": {
-        "@prisma/client": "^6.19.0"
+        "@prisma/client": "^6.4.0"
     },
     "devDependencies": {
-        "prisma": "^6.19.0"
+        "prisma": "^6.4.0"
     }
 }

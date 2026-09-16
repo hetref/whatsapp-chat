@@ -10,4 +10,5 @@ if (process.env.NODE_ENV !== 'production') {
     globalForPrisma.__repoPrisma = prisma;
 }
 
+export * from '@prisma/client';
 export default prisma;

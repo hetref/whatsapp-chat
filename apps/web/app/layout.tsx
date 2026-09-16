@@ -38,7 +38,7 @@ export default function RootLayout({
   return (
     <ClerkProvider>
       <html lang="en" suppressHydrationWarning>
-        <body className={`${geistSans.className} antialiased`}>
+        <body className={`${geistSans.className} antialiased`} suppressHydrationWarning>
           {/* Google tag (gtag.js) */}
           <Script
             src="https://www.googletagmanager.com/gtag/js?id=G-S3QJ35851Y"

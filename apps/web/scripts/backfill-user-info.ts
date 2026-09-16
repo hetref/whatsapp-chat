@@ -15,9 +15,7 @@
  *   npx dotenv-cli -e .env -- npx tsx scripts/backfill-user-info.ts
  */
 
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { prisma } from '@repo/db';
 
 const CLERK_SECRET_KEY = process.env.CLERK_SECRET_KEY;
 if (!CLERK_SECRET_KEY) {

@@ -5,7 +5,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint . --ignore-pattern .next --ignore-pattern node_modules"
+    "lint": "eslint . --ignore-pattern .next --ignore-pattern node_modules",
+    "check-types": "tsc --noEmit"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.858.0",
@@ -17,7 +18,7 @@
     "@radix-ui/react-separator": "^1.1.7",
     "@radix-ui/react-slot": "^1.2.2",
     "@radix-ui/react-tabs": "^1.1.13",
-    "@repo/db": "file:../../packages/db",
+    "@repo/db": "*",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "crypto": "^1.0.1",
