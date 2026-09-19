@@ -360,7 +360,7 @@ export default function BulkSenderPage() {
       const result = await response.json();
 
       if (!response.ok) {
-        throw new Error(result.message || 'Failed to fetch templates');
+        throw new Error(result.error || result.message || 'Failed to fetch templates');
       }
 
       setTemplates(result.data || []);

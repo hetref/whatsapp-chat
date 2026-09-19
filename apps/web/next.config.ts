@@ -17,12 +17,24 @@ const nextConfig: NextConfig = {
           destination: `${apiBase}/api/conversations`,
         },
         {
+          source: '/api/messages',
+          destination: `${apiBase}/api/messages`,
+        },
+        {
           source: '/api/messages/:path*',
           destination: `${apiBase}/api/messages/:path*`,
         },
         {
+          source: '/api/groups',
+          destination: `${apiBase}/api/groups`,
+        },
+        {
           source: '/api/groups/:path*',
           destination: `${apiBase}/api/groups/:path*`,
+        },
+        {
+          source: '/api/templates',
+          destination: `${apiBase}/api/templates`,
         },
         {
           source: '/api/templates/:path*',
@@ -35,6 +47,10 @@ const nextConfig: NextConfig = {
         {
           source: '/api/send-template',
           destination: `${apiBase}/api/send-template`,
+        },
+        {
+          source: '/api/send-media',
+          destination: `${apiBase}/api/send-media`,
         },
         {
           source: '/api/send-media/:path*',
@@ -53,8 +69,16 @@ const nextConfig: NextConfig = {
           destination: `${apiBase}/api/razorpay/webhook`,
         },
         {
+          source: '/api/razorpay',
+          destination: `${apiBase}/api/razorpay`,
+        },
+        {
           source: '/api/razorpay/:path*',
           destination: `${apiBase}/api/razorpay/:path*`,
+        },
+        {
+          source: '/api/subscription',
+          destination: `${apiBase}/api/subscription`,
         },
         {
           source: '/api/subscription/:path*',

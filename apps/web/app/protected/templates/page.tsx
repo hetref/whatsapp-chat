@@ -98,11 +98,10 @@ export default function TemplatesPage() {
         },
       });
 
+      const data = await response.json().catch(() => null);
       if (!response.ok) {
-        throw new Error(`Failed to fetch templates: ${response.statusText}`);
+        throw new Error(data?.error || data?.message || `Failed to fetch templates (${response.status})`);
       }
-
-      const data: TemplatesResponse = await response.json();
 
       if (data.success) {
         console.log(`Fetched ${data.data.length} templates`);

@@ -116,7 +116,7 @@ export function TemplateSelector({ isOpen, onClose, onSendTemplate, selectedUser
       const result = await response.json();
 
       if (!response.ok) {
-        throw new Error(result.message || 'Failed to fetch templates');
+        throw new Error(result.error || result.message || 'Failed to fetch templates');
       }
 
       setTemplates(result.data || []);
@@ -138,7 +138,7 @@ export function TemplateSelector({ isOpen, onClose, onSendTemplate, selectedUser
     const bodyVariables: string[] = [];
     const footerVariables: string[] = [];
 
-    template.components.forEach(component => {
+    (template.components || []).forEach(component => {
       if (component.text) {
         // Extract variables like {{1}}, {{2}}, etc.
         const matches = component.text.match(/\{\{(\d+)\}\}/g);

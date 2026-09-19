@@ -267,10 +267,14 @@ export function ChatWindow({
       const result = await response.json();
 
       if (!response.ok) {
-        throw new Error(result.message || result.error || 'Failed to send template');
+        const errorMsg = result.details?.message || result.error || result.message || 'Failed to send template';
+        throw new Error(errorMsg);
       }
 
       console.log('Template sent successfully:', result);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('whatsapp:message-sent', { detail: result }));
+      }
     } catch (error) {
       console.error('Error sending template:', error);
       throw error; // Let the template selector handle the error display

@@ -134,6 +134,29 @@ export async function POST(request: NextRequest) {
 
     console.log('Settings saved successfully for user:', userId);
 
+    // If businessAccountId and accessToken are present, ensure WABA is subscribed to webhooks for messages
+    if (settings.businessAccountId && settings.accessToken) {
+      try {
+        const subUrl = new URL(`https://graph.facebook.com/${settings.apiVersion || 'v23.0'}/${settings.businessAccountId}/subscribed_apps`);
+        subUrl.searchParams.set('subscribed_fields', 'messages,message_template_status_update');
+        fetch(subUrl.toString(), {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${settings.accessToken}`,
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: new URLSearchParams({
+            subscribed_fields: 'messages,message_template_status_update',
+          }),
+        }).then(async (res) => {
+          const resData = await res.json();
+          console.log('[Settings POST] WABA webhook subscription status:', resData);
+        }).catch((err) => console.warn('[Settings POST] Error subscribing WABA to messages:', err));
+      } catch (subErr) {
+        console.warn('[Settings POST] Error in subscribed_apps fetch:', subErr);
+      }
+    }
+
     return NextResponse.json({
       success: true,
       message: 'Settings saved successfully',
@@ -218,6 +241,59 @@ export async function GET() {
         console.log('Generated webhook token for existing user:', userId);
       } catch (updateError: unknown) {
         console.error('Error updating webhook token:', updateError);
+      }
+    }
+
+    // If settings has businessAccountId and accessToken, but no phoneNumberId (or set to businessAccountId), auto-discover from Meta
+    const isPhoneIdInvalidOrMissing = !settings?.phoneNumberId || !String(settings.phoneNumberId).trim() || settings.phoneNumberId === settings.businessAccountId;
+    if (settings && settings.businessAccountId && settings.accessToken && isPhoneIdInvalidOrMissing) {
+      try {
+        console.log(`[Settings GET] Querying Meta phone numbers for WABA ${settings.businessAccountId}...`);
+        const phoneRes = await fetch(
+          `https://graph.facebook.com/${settings.apiVersion || 'v23.0'}/${settings.businessAccountId}/phone_numbers?fields=id,display_phone_number,verified_name,code_verification_status,quality_rating`,
+          {
+            headers: {
+              Authorization: `Bearer ${settings.accessToken}`,
+            },
+          }
+        );
+        const phoneData = await phoneRes.json();
+        console.log('[Settings GET] Meta phone numbers response:', JSON.stringify(phoneData));
+        if (phoneData.data && phoneData.data.length > 0) {
+          const firstPhone = phoneData.data[0];
+          settings = await prisma.userSettings.update({
+            where: { id: userId },
+            data: {
+              phoneNumberId: firstPhone.id,
+              phoneNumber: firstPhone.display_phone_number || null,
+              fullName: firstPhone.verified_name || null,
+              updatedAt: new Date(),
+            },
+          });
+          console.log('[Settings GET] Successfully linked phone number to user:', firstPhone.id);
+        }
+      } catch (phoneErr) {
+        console.warn('[Settings GET] Error discovering phone numbers:', phoneErr);
+      }
+    }
+
+    // If settings has businessAccountId and accessToken, ensure WABA is subscribed to messages
+    if (settings && settings.businessAccountId && settings.accessToken) {
+      try {
+        const subUrl = new URL(`https://graph.facebook.com/${settings.apiVersion || 'v23.0'}/${settings.businessAccountId}/subscribed_apps`);
+        subUrl.searchParams.set('subscribed_fields', 'messages,message_template_status_update');
+        fetch(subUrl.toString(), {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${settings.accessToken}`,
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: new URLSearchParams({
+            subscribed_fields: 'messages,message_template_status_update',
+          }),
+        }).catch((err) => console.warn('[Settings GET] Error subscribing WABA to messages:', err));
+      } catch (subErr) {
+        console.warn('[Settings GET] Error in subscribed_apps fetch:', subErr);
       }
     }
 

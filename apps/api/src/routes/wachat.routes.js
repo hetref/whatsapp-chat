@@ -37,7 +37,7 @@ function cleanPhoneNumber(input) {
 }
 
 async function getUserSettings(userId) {
-    return prisma.userSettings.findUnique({
+    let settings = await prisma.userSettings.findUnique({
         where: { id: userId },
         select: {
             accessToken: true,
@@ -47,6 +47,44 @@ async function getUserSettings(userId) {
             accessTokenAdded: true,
         },
     });
+
+    if (!settings) return null;
+
+    const apiVersion = settings.apiVersion || 'v23.0';
+
+    // Auto-discover phoneNumberId if missing or if set to businessAccountId (which is invalid for sending messages)
+    const isPhoneIdInvalidOrMissing = !settings.phoneNumberId || !String(settings.phoneNumberId).trim() || (settings.businessAccountId && settings.phoneNumberId === settings.businessAccountId);
+    if (settings.accessToken && settings.businessAccountId && isPhoneIdInvalidOrMissing) {
+        try {
+            console.log(`[API getUserSettings] Auto-discovering phone numbers for WABA ${settings.businessAccountId}...`);
+            const phoneRes = await fetch(
+                `https://graph.facebook.com/${apiVersion}/${settings.businessAccountId}/phone_numbers?fields=id,display_phone_number,verified_name,code_verification_status,quality_rating`,
+                {
+                    headers: { Authorization: `Bearer ${settings.accessToken}` },
+                }
+            );
+            const phoneData = await phoneRes.json();
+            console.log('[API getUserSettings] Meta phone numbers response:', JSON.stringify(phoneData));
+            if (phoneData.data && phoneData.data.length > 0) {
+                const firstPhone = phoneData.data[0];
+                await prisma.userSettings.update({
+                    where: { id: userId },
+                    data: {
+                        phoneNumberId: firstPhone.id,
+                        phoneNumber: firstPhone.display_phone_number || null,
+                        fullName: firstPhone.verified_name || null,
+                        updatedAt: new Date(),
+                    },
+                });
+                settings.phoneNumberId = firstPhone.id;
+                console.log('[API getUserSettings] Successfully linked phone number to user:', firstPhone.id);
+            }
+        } catch (err) {
+            console.warn('[API getUserSettings] Failed to auto-discover phone number:', err);
+        }
+    }
+
+    return settings;
 }
 
 function extractVariables(text) {
@@ -207,6 +245,7 @@ function upsertReactionList({ reactions, emoji, from, timestamp }) {
 }
 
 async function sendTextMessage({ to, message, accessToken, phoneNumberId, apiVersion }) {
+    console.log(`[sendTextMessage] Sending text to ${to} using phone ID ${phoneNumberId}...`);
     const response = await fetch(`https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`, {
         method: 'POST',
         headers: {
@@ -222,13 +261,26 @@ async function sendTextMessage({ to, message, accessToken, phoneNumberId, apiVer
     });
 
     if (!response.ok) {
-        throw new Error(await response.text());
+        const rawText = await response.text();
+        console.error('[sendTextMessage] Meta WhatsApp error:', response.status, rawText);
+        let parsed;
+        try {
+            parsed = JSON.parse(rawText);
+        } catch {
+            parsed = null;
+        }
+        const errorMsg = parsed?.error?.error_data?.details || parsed?.error?.message || rawText;
+        const err = new Error(errorMsg);
+        err.statusCode = response.status;
+        err.details = parsed?.error || rawText;
+        throw err;
     }
 
     return response.json();
 }
 
 async function sendReactionMessage({ to, messageId, emoji, accessToken, phoneNumberId, apiVersion }) {
+    console.log(`[sendReactionMessage] Sending reaction ${emoji} to msg ${messageId} using phone ID ${phoneNumberId}...`);
     const response = await fetch(`https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`, {
         method: 'POST',
         headers: {
@@ -247,14 +299,27 @@ async function sendReactionMessage({ to, messageId, emoji, accessToken, phoneNum
     });
 
     if (!response.ok) {
-        throw new Error(await response.text());
+        const rawText = await response.text();
+        console.error('[sendReactionMessage] Meta WhatsApp error:', response.status, rawText);
+        let parsed;
+        try {
+            parsed = JSON.parse(rawText);
+        } catch {
+            parsed = null;
+        }
+        const errorMsg = parsed?.error?.error_data?.details || parsed?.error?.message || rawText;
+        const err = new Error(errorMsg);
+        err.statusCode = response.status;
+        err.details = parsed?.error || rawText;
+        throw err;
     }
 
     return response.json();
 }
 
 async function sendTemplateMessage({ to, templateName, language, templateData, variables, accessToken, phoneNumberId, apiVersion, mediaUrl, mediaId }) {
-    const headerComponent = templateData.components.find((c) => c.type === 'HEADER');
+    const components = Array.isArray(templateData?.components) ? templateData.components : [];
+    const headerComponent = components.find((c) => c.type === 'HEADER');
     const hasMediaHeader = headerComponent?.format && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(headerComponent.format);
 
     const templateComponents = [];
@@ -277,12 +342,11 @@ async function sendTemplateMessage({ to, templateName, language, templateData, v
         templateComponents.push({ type: 'body', parameters: bodyParams });
     }
 
-    if (variables?.footer && Object.keys(variables.footer).length > 0) {
-        const footerParams = Object.keys(variables.footer)
-            .sort((a, b) => Number.parseInt(a, 10) - Number.parseInt(b, 10))
-            .map((key) => ({ type: 'text', text: variables.footer[key] }));
-        templateComponents.push({ type: 'footer', parameters: footerParams });
-    }
+    // NOTE: Meta WhatsApp Cloud API does not support parameters in footer. Footers are static.
+
+    const langCode = typeof language === 'object' && language !== null
+        ? (language.code || 'en_US')
+        : (typeof language === 'string' && language ? language : 'en_US');
 
     const payload = {
         messaging_product: 'whatsapp',
@@ -290,11 +354,12 @@ async function sendTemplateMessage({ to, templateName, language, templateData, v
         type: 'template',
         template: {
             name: templateName,
-            language: { code: language },
+            language: { code: langCode },
             ...(templateComponents.length > 0 && { components: templateComponents }),
         },
     };
 
+    console.log(`[sendTemplateMessage] Sending template "${templateName}" (${langCode}) to ${to} using phone ID ${phoneNumberId}...`);
     const response = await fetch(`https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`, {
         method: 'POST',
         headers: {
@@ -305,7 +370,19 @@ async function sendTemplateMessage({ to, templateName, language, templateData, v
     });
 
     if (!response.ok) {
-        throw new Error(await response.text());
+        const rawText = await response.text();
+        console.error('[sendTemplateMessage] Meta WhatsApp error:', response.status, rawText);
+        let parsed;
+        try {
+            parsed = JSON.parse(rawText);
+        } catch {
+            parsed = null;
+        }
+        const errorMsg = parsed?.error?.error_data?.details || parsed?.error?.message || rawText;
+        const err = new Error(errorMsg);
+        err.statusCode = response.status;
+        err.details = parsed?.error || rawText;
+        throw err;
     }
 
     return response.json();
@@ -325,6 +402,7 @@ async function sendMediaMessage({ to, media, mediaType, caption, accessToken, ph
             : mediaPayload,
     };
 
+    console.log(`[sendMediaMessage] Sending media (${mediaType}) to ${to} using phone ID ${phoneNumberId}...`);
     const response = await fetch(`https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`, {
         method: 'POST',
         headers: {
@@ -335,7 +413,19 @@ async function sendMediaMessage({ to, media, mediaType, caption, accessToken, ph
     });
 
     if (!response.ok) {
-        throw new Error(await response.text());
+        const rawText = await response.text();
+        console.error('[sendMediaMessage] Meta WhatsApp error:', response.status, rawText);
+        let parsed;
+        try {
+            parsed = JSON.parse(rawText);
+        } catch {
+            parsed = null;
+        }
+        const errorMsg = parsed?.error?.error_data?.details || parsed?.error?.message || rawText;
+        const err = new Error(errorMsg);
+        err.statusCode = response.status;
+        err.details = parsed?.error || rawText;
+        throw err;
     }
 
     return response.json();
@@ -1024,7 +1114,7 @@ router.get('/templates', async (req, res, next) => {
         if (!userId) return;
 
         const settings = await getUserSettings(userId);
-        if (!settings?.accessTokenAdded || !settings.accessToken || !settings.businessAccountId) {
+        if (!settings?.accessToken || !settings.businessAccountId) {
             res.status(400).json({ error: 'WhatsApp credentials not configured. Please complete setup.' });
             return;
         }
@@ -1078,7 +1168,7 @@ router.post('/templates/create', async (req, res, next) => {
         if (!userId) return;
 
         const settings = await getUserSettings(userId);
-        if (!settings?.accessTokenAdded || !settings.accessToken || !settings.businessAccountId) {
+        if (!settings?.accessToken || !settings.businessAccountId) {
             res.status(400).json({ error: 'WhatsApp credentials not configured. Please complete setup.' });
             return;
         }
@@ -1222,7 +1312,7 @@ router.delete('/templates/delete', async (req, res, next) => {
         if (!userId) return;
 
         const settings = await getUserSettings(userId);
-        if (!settings?.accessTokenAdded || !settings.accessToken || !settings.businessAccountId) {
+        if (!settings?.accessToken || !settings.businessAccountId) {
             res.status(400).json({ error: 'WhatsApp credentials not configured. Please complete setup.' });
             return;
         }
@@ -1359,7 +1449,8 @@ router.post('/send-template', async (req, res, next) => {
             return;
         }
 
-        const headerComponent = templateData.components.find((c) => c.type === 'HEADER');
+        const components = Array.isArray(templateData?.components) ? templateData.components : [];
+        const headerComponent = components.find((c) => c.type === 'HEADER');
         const hasMediaHeader = headerComponent?.format && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(headerComponent.format);
         if (hasMediaHeader && !mediaUrl && !mediaId) {
             res.status(400).json({ error: `This template requires a ${headerComponent.format.toLowerCase()} in the header.` });
@@ -1387,7 +1478,7 @@ router.post('/send-template', async (req, res, next) => {
         }
 
         let displayContent = templateName;
-        const bodyComponent = templateData.components.find((c) => c.type === 'BODY');
+        const bodyComponent = components.find((c) => c.type === 'BODY');
         if (bodyComponent?.text) {
             displayContent = bodyComponent.text;
             for (const [key, value] of Object.entries(variables.body || {})) {
@@ -1406,14 +1497,14 @@ router.post('/send-template', async (req, res, next) => {
                 isSentByMe: true,
                 isRead: true,
                 messageType: 'template',
-                mediaData: JSON.stringify({
+                mediaData: {
                     type: 'template',
                     template_name: templateName,
                     template_id: templateData.id,
                     language: templateData.language,
                     variables,
                     original_content: bodyComponent?.text || templateName,
-                }),
+                },
             },
         });
 

@@ -11,6 +11,6 @@ export const env = {
 };
 
 export function getAllowedOrigins() {
-    const defaults = [env.webOrigin, 'http://localhost:3000', 'http://localhost:3001'];
+    const defaults = [env.webOrigin, 'http://localhost:3000', 'http://localhost:3001', "https://lr1.aryanshinde.in"];
     return Array.from(new Set([...defaults, ...env.apiAllowedOrigins]));
 }

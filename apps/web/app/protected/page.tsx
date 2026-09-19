@@ -241,8 +241,14 @@ export default function ChatPage() {
     // Set up polling for message updates
     const interval = setInterval(refreshMessages, 5000); // Poll every 5 seconds
 
+    const handleMessageSent = () => {
+      refreshMessages();
+    };
+    window.addEventListener('whatsapp:message-sent', handleMessageSent);
+
     return () => {
       clearInterval(interval);
+      window.removeEventListener('whatsapp:message-sent', handleMessageSent);
     };
   }, [selectedUser, user, refreshMessages]);
 
@@ -590,7 +596,8 @@ export default function ChatPage() {
       const result = await response.json();
 
       if (!response.ok) {
-        throw new Error(result.error || 'Failed to send message');
+        const errorMsg = result.details?.message || result.error || result.message || 'Failed to send message';
+        throw new Error(errorMsg);
       }
 
       console.log('Message sent successfully:', result);

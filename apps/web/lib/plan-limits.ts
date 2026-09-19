@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma';
+import { getOrCreateUser } from '@/lib/user-sync';
 
 export type PlanTier = 'FREE' | 'SILVER' | 'GOLD';
 
@@ -205,7 +206,7 @@ export async function checkSubscriptionActive(userId: string): Promise<{
   planTier: PlanTier;
   message: string;
 }> {
-  const user = await prisma.user.findUnique({
+  let user = await prisma.user.findUnique({
     where: { id: userId },
     select: {
       planTier: true,
@@ -216,7 +217,27 @@ export async function checkSubscriptionActive(userId: string): Promise<{
   });
 
   if (!user) {
-    return { active: false, status: 'UNKNOWN', planTier: 'FREE', message: 'User not found.' };
+    try {
+      const created = await getOrCreateUser(userId);
+      if (created) {
+        user = await prisma.user.findUnique({
+          where: { id: userId },
+          select: {
+            planTier: true,
+            subscription: {
+              select: { status: true, currentPeriodEnd: true },
+            },
+          },
+        });
+      }
+    } catch (err) {
+      console.warn(`[checkSubscriptionActive] Could not auto-create user ${userId}:`, err);
+    }
+  }
+
+  if (!user) {
+    // Default to active FREE tier rather than blocking messages
+    return { active: true, status: 'FREE', planTier: 'FREE', message: '' };
   }
 
   const planTier = user.planTier as PlanTier;
