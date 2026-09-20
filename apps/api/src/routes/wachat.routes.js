@@ -269,7 +269,10 @@ async function sendTextMessage({ to, message, accessToken, phoneNumberId, apiVer
         } catch {
             parsed = null;
         }
-        const errorMsg = parsed?.error?.error_data?.details || parsed?.error?.message || rawText;
+        let errorMsg = parsed?.error?.error_data?.details || parsed?.error?.message || rawText;
+        if (parsed?.error?.code === 133010 || errorMsg.includes('Account not registered')) {
+            errorMsg = '(#133010) Account not registered: Phone number is verified in Meta Business, but must be registered with the WhatsApp Cloud API using a 6-digit PIN. Please visit Setup to register your number.';
+        }
         const err = new Error(errorMsg);
         err.statusCode = response.status;
         err.details = parsed?.error || rawText;
@@ -378,7 +381,10 @@ async function sendTemplateMessage({ to, templateName, language, templateData, v
         } catch {
             parsed = null;
         }
-        const errorMsg = parsed?.error?.error_data?.details || parsed?.error?.message || rawText;
+        let errorMsg = parsed?.error?.error_data?.details || parsed?.error?.message || rawText;
+        if (parsed?.error?.code === 133010 || errorMsg.includes('Account not registered')) {
+            errorMsg = '(#133010) Account not registered: Phone number is verified in Meta Business, but must be registered with the WhatsApp Cloud API using a 6-digit PIN. Please visit Setup to register your number.';
+        }
         const err = new Error(errorMsg);
         err.statusCode = response.status;
         err.details = parsed?.error || rawText;
@@ -421,7 +427,10 @@ async function sendMediaMessage({ to, media, mediaType, caption, accessToken, ph
         } catch {
             parsed = null;
         }
-        const errorMsg = parsed?.error?.error_data?.details || parsed?.error?.message || rawText;
+        let errorMsg = parsed?.error?.error_data?.details || parsed?.error?.message || rawText;
+        if (parsed?.error?.code === 133010 || errorMsg.includes('Account not registered')) {
+            errorMsg = '(#133010) Account not registered: Phone number is verified in Meta Business, but must be registered with the WhatsApp Cloud API using a 6-digit PIN. Please visit Setup to register your number.';
+        }
         const err = new Error(errorMsg);
         err.statusCode = response.status;
         err.details = parsed?.error || rawText;
@@ -1359,9 +1368,23 @@ router.post('/send-message', async (req, res, next) => {
         const userId = getUserId(req, res);
         if (!userId) return;
 
-        const { to, message } = req.body || {};
+        let { to, contactId, message } = req.body || {};
+
+        // Fallback: if 'to' is missing or looks like an ID, resolve phone number via contactId
+        if (!to && contactId) {
+            const contact = await prisma.contact.findFirst({
+                where: { id: contactId, userId },
+            });
+            if (contact?.phoneNumber) {
+                to = contact.phoneNumber;
+            }
+        }
+
         if (!to || !message) {
-            res.status(400).json({ error: 'Missing required parameters: to, message' });
+            const missing = [];
+            if (!to) missing.push('to (recipient phone number)');
+            if (!message) missing.push('message');
+            res.status(400).json({ error: `Missing required parameters: ${missing.join(', ')}` });
             return;
         }
 
@@ -1428,8 +1451,9 @@ router.post('/send-template', async (req, res, next) => {
         const userId = getUserId(req, res);
         if (!userId) return;
 
-        const {
+        let {
             to,
+            contactId,
             contactName,
             templateName,
             templateData,
@@ -1438,8 +1462,23 @@ router.post('/send-template', async (req, res, next) => {
             mediaId,
         } = req.body || {};
 
+        // Fallback: if 'to' is missing or looks like an ID, resolve phone number via contactId
+        if (!to && contactId) {
+            const contact = await prisma.contact.findFirst({
+                where: { id: contactId, userId },
+            });
+            if (contact?.phoneNumber) {
+                to = contact.phoneNumber;
+                if (!contactName) contactName = contact.customName || contact.whatsappName;
+            }
+        }
+
         if (!to || !templateName || !templateData) {
-            res.status(400).json({ error: 'Missing required parameters: to, templateName, templateData' });
+            const missing = [];
+            if (!to) missing.push('to (recipient phone number)');
+            if (!templateName) missing.push('templateName');
+            if (!templateData) missing.push('templateData');
+            res.status(400).json({ error: `Missing required parameters: ${missing.join(', ')}` });
             return;
         }
 
@@ -1448,6 +1487,8 @@ router.post('/send-template', async (req, res, next) => {
             res.status(400).json({ error: 'WhatsApp Access Token not configured. Please complete setup.' });
             return;
         }
+
+        console.log('[API /send-template] Using WhatsApp access token for template send:', settings.accessToken);
 
         const components = Array.isArray(templateData?.components) ? templateData.components : [];
         const headerComponent = components.find((c) => c.type === 'HEADER');
@@ -1514,6 +1555,7 @@ router.post('/send-template', async (req, res, next) => {
             templateName,
             displayContent,
             timestamp: timestamp.toISOString(),
+            token: settings.accessToken,
         });
     } catch (error) {
         next(error);
@@ -1659,11 +1701,26 @@ router.post('/send-media', upload.array('files', 10), async (req, res, next) => 
             return;
         }
 
-        const to = req.body?.to;
+        let to = req.body?.to;
+        const contactId = req.body?.contactId;
+
+        // Fallback: if 'to' is missing, resolve phone number via contactId
+        if (!to && contactId) {
+            const contact = await prisma.contact.findFirst({
+                where: { id: contactId, userId },
+            });
+            if (contact?.phoneNumber) {
+                to = contact.phoneNumber;
+            }
+        }
+
         const files = normalizeFilesFromBody(req.body?.files);
 
         if (!to || !files.length) {
-            res.status(400).json({ error: 'Missing required parameters: to, files[]' });
+            const missing = [];
+            if (!to) missing.push('to (recipient phone number)');
+            if (!files.length) missing.push('files[]');
+            res.status(400).json({ error: `Missing required parameters: ${missing.join(', ')}` });
             return;
         }
 

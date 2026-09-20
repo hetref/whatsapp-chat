@@ -5,12 +5,14 @@ import Link from "next/link";
 import { useAuth, UserButton } from "@clerk/nextjs";
 import { ThemeSwitcher } from "@/components/theme-switcher";
 import { Button } from "@/components/ui/button";
-import { MessageCircle, Menu, X, Github } from "lucide-react";
+import LogoIcon from "@/components/logo-icon";
+import { Menu, X, Github } from "lucide-react";
 
 const navLinks = [
   { label: "Features", href: "/#features" },
+  { label: "How It Works", href: "/#how-it-works" },
   { label: "Pricing", href: "/pricing" },
-  { label: "Open Source", href: "/open-source" },
+  { label: "Docs", href: "/open-source" },
 ];
 
 export function Navbar() {
@@ -18,11 +20,11 @@ export function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/80 backdrop-blur-xl supports-[backdrop-filter]:bg-background/60">
+    <header className="sticky top-0 z-50 w-full border-b border-stone-200/60 dark:border-emerald-950/40 bg-[#FAF8F5]/85 dark:bg-[#0B120E]/85 backdrop-blur-xl supports-[backdrop-filter]:bg-[#FAF8F5]/70 dark:supports-[backdrop-filter]:bg-[#0B120E]/70 transition-colors">
       <div className="max-w-7xl mx-auto flex h-16 items-center justify-between px-4 sm:px-6">
         {/* Logo */}
-        <Link href="/" className="flex items-center gap-2.5 font-bold text-lg">
-          <MessageCircle className="h-7 w-7 text-primary" />
+        <Link href="/" className="flex items-center gap-2.5 font-semibold text-lg text-stone-900 dark:text-stone-100">
+          <LogoIcon className="h-7 w-7 text-[#5F7C65] dark:text-[#7EA285]" />
           <span>WaChat</span>
         </Link>
 
@@ -32,7 +34,7 @@ export function Navbar() {
             <Link
               key={link.href}
               href={link.href}
-              className="px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors rounded-md"
+              className="px-3 py-2 text-sm font-medium text-stone-600 hover:text-stone-900 dark:text-stone-300 dark:hover:text-white transition-colors rounded-md"
             >
               {link.label}
             </Link>
@@ -41,7 +43,7 @@ export function Navbar() {
             href="https://github.com/hetref/whatsapp-chat"
             target="_blank"
             rel="noopener noreferrer"
-            className="px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors rounded-md inline-flex items-center gap-1.5"
+            className="px-3 py-2 text-sm font-medium text-stone-600 hover:text-stone-900 dark:text-stone-300 dark:hover:text-white transition-colors rounded-md inline-flex items-center gap-1.5"
           >
             <Github className="h-4 w-4" />
             GitHub
@@ -54,19 +56,19 @@ export function Navbar() {
           {isLoaded && isSignedIn ? (
             <div className="flex items-center gap-3">
               <Link href="/protected">
-                <Button size="sm">Dashboard</Button>
+                <Button size="sm" className="bg-[#5F7C65] hover:bg-[#526D57] text-white">Dashboard</Button>
               </Link>
               <UserButton />
             </div>
           ) : (
             <div className="flex items-center gap-2">
               <Link href="/sign-in">
-                <Button variant="ghost" size="sm">
+                <Button variant="ghost" size="sm" className="text-stone-700 dark:text-stone-300">
                   Sign in
                 </Button>
               </Link>
               <Link href="/sign-up">
-                <Button size="sm">Get Started</Button>
+                <Button size="sm" className="bg-[#5F7C65] hover:bg-[#526D57] text-white shadow-xs">Get Started</Button>
               </Link>
             </div>
           )}

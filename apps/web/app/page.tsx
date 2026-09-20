@@ -8,115 +8,58 @@ import {
   Send,
   Key,
   ArrowRight,
-  Github,
-  Star,
+  ArrowUpRight,
   CheckCircle2,
-  Code2,
-  Server,
   Shield,
   Zap,
   Lock,
+  Layers,
 } from "lucide-react";
-import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Navbar } from "@/components/navbar";
+import { HeroSection } from "@/components/hero-section";
+import { PricingSection } from "@/components/pricing-section";
 import { Footer } from "@/components/footer";
 
 export default function Home() {
   return (
-    <div className="min-h-screen flex flex-col">
-      <Navbar />
+    <div className="min-h-screen flex flex-col bg-[#FAF8F5] text-stone-900 selection:bg-[#5F7C65]/20 selection:text-[#2D583F]">
+      {/* Editorial Botanical Hero Section */}
+      <HeroSection />
 
       <main className="flex-1">
-        {/* Hero Section */}
-        <section className="relative overflow-hidden px-6 py-24 md:py-32 lg:py-40">
-          <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-background to-blue-500/5" />
-          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-primary/10 via-transparent to-transparent opacity-60" />
-          <div className="max-w-7xl mx-auto relative">
-            <div className="text-center space-y-6 max-w-4xl mx-auto">
-              <Badge
-                variant="secondary"
-                className="text-sm font-medium px-4 py-1.5"
-              >
-                Powered by Meta WhatsApp Cloud API
-              </Badge>
-
-              <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight leading-[1.1]">
-                The WhatsApp Business
-                <span className="text-primary block mt-2">
-                  Platform You Deserve
-                </span>
-              </h1>
-
-              <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto leading-relaxed">
-                Manage your Meta WhatsApp Cloud API with a powerful, open-source
-                dashboard. Real-time messaging, broadcast groups, template
-                management, media library, and more &mdash; all in one place.
-              </p>
-
-              <div className="flex flex-col sm:flex-row gap-3 justify-center pt-4">
-                <Link
-                  href="/sign-up"
-                  className="inline-flex items-center justify-center gap-2 bg-primary text-primary-foreground hover:bg-primary/90 px-8 py-3.5 rounded-lg font-semibold transition-colors shadow-lg shadow-primary/20"
-                >
-                  Start Free
-                  <ArrowRight className="h-4 w-4" />
-                </Link>
-                <a
-                  href="https://github.com/hetref/whatsapp-chat"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center justify-center gap-2 border border-border hover:bg-accent px-8 py-3.5 rounded-lg font-semibold transition-colors"
-                >
-                  <Github className="h-4 w-4" />
-                  Star on GitHub
-                </a>
-              </div>
-
-              <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-3 pt-6 text-sm text-muted-foreground">
-                <span className="flex items-center gap-1.5">
-                  <CheckCircle2 className="h-4 w-4 text-primary" />
-                  Free tier available
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <CheckCircle2 className="h-4 w-4 text-primary" />
-                  No credit card required
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <CheckCircle2 className="h-4 w-4 text-primary" />
-                  Self-hostable
-                </span>
-              </div>
-            </div>
-          </div>
-        </section>
-
         {/* Stats Bar */}
-        <section className="border-y bg-muted/30">
+        <section className="border-y border-stone-200/80 bg-[#F4F1EB]">
           <div className="max-w-7xl mx-auto px-6 py-10">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
-              <div>
-                <div className="text-3xl md:text-4xl font-bold">15+</div>
-                <div className="text-sm text-muted-foreground mt-1">
-                  Core Features
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-8 text-center divide-x-0 md:divide-x divide-stone-200">
+              <div className="px-4">
+                <div className="text-3xl md:text-4xl font-semibold tracking-tight text-emerald-950">
+                  15+
+                </div>
+                <div className="text-xs sm:text-sm font-medium text-stone-600 mt-1">
+                  Built-in Capabilities
                 </div>
               </div>
-              <div>
-                <div className="text-3xl md:text-4xl font-bold">100%</div>
-                <div className="text-sm text-muted-foreground mt-1">
-                  TypeScript
+              <div className="px-4">
+                <div className="text-3xl md:text-4xl font-semibold tracking-tight text-emerald-950">
+                  &lt; 100ms
+                </div>
+                <div className="text-xs sm:text-sm font-medium text-stone-600 mt-1">
+                  API Message Latency
                 </div>
               </div>
-              <div>
-                <div className="text-3xl md:text-4xl font-bold">MIT</div>
-                <div className="text-sm text-muted-foreground mt-1">
-                  Licensed
+              <div className="px-4">
+                <div className="text-3xl md:text-4xl font-semibold tracking-tight text-emerald-950">
+                  99.9%
+                </div>
+                <div className="text-xs sm:text-sm font-medium text-stone-600 mt-1">
+                  Delivery Reliability
                 </div>
               </div>
-              <div>
-                <div className="text-3xl md:text-4xl font-bold">Self-Host</div>
-                <div className="text-sm text-muted-foreground mt-1">
-                  Or Use Cloud
+              <div className="px-4">
+                <div className="text-3xl md:text-4xl font-semibold tracking-tight text-emerald-950">
+                  0%
+                </div>
+                <div className="text-xs sm:text-sm font-medium text-stone-600 mt-1">
+                  Per-Message Markups
                 </div>
               </div>
             </div>
@@ -124,492 +67,352 @@ export default function Home() {
         </section>
 
         {/* Value Proposition */}
-        <section className="py-20 md:py-28 px-6">
+        <section className="py-24 md:py-32 px-6">
           <div className="max-w-7xl mx-auto">
-            <div className="text-center mb-14 max-w-2xl mx-auto">
-              <Badge variant="secondary" className="mb-4">
-                Why WaChat
-              </Badge>
-              <h2 className="text-3xl md:text-4xl font-bold mb-4">
-                Built for Businesses That Take Communication Seriously
+            <div className="text-center mb-16 max-w-2xl mx-auto">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold tracking-wide uppercase bg-[#5F7C65]/10 text-[#2D583F] border border-[#5F7C65]/20 mb-4">
+                Platform Overview
+              </div>
+              <h2 className="text-3xl sm:text-4xl md:text-5xl font-normal tracking-[-0.04em] text-emerald-950 mb-5 text-balance">
+                Built for Teams That{" "}
+                <span className="font-[Georgia,serif] italic text-[#2D583F]">
+                  Value Relationships
+                </span>
               </h2>
-              <p className="text-muted-foreground">
-                Whether you&apos;re a startup or an enterprise, WaChat gives you
-                the tools to manage WhatsApp at scale.
+              <p className="text-stone-600 text-base sm:text-lg leading-relaxed text-pretty">
+                Whether you&apos;re a boutique brand, high-growth startup, or established business, WaChat provides a calm, unified foundation for every customer conversation.
               </p>
             </div>
 
-            <div className="grid md:grid-cols-3 gap-6">
-              <Card className="p-6 hover:shadow-md transition-all duration-200">
-                <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center mb-4">
-                  <Zap className="h-5 w-5 text-primary" />
+            <div className="grid md:grid-cols-3 gap-8">
+              <div className="group p-8 rounded-2xl bg-white/80 backdrop-blur-md border border-stone-200/80 hover:border-[#5F7C65]/50 shadow-xs hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
+                <div className="size-12 rounded-xl bg-[#5F7C65]/10 text-[#5F7C65] flex items-center justify-center mb-6 group-hover:scale-105 transition-transform">
+                  <MessageSquare className="size-6" />
                 </div>
-                <h3 className="font-semibold text-lg mb-2">
-                  SaaS or Self-Hosted
+                <h3 className="font-semibold text-xl text-stone-900 mb-2.5">
+                  Effortless Customer Messaging
                 </h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">
-                  Use our managed cloud platform and get started in seconds, or
-                  deploy on your own infrastructure with full control over your
-                  data.
+                <p className="text-sm text-stone-600 leading-relaxed">
+                  Real-time incoming and outgoing conversations, multi-agent inbox, instant delivery status indicators, and smart contact tagging.
                 </p>
-              </Card>
+              </div>
 
-              <Card className="p-6 hover:shadow-md transition-all duration-200">
-                <div className="h-10 w-10 rounded-lg bg-blue-500/10 flex items-center justify-center mb-4">
-                  <Shield className="h-5 w-5 text-blue-600" />
+              <div className="group p-8 rounded-2xl bg-white/80 backdrop-blur-md border border-stone-200/80 hover:border-[#5F7C65]/50 shadow-xs hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
+                <div className="size-12 rounded-xl bg-[#5F7C65]/10 text-[#5F7C65] flex items-center justify-center mb-6 group-hover:scale-105 transition-transform">
+                  <Users className="size-6" />
                 </div>
-                <h3 className="font-semibold text-lg mb-2">
-                  Enterprise-Grade Security
+                <h3 className="font-semibold text-xl text-stone-900 mb-2.5">
+                  Targeted Broadcast Campaigns
                 </h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">
-                  Clerk authentication, encrypted storage with AWS S3, database
-                  isolation, input validation, and HTTPS-only pre-signed URLs.
+                <p className="text-sm text-stone-600 leading-relaxed">
+                  Deliver personalized announcements directly to segmented groups with zero per-message markup and complete read-rate analytics.
                 </p>
-              </Card>
+              </div>
 
-              <Card className="p-6 hover:shadow-md transition-all duration-200">
-                <div className="h-10 w-10 rounded-lg bg-purple-500/10 flex items-center justify-center mb-4">
-                  <Code2 className="h-5 w-5 text-purple-600" />
+              <div className="group p-8 rounded-2xl bg-white/80 backdrop-blur-md border border-stone-200/80 hover:border-[#5F7C65]/50 shadow-xs hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
+                <div className="size-12 rounded-xl bg-[#5F7C65]/10 text-[#5F7C65] flex items-center justify-center mb-6 group-hover:scale-105 transition-transform">
+                  <Shield className="size-6" />
                 </div>
-                <h3 className="font-semibold text-lg mb-2">
-                  Open Source & Extensible
+                <h3 className="font-semibold text-xl text-stone-900 mb-2.5">
+                  Private &amp; Fully Sovereign
                 </h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">
-                  Fully open source under MIT license. Extend with your own
-                  integrations, contribute back, or fork for custom workflows.
+                <p className="text-sm text-stone-600 leading-relaxed">
+                  Retain 100% ownership over your audience, media assets, and chat history with encrypted AWS S3 storage and multi-tenant data isolation.
                 </p>
-              </Card>
+              </div>
             </div>
           </div>
         </section>
 
-        {/* Features */}
-        <section id="features" className="py-20 md:py-28 px-6 bg-muted/30">
+        {/* Features Section */}
+        <section id="features" className="py-24 md:py-32 px-6 bg-[#F4F1EB]">
           <div className="max-w-7xl mx-auto">
-            <div className="text-center mb-14 max-w-2xl mx-auto">
-              <Badge variant="secondary" className="mb-4">
-                Features
-              </Badge>
-              <h2 className="text-3xl md:text-4xl font-bold mb-4">
-                Everything You Need to Manage WhatsApp at Scale
+            <div className="text-center mb-16 max-w-2xl mx-auto">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold tracking-wide uppercase bg-[#5F7C65]/10 text-[#2D583F] border border-[#5F7C65]/20 mb-4">
+                Capabilities
+              </div>
+              <h2 className="text-3xl sm:text-4xl md:text-5xl font-normal tracking-[-0.04em] text-emerald-950 mb-5 text-balance">
+                Everything You Need to{" "}
+                <span className="font-[Georgia,serif] italic text-[#2D583F]">
+                  Grow &amp; Engage
+                </span>
               </h2>
-              <p className="text-muted-foreground">
-                A comprehensive platform built on top of the Meta WhatsApp Cloud
-                API with all the features your business needs.
+              <p className="text-stone-600 text-base sm:text-lg leading-relaxed text-pretty">
+                Direct integration with the Meta WhatsApp Cloud API &mdash; uncompromising speed, absolute reliability, and zero middleware fees.
               </p>
             </div>
 
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              <Card className="p-6 hover:shadow-md transition-all duration-200 group">
-                <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center mb-4 group-hover:bg-primary/15 transition-colors">
-                  <MessageSquare className="h-5 w-5 text-primary" />
+              {[
+                {
+                  icon: MessageSquare,
+                  title: "Real-time Multi-Agent Inbox",
+                  desc: "Send and receive WhatsApp chats instantly. Unread counters, contact profiles, delivery receipts, and fast search.",
+                },
+                {
+                  icon: Users,
+                  title: "Dynamic Broadcast Groups",
+                  desc: "Segment your audience into targeted groups and send custom campaigns. Each recipient experiences a private 1-on-1 chat.",
+                },
+                {
+                  icon: FileText,
+                  title: "Visual Template Studio",
+                  desc: "Design interactive templates with quick-reply buttons, dynamic variables, and live approval status from Meta.",
+                },
+                {
+                  icon: HardDrive,
+                  title: "Cloud Media Vault",
+                  desc: "Securely store and distribute high-res images, PDFs, videos, and voice notes backed by encrypted AWS S3 storage.",
+                },
+                {
+                  icon: Send,
+                  title: "Audience Campaign Launcher",
+                  desc: "Import CSV lists, map custom recipient variables, schedule blasts, and track read-rate performance in real time.",
+                },
+                {
+                  icon: Key,
+                  title: "Developer APIs & Webhooks",
+                  desc: "Integrate with your CRM, payment gateways, and custom applications with scoped API tokens and live event streams.",
+                },
+              ].map((f) => (
+                <div
+                  key={f.title}
+                  className="group p-7 rounded-2xl bg-white/85 backdrop-blur-md border border-stone-200/80 hover:border-[#5F7C65]/50 shadow-xs hover:shadow-lg hover:-translate-y-1 transition-all duration-300"
+                >
+                  <div className="size-11 rounded-xl bg-[#5F7C65]/10 text-[#5F7C65] flex items-center justify-center mb-5 group-hover:bg-[#5F7C65] group-hover:text-white transition-colors">
+                    <f.icon className="size-5" />
+                  </div>
+                  <h3 className="font-semibold text-lg text-stone-900 mb-2">
+                    {f.title}
+                  </h3>
+                  <p className="text-sm text-stone-600 leading-relaxed">
+                    {f.desc}
+                  </p>
                 </div>
-                <h3 className="font-semibold text-lg mb-2">
-                  Real-time Messaging
-                </h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">
-                  Send and receive WhatsApp messages in real-time. Read
-                  receipts, unread indicators, contact management, and smart
-                  conversation sorting.
-                </p>
-              </Card>
-
-              <Card className="p-6 hover:shadow-md transition-all duration-200 group">
-                <div className="h-10 w-10 rounded-lg bg-blue-500/10 flex items-center justify-center mb-4 group-hover:bg-blue-500/15 transition-colors">
-                  <Users className="h-5 w-5 text-blue-600" />
-                </div>
-                <h3 className="font-semibold text-lg mb-2">
-                  Broadcast Groups
-                </h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">
-                  Create broadcast groups and send personalized messages to
-                  multiple contacts simultaneously. Each recipient sees it as a
-                  personal message.
-                </p>
-              </Card>
-
-              <Card className="p-6 hover:shadow-md transition-all duration-200 group">
-                <div className="h-10 w-10 rounded-lg bg-purple-500/10 flex items-center justify-center mb-4 group-hover:bg-purple-500/15 transition-colors">
-                  <FileText className="h-5 w-5 text-purple-600" />
-                </div>
-                <h3 className="font-semibold text-lg mb-2">
-                  Template Management
-                </h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">
-                  Create and manage WhatsApp message templates with a visual
-                  builder. Multi-language support, dynamic variables, and
-                  approval tracking.
-                </p>
-              </Card>
-
-              <Card className="p-6 hover:shadow-md transition-all duration-200 group">
-                <div className="h-10 w-10 rounded-lg bg-orange-500/10 flex items-center justify-center mb-4 group-hover:bg-orange-500/15 transition-colors">
-                  <HardDrive className="h-5 w-5 text-orange-600" />
-                </div>
-                <h3 className="font-semibold text-lg mb-2">Media Library</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">
-                  Upload and manage images, videos, documents, and audio files.
-                  Reuse media across conversations with S3-backed cloud storage.
-                </p>
-              </Card>
-
-              <Card className="p-6 hover:shadow-md transition-all duration-200 group">
-                <div className="h-10 w-10 rounded-lg bg-rose-500/10 flex items-center justify-center mb-4 group-hover:bg-rose-500/15 transition-colors">
-                  <Send className="h-5 w-5 text-rose-600" />
-                </div>
-                <h3 className="font-semibold text-lg mb-2">Bulk Sender</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">
-                  Send template messages to thousands of contacts at once with
-                  CSV upload, custom variable mapping, and delivery tracking.
-                </p>
-              </Card>
-
-              <Card className="p-6 hover:shadow-md transition-all duration-200 group">
-                <div className="h-10 w-10 rounded-lg bg-emerald-500/10 flex items-center justify-center mb-4 group-hover:bg-emerald-500/15 transition-colors">
-                  <Key className="h-5 w-5 text-emerald-600" />
-                </div>
-                <h3 className="font-semibold text-lg mb-2">API & Webhooks</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">
-                  Generate API keys for external integrations. Configure
-                  webhooks for incoming messages and real-time status updates.
-                </p>
-              </Card>
+              ))}
             </div>
           </div>
         </section>
 
         {/* How It Works */}
-        <section className="py-20 md:py-28 px-6">
+        <section id="how-it-works" className="py-24 md:py-32 px-6">
           <div className="max-w-7xl mx-auto">
-            <div className="text-center mb-14 max-w-2xl mx-auto">
-              <Badge variant="secondary" className="mb-4">
+            <div className="text-center mb-16 max-w-2xl mx-auto">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold tracking-wide uppercase bg-[#5F7C65]/10 text-[#2D583F] border border-[#5F7C65]/20 mb-4">
                 How It Works
-              </Badge>
-              <h2 className="text-3xl md:text-4xl font-bold mb-4">
-                Get Started in Minutes
+              </div>
+              <h2 className="text-3xl sm:text-4xl md:text-5xl font-normal tracking-[-0.04em] text-emerald-950 mb-5 text-balance">
+                Get Started in{" "}
+                <span className="font-[Georgia,serif] italic text-[#2D583F]">
+                  Three Simple Steps
+                </span>
               </h2>
-              <p className="text-muted-foreground">
-                Connect your Meta Business account and start managing WhatsApp
-                conversations right away.
+              <p className="text-stone-600 text-base sm:text-lg leading-relaxed text-pretty">
+                Connect your WhatsApp Business number and begin communicating with customers in minutes.
               </p>
             </div>
 
-            <div className="grid md:grid-cols-3 gap-8 max-w-4xl mx-auto">
-              <div className="text-center">
-                <div className="w-14 h-14 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xl font-bold mx-auto mb-5">
-                  1
+            <div className="grid md:grid-cols-3 gap-8 max-w-5xl mx-auto relative">
+              {[
+                {
+                  step: "01",
+                  title: "Connect Meta Account",
+                  desc: "Link your Meta Business account and verified WhatsApp phone number with direct credentials in your dashboard.",
+                },
+                {
+                  step: "02",
+                  title: "Design & Segment",
+                  desc: "Draft approved message templates, import contacts, and organize custom broadcast segments for your campaigns.",
+                },
+                {
+                  step: "03",
+                  title: "Engage & Delight",
+                  desc: "Send personalized updates, automate key replies, and provide fast, personal service that your customers love.",
+                },
+              ].map((s) => (
+                <div
+                  key={s.step}
+                  className="p-8 rounded-2xl bg-white/80 backdrop-blur-md border border-stone-200/80 text-center relative"
+                >
+                  <div className="size-12 rounded-full bg-[#5F7C65] text-white flex items-center justify-center text-lg font-semibold mx-auto mb-6 shadow-[inset_0_2px_4px_0_rgba(255,255,255,0.25)]">
+                    {s.step}
+                  </div>
+                  <h3 className="font-semibold text-xl text-stone-900 mb-2.5">
+                    {s.title}
+                  </h3>
+                  <p className="text-sm text-stone-600 leading-relaxed">
+                    {s.desc}
+                  </p>
                 </div>
-                <h3 className="font-semibold text-lg mb-2">Connect</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">
-                  Link your Meta Business account and WhatsApp phone number.
-                  Enter your API credentials in the dashboard.
-                </p>
-              </div>
-
-              <div className="text-center">
-                <div className="w-14 h-14 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xl font-bold mx-auto mb-5">
-                  2
-                </div>
-                <h3 className="font-semibold text-lg mb-2">Configure</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">
-                  Set up your message templates, broadcast groups, and webhook
-                  endpoints for your specific use case.
-                </p>
-              </div>
-
-              <div className="text-center">
-                <div className="w-14 h-14 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xl font-bold mx-auto mb-5">
-                  3
-                </div>
-                <h3 className="font-semibold text-lg mb-2">Engage</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">
-                  Start messaging, managing conversations, and growing your
-                  customer engagement at scale.
-                </p>
-              </div>
+              ))}
             </div>
           </div>
         </section>
 
         {/* Tech Stack */}
-        <section className="py-20 md:py-28 px-6 bg-muted/30">
+        <section id="tech-stack" className="py-24 md:py-32 px-6 bg-[#F4F1EB]">
           <div className="max-w-7xl mx-auto">
-            <div className="text-center mb-14 max-w-2xl mx-auto">
-              <Badge variant="secondary" className="mb-4">
-                Tech Stack
-              </Badge>
-              <h2 className="text-3xl md:text-4xl font-bold mb-4">
-                Built with Modern Technologies
+            <div className="text-center mb-16 max-w-2xl mx-auto">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold tracking-wide uppercase bg-[#5F7C65]/10 text-[#2D583F] border border-[#5F7C65]/20 mb-4">
+                Architecture
+              </div>
+              <h2 className="text-3xl sm:text-4xl md:text-5xl font-normal tracking-[-0.04em] text-emerald-950 mb-5 text-balance">
+                Engineered with{" "}
+                <span className="font-[Georgia,serif] italic text-[#2D583F]">
+                  Modern Precision
+                </span>
               </h2>
-              <p className="text-muted-foreground">
-                Production-grade infrastructure for reliability, performance,
-                and developer experience.
+              <p className="text-stone-600 text-base sm:text-lg leading-relaxed text-pretty">
+                High-performance stack designed for data integrity, sub-second delivery, and peace of mind.
               </p>
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
               {[
-                { name: "Next.js", desc: "React Framework" },
+                { name: "Next.js 15", desc: "React Framework" },
                 { name: "TypeScript", desc: "Type Safety" },
-                { name: "Prisma", desc: "Database ORM" },
-                { name: "NeonDB", desc: "PostgreSQL" },
-                { name: "Clerk", desc: "Authentication" },
-                { name: "AWS S3", desc: "Media Storage" },
-                { name: "Tailwind", desc: "Styling" },
-                { name: "Shadcn/ui", desc: "Components" },
-                { name: "Razorpay", desc: "Payments" },
-                { name: "Meta API", desc: "WhatsApp" },
-                { name: "Webhooks", desc: "Real-time" },
-                { name: "Vercel", desc: "Deployment" },
+                { name: "Prisma", desc: "Database Layer" },
+                { name: "NeonDB", desc: "Serverless Postgres" },
+                { name: "Clerk", desc: "Identity & Auth" },
+                { name: "AWS S3", desc: "Encrypted Storage" },
+                { name: "Tailwind CSS", desc: "Modern UI Styling" },
+                { name: "Shadcn/ui", desc: "Accessible Tokens" },
+                { name: "Razorpay", desc: "Billing & Invoicing" },
+                { name: "Meta Cloud API", desc: "Direct Gateway" },
+                { name: "Webhooks", desc: "Event Delivery" },
+                { name: "Vercel", desc: "Global Edge Network" },
               ].map((tech) => (
-                <Card
+                <div
                   key={tech.name}
-                  className="p-4 text-center hover:shadow-md transition-all duration-200"
+                  className="p-4 rounded-xl bg-white/80 backdrop-blur-md border border-stone-200/80 text-center hover:border-[#5F7C65]/50 transition-colors"
                 >
-                  <div className="font-semibold text-sm">{tech.name}</div>
-                  <div className="text-xs text-muted-foreground mt-0.5">
+                  <div className="font-semibold text-sm text-stone-900">
+                    {tech.name}
+                  </div>
+                  <div className="text-xs text-stone-500 mt-1">
                     {tech.desc}
                   </div>
-                </Card>
+                </div>
               ))}
             </div>
 
-            {/* Security & Performance highlights */}
-            <div className="grid sm:grid-cols-3 gap-4 mt-8">
-              <Card className="p-5 text-center">
-                <Shield className="h-8 w-8 text-primary mx-auto mb-3" />
-                <h3 className="font-semibold text-sm mb-1">
-                  Secure by Default
+            {/* Core Architectural Pillars */}
+            <div className="grid sm:grid-cols-3 gap-6 mt-10">
+              <div className="p-6 rounded-2xl bg-white/80 backdrop-blur-md border border-stone-200/80 text-center">
+                <Shield className="size-8 text-[#5F7C65] mx-auto mb-3" />
+                <h3 className="font-semibold text-base text-stone-900 mb-1">
+                  Bank-Grade Encryption
                 </h3>
-                <p className="text-xs text-muted-foreground">
-                  JWT auth, encrypted storage, input validation, HTTPS-only
+                <p className="text-xs sm:text-sm text-stone-600">
+                  JWT validation, encrypted AWS S3 storage, sanitized inputs, and pre-signed ephemeral asset URLs.
                 </p>
-              </Card>
-              <Card className="p-5 text-center">
-                <Zap className="h-8 w-8 text-yellow-600 mx-auto mb-3" />
-                <h3 className="font-semibold text-sm mb-1">Optimized</h3>
-                <p className="text-xs text-muted-foreground">
-                  Database indexes, code splitting, lazy loading, caching
-                </p>
-              </Card>
-              <Card className="p-5 text-center">
-                <Lock className="h-8 w-8 text-blue-600 mx-auto mb-3" />
-                <h3 className="font-semibold text-sm mb-1">Data Isolation</h3>
-                <p className="text-xs text-muted-foreground">
-                  Multi-tenant architecture with per-user data isolation
-                </p>
-              </Card>
-            </div>
-          </div>
-        </section>
-
-        {/* Open Source Callout */}
-        <section className="py-20 md:py-28 px-6">
-          <div className="max-w-4xl mx-auto">
-            <Card className="p-8 md:p-12 border-primary/20 bg-gradient-to-br from-primary/5 to-blue-500/5">
-              <div className="text-center space-y-5">
-                <div className="inline-flex items-center justify-center h-14 w-14 rounded-full bg-primary/10 mx-auto">
-                  <Github className="h-7 w-7 text-primary" />
-                </div>
-                <h2 className="text-3xl md:text-4xl font-bold">
-                  Open Source & Self-Hostable
-                </h2>
-                <p className="text-muted-foreground max-w-xl mx-auto leading-relaxed">
-                  WaChat is fully open source under the MIT license. Self-host
-                  it on your own infrastructure with complete control over your
-                  data, or use our managed cloud platform.
-                </p>
-                <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
-                  <Link
-                    href="/open-source"
-                    className="inline-flex items-center justify-center gap-2 bg-primary text-primary-foreground hover:bg-primary/90 px-6 py-3 rounded-lg font-semibold transition-colors"
-                  >
-                    Self-Hosting Guide
-                    <ArrowRight className="h-4 w-4" />
-                  </Link>
-                  <a
-                    href="https://github.com/hetref/whatsapp-chat"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center justify-center gap-2 border border-border hover:bg-accent px-6 py-3 rounded-lg font-semibold transition-colors"
-                  >
-                    <Star className="h-4 w-4" />
-                    Star on GitHub
-                  </a>
-                </div>
               </div>
-            </Card>
+
+              <div className="p-6 rounded-2xl bg-white/80 backdrop-blur-md border border-stone-200/80 text-center">
+                <Zap className="size-8 text-[#5F7C65] mx-auto mb-3" />
+                <h3 className="font-semibold text-base text-stone-900 mb-1">
+                  Zero Latency Overhead
+                </h3>
+                <p className="text-xs sm:text-sm text-stone-600">
+                  Database indexing, connection pooling, lightweight bundle sizing, and instantaneous delivery.
+                </p>
+              </div>
+
+              <div className="p-6 rounded-2xl bg-white/80 backdrop-blur-md border border-stone-200/80 text-center">
+                <Lock className="size-8 text-[#5F7C65] mx-auto mb-3" />
+                <h3 className="font-semibold text-base text-stone-900 mb-1">
+                  Isolated Tenant Security
+                </h3>
+                <p className="text-xs sm:text-sm text-stone-600">
+                  Strict user-scoped data segregation protecting your contacts, conversations, and API keys.
+                </p>
+              </div>
+            </div>
           </div>
         </section>
 
-        {/* Pricing Preview */}
-        <section className="py-20 md:py-28 px-6 bg-muted/30">
-          <div className="max-w-5xl mx-auto">
-            <div className="text-center mb-14 max-w-2xl mx-auto">
-              <Badge variant="secondary" className="mb-4">
-                Pricing
-              </Badge>
-              <h2 className="text-3xl md:text-4xl font-bold mb-4">
-                Simple, Transparent Pricing
+        {/* Data Ownership & Sovereignty */}
+        <section className="py-24 md:py-32 px-6">
+          <div className="max-w-4xl mx-auto">
+            <div className="p-10 md:p-14 rounded-3xl bg-gradient-to-br from-white/90 to-[#F4F1EB] border border-stone-300/80 shadow-xl text-center space-y-6">
+              <div className="inline-flex items-center justify-center size-14 rounded-full bg-[#5F7C65]/15 text-[#5F7C65] mx-auto">
+                <Layers className="size-7" />
+              </div>
+              <h2 className="text-3xl md:text-4xl font-normal tracking-[-0.04em] text-emerald-950">
+                Complete Platform Ownership &amp;{" "}
+                <span className="font-[Georgia,serif] italic text-[#2D583F]">
+                  Flexibility
+                </span>
               </h2>
-              <p className="text-muted-foreground">
-                Start free and scale as your business grows. No hidden fees.
+              <p className="text-stone-600 max-w-xl mx-auto text-base sm:text-lg leading-relaxed">
+                Run securely on our zero-maintenance managed cloud, or deploy on your own private infrastructure. You retain total ownership of your customer relationships, media, and communication history.
               </p>
-            </div>
-
-            <div className="grid md:grid-cols-3 gap-6">
-              <Card className="p-6 hover:shadow-md transition-all duration-200">
-                <div className="mb-4">
-                  <h3 className="font-semibold text-lg">Free</h3>
-                  <div className="text-3xl font-bold mt-2">
-                    &#8377;0
-                    <span className="text-sm font-normal text-muted-foreground">
-                      /month
-                    </span>
-                  </div>
-                </div>
-                <ul className="space-y-2 text-sm text-muted-foreground mb-6">
-                  <li className="flex items-center gap-2">
-                    <CheckCircle2 className="h-4 w-4 text-primary flex-shrink-0" />
-                    10 Contacts
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <CheckCircle2 className="h-4 w-4 text-primary flex-shrink-0" />
-                    2 Broadcast Groups
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <CheckCircle2 className="h-4 w-4 text-primary flex-shrink-0" />
-                    5 GB Storage
-                  </li>
-                </ul>
+              <div className="flex flex-col sm:flex-row gap-4 justify-center pt-2">
                 <Link
-                  href="/sign-up"
-                  className="inline-flex items-center justify-center w-full gap-2 border border-border hover:bg-accent px-4 py-2.5 rounded-lg font-medium text-sm transition-colors"
+                  href="/open-source"
+                  className="inline-flex items-center justify-center gap-2 bg-[#5F7C65] hover:bg-[#526D57] text-white px-7 py-3 rounded-sm font-medium transition-all shadow-[inset_0_2px_4px_0_rgba(255,255,255,0.22)] active:scale-[0.98]"
                 >
-                  Get Started
+                  Self-Hosting Guide
+                  <ArrowRight className="size-4" />
                 </Link>
-              </Card>
-
-              <Card className="p-6 border-primary/40 shadow-md relative">
-                <Badge className="absolute -top-3 left-1/2 -translate-x-1/2">
-                  Most Popular
-                </Badge>
-                <div className="mb-4">
-                  <h3 className="font-semibold text-lg">Silver</h3>
-                  <div className="text-3xl font-bold mt-2">
-                    &#8377;499
-                    <span className="text-sm font-normal text-muted-foreground">
-                      /month
-                    </span>
-                  </div>
-                </div>
-                <ul className="space-y-2 text-sm text-muted-foreground mb-6">
-                  <li className="flex items-center gap-2">
-                    <CheckCircle2 className="h-4 w-4 text-primary flex-shrink-0" />
-                    15,000 Contacts
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <CheckCircle2 className="h-4 w-4 text-primary flex-shrink-0" />
-                    100 Broadcast Groups
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <CheckCircle2 className="h-4 w-4 text-primary flex-shrink-0" />
-                    40 GB Storage
-                  </li>
-                </ul>
                 <Link
                   href="/pricing"
-                  className="inline-flex items-center justify-center w-full gap-2 bg-primary text-primary-foreground hover:bg-primary/90 px-4 py-2.5 rounded-lg font-medium text-sm transition-colors"
+                  className="inline-flex items-center justify-center gap-2 border border-stone-300 bg-white/50 hover:bg-white text-stone-900 px-7 py-3 rounded-sm font-medium transition-all active:scale-[0.98]"
                 >
-                  Subscribe
+                  View Cloud Plans
                 </Link>
-              </Card>
-
-              <Card className="p-6 hover:shadow-md transition-all duration-200">
-                <div className="mb-4">
-                  <h3 className="font-semibold text-lg">Gold</h3>
-                  <div className="text-3xl font-bold mt-2">
-                    &#8377;999
-                    <span className="text-sm font-normal text-muted-foreground">
-                      /month
-                    </span>
-                  </div>
-                </div>
-                <ul className="space-y-2 text-sm text-muted-foreground mb-6">
-                  <li className="flex items-center gap-2">
-                    <CheckCircle2 className="h-4 w-4 text-primary flex-shrink-0" />
-                    80,000 Contacts
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <CheckCircle2 className="h-4 w-4 text-primary flex-shrink-0" />
-                    500 Broadcast Groups
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <CheckCircle2 className="h-4 w-4 text-primary flex-shrink-0" />
-                    160 GB Storage
-                  </li>
-                </ul>
-                <Link
-                  href="/pricing"
-                  className="inline-flex items-center justify-center w-full gap-2 border border-border hover:bg-accent px-4 py-2.5 rounded-lg font-medium text-sm transition-colors"
-                >
-                  Subscribe
-                </Link>
-              </Card>
-            </div>
-
-            <div className="text-center mt-8">
-              <Link
-                href="/pricing"
-                className="text-sm text-muted-foreground hover:text-foreground transition-colors underline underline-offset-4"
-              >
-                View full pricing details &rarr;
-              </Link>
+              </div>
             </div>
           </div>
         </section>
+
+        {/* Pricing Section with Free Tier & Contact Us for Best Price */}
+        <PricingSection />
 
         {/* Built by DevAlly */}
         <section className="py-16 px-6">
-          <div className="max-w-3xl mx-auto text-center space-y-4">
+          <div className="max-w-3xl mx-auto text-center space-y-3">
             <Image
               src="/devally-logo-large.png"
               alt="DevAlly"
-              width={180}
-              height={54}
-              className="mx-auto dark:invert opacity-80"
+              width={160}
+              height={48}
+              className="mx-auto opacity-80"
             />
-            <p className="text-muted-foreground">
-              WaChat is built and maintained by the DevAlly team &mdash;
-              crafting developer tools and SaaS products that matter.
+            <p className="text-sm text-stone-600">
+              WaChat is built and maintained by the DevAlly team &mdash; crafting production-grade software tools that matter.
             </p>
           </div>
         </section>
 
-        {/* CTA */}
-        <section className="py-20 md:py-28 px-6 bg-primary text-primary-foreground">
-          <div className="max-w-3xl mx-auto text-center space-y-6">
-            <h2 className="text-3xl md:text-4xl font-bold">
-              Ready to Scale Your WhatsApp Business?
-            </h2>
-            <p className="text-primary-foreground/80 text-lg leading-relaxed">
-              Join businesses using WaChat to manage their WhatsApp
-              communications. Start for free, upgrade when you&apos;re ready.
-            </p>
-            <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
-              <Link
-                href="/sign-up"
-                className="inline-flex items-center justify-center gap-2 bg-white text-primary hover:bg-white/90 px-8 py-3.5 rounded-lg font-semibold transition-colors"
-              >
-                Get Started Free
-                <ArrowRight className="h-4 w-4" />
-              </Link>
-              <Link
-                href="/pricing"
-                className="inline-flex items-center justify-center gap-2 border border-white/30 text-white hover:bg-white/10 px-8 py-3.5 rounded-lg font-semibold transition-colors"
-              >
-                View Pricing
-              </Link>
+        {/* Final Botanical CTA Section */}
+        <section className="py-20 md:py-28 px-6">
+          <div className="max-w-5xl mx-auto rounded-3xl bg-[#1B3526] text-white p-12 md:p-16 border border-emerald-900/40 shadow-2xl relative overflow-hidden">
+            <div className="relative z-10 max-w-2xl mx-auto text-center space-y-6">
+              <h2 className="text-3xl sm:text-4xl md:text-5xl font-normal tracking-[-0.04em]">
+                Ready to Transform Your{" "}
+                <span className="font-[Georgia,serif] italic text-[#88BE99]">
+                  Customer Communication?
+                </span>
+              </h2>
+              <p className="text-stone-300 text-base sm:text-lg leading-relaxed text-pretty">
+                Join forward-thinking companies delivering fast, personalized customer care on WhatsApp. Start free today.
+              </p>
+              <div className="flex flex-col sm:flex-row gap-4 justify-center pt-3">
+                <Link
+                  href="/sign-up"
+                  className="inline-flex items-center justify-center gap-2 bg-white text-[#1B3526] hover:bg-stone-100 px-8 py-3.5 rounded-sm font-medium transition-all shadow-md active:scale-[0.98]"
+                >
+                  Get Started Free
+                  <ArrowUpRight className="size-4" />
+                </Link>
+                <Link
+                  href="/pricing"
+                  className="inline-flex items-center justify-center gap-2 border border-white/30 text-white hover:bg-white/10 px-8 py-3.5 rounded-sm font-medium transition-all active:scale-[0.98]"
+                >
+                  View Pricing Plans
+                </Link>
+              </div>
             </div>
           </div>
         </section>

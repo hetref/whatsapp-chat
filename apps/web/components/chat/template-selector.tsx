@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { X, Search, Send, Loader2, AlertCircle, FileText, Eye, ImageIcon } from "lucide-react";
+import { X, Search, Send, Loader2, AlertCircle, FileText, Eye, ImageIcon, Check } from "lucide-react";
 import { MediaPickerDialog } from "@/components/media-picker-dialog";
 
 // Template types
@@ -49,6 +50,8 @@ interface WhatsAppTemplate {
 
 interface ChatUser {
   id: string;
+  phone_number?: string;
+  phoneNumber?: string;
   name: string;
   custom_name?: string;
   whatsapp_name?: string;
@@ -64,9 +67,10 @@ interface TemplateSelectorProps {
     footer: Record<string, string>;
   }, mediaUrl?: string) => Promise<void>;
   selectedUser: ChatUser;
+  whatsappAccessToken?: string | null;
 }
 
-export function TemplateSelector({ isOpen, onClose, onSendTemplate, selectedUser }: TemplateSelectorProps) {
+export function TemplateSelector({ isOpen, onClose, onSendTemplate, selectedUser, whatsappAccessToken }: TemplateSelectorProps) {
   const [templates, setTemplates] = useState<WhatsAppTemplate[]>([]);
   const [filteredTemplates, setFilteredTemplates] = useState<WhatsAppTemplate[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState<WhatsAppTemplate | null>(null);
@@ -86,6 +90,31 @@ export function TemplateSelector({ isOpen, onClose, onSendTemplate, selectedUser
   const [error, setError] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(false);
   const [mediaPickerOpen, setMediaPickerOpen] = useState(false);
+  const [quickRegisterPin, setQuickRegisterPin] = useState("123456");
+  const [isQuickRegistering, setIsQuickRegistering] = useState(false);
+  const [quickRegisterSuccess, setQuickRegisterSuccess] = useState<string | null>(null);
+
+  const handleQuickRegister = async () => {
+    setIsQuickRegistering(true);
+    setQuickRegisterSuccess(null);
+    try {
+      const res = await fetch("/api/settings/register-phone", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pin: quickRegisterPin }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Registration failed");
+      }
+      setQuickRegisterSuccess("Phone number registered successfully! You can now click 'Send Template'.");
+      setError(null);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to register phone number");
+    } finally {
+      setIsQuickRegistering(false);
+    }
+  };
 
   // Fetch templates when dialog opens
   useEffect(() => {
@@ -394,6 +423,9 @@ export function TemplateSelector({ isOpen, onClose, onSendTemplate, selectedUser
     setError(null);
 
     try {
+      if (whatsappAccessToken) {
+        console.log('[TemplateSelector] Using WhatsApp access token for template send:', whatsappAccessToken);
+      }
       await onSendTemplate(selectedTemplate.name, selectedTemplate, variables, mediaUrl || undefined);
 
       // Reset state and close
@@ -711,12 +743,100 @@ export function TemplateSelector({ isOpen, onClose, onSendTemplate, selectedUser
 
                   {/* Error Message */}
                   {error && (
-                    <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+                    <div className="mt-4 p-3.5 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/50 rounded-lg space-y-3">
                       <div className="flex items-center gap-2">
-                        <AlertCircle className="h-4 w-4 text-red-600" />
-                        <span className="text-sm font-medium text-red-800">Error</span>
+                        <AlertCircle className="h-4 w-4 text-red-600 dark:text-red-400 shrink-0" />
+                        <span className="text-sm font-semibold text-red-800 dark:text-red-200">
+                          {error.includes('existing WhatsApp account') || error.includes('Cannot create certificate')
+                            ? 'Cannot Create Certificate: Phone Number Active on Mobile WhatsApp'
+                            : error.includes('133010') || error.toLowerCase().includes('not registered')
+                              ? 'Phone Number Not Registered with WhatsApp Cloud API'
+                              : 'Error'}
+                        </span>
                       </div>
-                      <p className="text-sm text-red-700 mt-1">{error}</p>
+                      <p className="text-sm text-red-700 dark:text-red-300 leading-relaxed">{error}</p>
+
+                      {(error.includes('existing WhatsApp account') || error.includes('Cannot create certificate')) ? (
+                        <div className="pt-2.5 border-t border-red-200 dark:border-red-900/40 space-y-2">
+                          <p className="text-xs font-semibold text-red-800 dark:text-red-200">
+                            Required action to enable this number for Cloud API:
+                          </p>
+                          <ol className="list-decimal list-inside space-y-1 text-xs text-red-700 dark:text-red-300">
+                            <li>Open <strong>WhatsApp</strong> on your mobile phone for this number.</li>
+                            <li>Go to <strong>Settings → Account → Delete my account</strong>.</li>
+                            <li>Wait <strong>3 minutes</strong>, then click &quot;Register Number Now&quot; below.</li>
+                          </ol>
+                          <div className="flex flex-wrap items-center gap-2 pt-1">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs font-medium text-red-800 dark:text-red-200">PIN:</span>
+                              <Input
+                                value={quickRegisterPin}
+                                onChange={(e) => setQuickRegisterPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                                maxLength={6}
+                                className="w-24 h-8 text-xs font-mono text-center bg-background"
+                                placeholder="123456"
+                              />
+                            </div>
+                            <Button
+                              type="button"
+                              size="sm"
+                              onClick={handleQuickRegister}
+                              disabled={isQuickRegistering || quickRegisterPin.length !== 6}
+                              className="h-8 text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
+                            >
+                              {isQuickRegistering ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
+                              Retry Registration
+                            </Button>
+                            <Link
+                              href="/protected/setup"
+                              className="h-8 px-2.5 inline-flex items-center text-xs font-medium rounded-md border border-red-300 dark:border-red-800 hover:bg-red-100 dark:hover:bg-red-900/30 text-red-700 dark:text-red-300 transition-colors"
+                            >
+                              Open Setup Page
+                            </Link>
+                          </div>
+                        </div>
+                      ) : (error.includes('133010') || error.toLowerCase().includes('not registered')) && (
+                        <div className="pt-2.5 border-t border-red-200 dark:border-red-900/40 space-y-2">
+                          <p className="text-xs text-red-600 dark:text-red-400">
+                            Your phone number is verified in Meta Business, but Meta requires a one-time Cloud API registration with a 6-digit PIN before messages can be sent.
+                          </p>
+                          <div className="flex flex-wrap items-center gap-2 pt-1">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs font-medium text-red-800 dark:text-red-200">PIN:</span>
+                              <Input
+                                value={quickRegisterPin}
+                                onChange={(e) => setQuickRegisterPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                                maxLength={6}
+                                className="w-24 h-8 text-xs font-mono text-center bg-background"
+                                placeholder="123456"
+                              />
+                            </div>
+                            <Button
+                              type="button"
+                              size="sm"
+                              onClick={handleQuickRegister}
+                              disabled={isQuickRegistering || quickRegisterPin.length !== 6}
+                              className="h-8 text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
+                            >
+                              {isQuickRegistering ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
+                              Register Number Now
+                            </Button>
+                            <Link
+                              href="/protected/setup"
+                              className="h-8 px-2.5 inline-flex items-center text-xs font-medium rounded-md border border-red-300 dark:border-red-800 hover:bg-red-100 dark:hover:bg-red-900/30 text-red-700 dark:text-red-300 transition-colors"
+                            >
+                              Open Setup Page
+                            </Link>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {quickRegisterSuccess && (
+                    <div className="mt-4 p-3 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/50 rounded-lg flex items-center gap-2 text-emerald-800 dark:text-emerald-200 text-xs font-medium">
+                      <Check className="h-4 w-4 text-emerald-600 shrink-0" />
+                      <span>{quickRegisterSuccess}</span>
                     </div>
                   )}
                 </div>

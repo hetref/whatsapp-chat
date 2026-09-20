@@ -145,6 +145,24 @@ export default function SetupPage() {
     verify_token_to_use?: string;
   } | null>(null);
 
+  // Phone Cloud API registration state (Fixes Meta Error #133010)
+  const [registeringPhone, setRegisteringPhone] = useState(false);
+  const [phonePin, setPhonePin] = useState("123456");
+  const [phoneRegStatus, setPhoneRegStatus] = useState<{
+    status?: string;
+    code_verification_status?: string;
+    is_connected?: boolean;
+    is_verified?: boolean;
+    display_phone_number?: string;
+    verified_name?: string;
+    quality_rating?: string;
+  } | null>(null);
+  const [phoneRegError, setPhoneRegError] = useState<string | null>(null);
+  const [phoneRegSuccess, setPhoneRegSuccess] = useState<string | null>(null);
+  const [checkingPhoneStatus, setCheckingPhoneStatus] = useState(false);
+  const [showPinInput, setShowPinInput] = useState(false);
+  const [deregisteringPhone, setDeregisteringPhone] = useState(false);
+
   // Popup callback state - detect synchronously so popup callback never renders main dashboard or fires initial fetches
   const [isPopupCallback, setIsPopupCallback] = useState(() => {
     if (typeof window === "undefined") return false;
@@ -259,6 +277,87 @@ export default function SetupPage() {
       console.error("Error saving phone number ID:", err);
     } finally {
       setSavingPhoneId(false);
+    }
+  };
+
+  // Check phone Cloud API registration status
+  const checkPhoneRegistration = useCallback(async () => {
+    try {
+      setCheckingPhoneStatus(true);
+      const res = await fetch("/api/settings/register-phone");
+      if (res.ok) {
+        const data = await res.json();
+        setPhoneRegStatus({
+          status: data.status,
+          code_verification_status: data.code_verification_status,
+          is_connected: data.is_connected,
+          is_verified: data.is_verified,
+          display_phone_number: data.display_phone_number,
+          verified_name: data.verified_name,
+          quality_rating: data.quality_rating,
+        });
+      }
+    } catch (e) {
+      console.warn("Failed to check phone registration:", e);
+    } finally {
+      setCheckingPhoneStatus(false);
+    }
+  }, []);
+
+  // Automatically check registration status when settings change
+  useEffect(() => {
+    if (settings?.has_access_token && settings?.phone_number_id) {
+      checkPhoneRegistration();
+    }
+  }, [settings?.has_access_token, settings?.phone_number_id, checkPhoneRegistration]);
+
+  // Register phone number with WhatsApp Cloud API using 6-digit PIN
+  const handleRegisterPhone = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setRegisteringPhone(true);
+    setPhoneRegError(null);
+    setPhoneRegSuccess(null);
+    try {
+      const res = await fetch("/api/settings/register-phone", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pin: phonePin }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Failed to register phone number with Meta");
+      }
+      setPhoneRegSuccess("Phone number registered successfully! Status is now Connected. You can now send WhatsApp messages.");
+      setShowPinInput(false);
+      await checkPhoneRegistration();
+      await loadSettings();
+    } catch (err: unknown) {
+      setPhoneRegError(err instanceof Error ? err.message : "Failed to register phone number");
+    } finally {
+      setRegisteringPhone(false);
+    }
+  };
+
+  // Attempt to deregister phone number from Meta Cloud API
+  const handleDeregisterPhone = async () => {
+    if (!confirm("Attempt to deregister this phone number from Meta Cloud API?")) return;
+    setDeregisteringPhone(true);
+    setPhoneRegError(null);
+    setPhoneRegSuccess(null);
+    try {
+      const res = await fetch("/api/settings/register-phone", {
+        method: "DELETE",
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Deregistration failed");
+      }
+      setPhoneRegSuccess("Phone number deregistered from Cloud API. Wait 3 minutes before re-registering.");
+      await checkPhoneRegistration();
+    } catch (err: unknown) {
+      setPhoneRegError(err instanceof Error ? err.message : "Failed to deregister phone number");
+    } finally {
+      setDeregisteringPhone(false);
     }
   };
 
@@ -888,9 +987,20 @@ export default function SetupPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
                   {/* Phone Number */}
                   <div className="p-4 rounded-xl bg-card border shadow-xs space-y-1">
-                    <div className="flex items-center gap-2 text-muted-foreground text-xs font-semibold uppercase tracking-wider">
-                      <Phone className="h-3.5 w-3.5 text-emerald-600" />
-                      Connected Phone
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-muted-foreground text-xs font-semibold uppercase tracking-wider">
+                        <Phone className="h-3.5 w-3.5 text-emerald-600" />
+                        Connected Phone
+                      </div>
+                      {phoneRegStatus?.status === 'CONNECTED' ? (
+                        <Badge className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20 text-[10px] font-medium">
+                          Registered &amp; Active
+                        </Badge>
+                      ) : phoneRegStatus?.code_verification_status === 'VERIFIED' ? (
+                        <Badge className="bg-amber-500/10 text-amber-600 border-amber-500/20 text-[10px] font-medium">
+                          Verified (Registration Needed)
+                        </Badge>
+                      ) : null}
                     </div>
                     <p className="text-lg font-bold text-foreground font-mono">
                       {settings?.phone_number || settings?.phone_number_id || "WhatsApp Account (WABA Active)"}
@@ -1020,6 +1130,162 @@ export default function SetupPage() {
                       )}
                     </div>
                   </div>
+
+                  {/* Cloud API Registration Section (Fixes Error #133010) */}
+                  {settings?.phone_number_id && settings?.has_access_token && (
+                    <div className="mt-4 p-4 rounded-xl bg-blue-500/5 border border-blue-500/20 space-y-3">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <ShieldCheck className="h-4 w-4 text-blue-600 dark:text-blue-400 shrink-0" />
+                            <h4 className="text-sm font-semibold text-foreground">
+                              WhatsApp Cloud API Registration
+                            </h4>
+                            {phoneRegStatus?.status === 'CONNECTED' ? (
+                              <span className="px-2 py-0.5 text-[11px] font-medium rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300">
+                                Registered &amp; Active
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 text-[11px] font-medium rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300">
+                                Registration Required to Send Messages
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {phoneRegStatus?.status === 'CONNECTED'
+                              ? 'Your phone number is fully registered with WhatsApp Cloud API and ready to send and receive messages.'
+                              : 'Meta requires phone numbers to be registered with a 6-digit PIN. If you see "(#133010) Account not registered", click Register below to activate your number.'}
+                          </p>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={checkPhoneRegistration}
+                            disabled={checkingPhoneStatus || deregisteringPhone}
+                            className="text-xs h-8"
+                          >
+                            {checkingPhoneStatus ? (
+                              <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                            ) : (
+                              <RefreshCw className="h-3 w-3 mr-1" />
+                            )}
+                            Check Status
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={handleDeregisterPhone}
+                            disabled={checkingPhoneStatus || deregisteringPhone}
+                            className="text-xs h-8 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-800 hover:bg-amber-50 dark:hover:bg-amber-950/40"
+                            title="Attempt to disconnect the number from Meta Cloud API"
+                          >
+                            {deregisteringPhone ? (
+                              <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                            ) : (
+                              <Unplug className="h-3 w-3 mr-1" />
+                            )}
+                            Deregister API
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={() => setShowPinInput(!showPinInput)}
+                            className="text-xs h-8 bg-blue-600 hover:bg-blue-700 text-white"
+                          >
+                            {phoneRegStatus?.status === 'CONNECTED'
+                              ? 'Re-Register / Update PIN'
+                              : 'Register Phone Number'}
+                          </Button>
+                        </div>
+                      </div>
+
+                      {showPinInput && (
+                        <form onSubmit={handleRegisterPhone} className="pt-3 border-t border-blue-500/20 space-y-3">
+                          <div className="flex flex-col sm:flex-row sm:items-end gap-3">
+                            <div className="space-y-1 flex-1 max-w-xs">
+                              <Label htmlFor="pin-input" className="text-xs font-medium">
+                                6-Digit Two-Step Verification PIN
+                              </Label>
+                              <Input
+                                id="pin-input"
+                                value={phonePin}
+                                onChange={(e) => setPhonePin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                                placeholder="123456"
+                                maxLength={6}
+                                className="font-mono text-sm tracking-widest text-center"
+                              />
+                            </div>
+                            <Button
+                              type="submit"
+                              disabled={registeringPhone || phonePin.length !== 6}
+                              className="text-xs h-9 bg-emerald-600 hover:bg-emerald-700 text-white shrink-0"
+                            >
+                              {registeringPhone ? (
+                                <>
+                                  <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                                  Registering with Meta...
+                                </>
+                              ) : (
+                                'Confirm & Register with Cloud API'
+                              )}
+                            </Button>
+                          </div>
+                          <p className="text-[11px] text-muted-foreground">
+                            Note: If you previously set a two-step verification PIN in WhatsApp Manager, enter that exact 6-digit PIN. Otherwise, enter any 6 digits (e.g. 123456) to establish your PIN.
+                          </p>
+                        </form>
+                      )}
+
+                      {phoneRegError && (
+                        <div className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/25 text-xs text-red-700 dark:text-red-300 space-y-2.5">
+                          <div className="flex items-start gap-2">
+                            <AlertCircle className="h-4 w-4 text-red-600 shrink-0 mt-0.5" />
+                            <div>
+                              <span className="font-semibold text-sm block">
+                                {phoneRegError.includes('existing WhatsApp account') || phoneRegError.includes('Cannot create certificate')
+                                  ? 'Cannot Create Certificate: Phone Number Active on Mobile WhatsApp'
+                                  : 'Registration Failed'}
+                              </span>
+                              <p className="mt-1 leading-relaxed">{phoneRegError}</p>
+                            </div>
+                          </div>
+
+                          {(phoneRegError.includes('existing WhatsApp account') || phoneRegError.includes('Cannot create certificate')) && (
+                            <div className="p-3 bg-background/90 rounded-lg border border-red-500/20 space-y-2 text-foreground">
+                              <p className="font-semibold text-xs text-red-700 dark:text-red-300">
+                                How to resolve this in 3 quick steps:
+                              </p>
+                              <ol className="list-decimal list-inside space-y-1.5 text-xs text-muted-foreground">
+                                <li>
+                                  Open <strong>WhatsApp</strong> or <strong>WhatsApp Business</strong> on the mobile phone using this number.
+                                </li>
+                                <li>
+                                  Go to <strong>Settings → Account → Delete my account</strong> (this releases the number from the mobile app so Meta Cloud API can take it over).
+                                </li>
+                                <li>
+                                  Wait <strong>3 minutes</strong> for Meta to release the number, then click <strong>&quot;Confirm &amp; Register with Cloud API&quot;</strong> above.
+                                </li>
+                              </ol>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {phoneRegSuccess && (
+                        <div className="p-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-700 dark:text-emerald-300 flex items-start gap-2">
+                          <Check className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
+                          <div>
+                            <span className="font-semibold">Success: </span>
+                            {phoneRegSuccess}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
               </CardContent>
 
               <CardFooter className="border-t bg-muted/30 pt-4 pb-4 flex items-center justify-between text-xs text-muted-foreground">

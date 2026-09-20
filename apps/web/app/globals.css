@@ -131,4 +131,67 @@
   .animate-scale-in {
     animation: scale-in 0.2s ease-out;
   }
+
+  /* Hero Section Botanical Animations */
+  @keyframes hero-blur-in {
+    0% {
+      opacity: 0;
+      transform: scale(0.96);
+      filter: blur(8px);
+    }
+    100% {
+      opacity: 1;
+      transform: scale(1);
+      filter: blur(0px);
+    }
+  }
+
+  @keyframes hero-slide-down {
+    0% {
+      opacity: 0;
+      transform: translateY(-18px) scale(0.98);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  @keyframes hero-slide-up {
+    0% {
+      opacity: 0;
+      transform: translateY(24px) scale(0.97);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  @keyframes hero-image-scale {
+    0% {
+      opacity: 0;
+      transform: scale(1.06);
+    }
+    100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  .animate-hero-blur {
+    animation: hero-blur-in 0.85s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+
+  .animate-hero-nav {
+    animation: hero-slide-down 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+
+  .animate-hero-card {
+    animation: hero-slide-up 0.8s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .animate-hero-img {
+    animation: hero-image-scale 1.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
 }

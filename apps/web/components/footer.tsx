@@ -1,19 +1,20 @@
 import Link from "next/link";
 import Image from "next/image";
-import { MessageCircle, Github } from "lucide-react";
+import LogoIcon from "@/components/logo-icon";
+import { Github } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 
 export function Footer() {
   const year = new Date().getFullYear();
 
   return (
-    <footer className="border-t bg-muted/30">
+    <footer className="border-t border-stone-200/80 bg-[#F4F1EB] text-stone-900">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-12">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-8 mb-10">
           {/* Brand */}
           <div className="col-span-2 md:col-span-1">
-            <div className="flex items-center gap-2 font-bold text-lg mb-3">
-              <MessageCircle className="h-6 w-6 text-primary" />
+            <div className="flex items-center gap-2.5 font-semibold text-lg mb-3 text-stone-900">
+              <LogoIcon className="h-6 w-6 text-[#5F7C65]" />
               <span>WaChat</span>
             </div>
             <p className="text-sm text-muted-foreground mb-4 max-w-xs">

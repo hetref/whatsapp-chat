@@ -65,6 +65,7 @@ export default function ChatPage() {
   const [showChat, setShowChat] = useState(false);
   const [sendingMessage, setSendingMessage] = useState(false);
   const [isSetupComplete, setIsSetupComplete] = useState<boolean | null>(null);
+  const [whatsappAccessToken, setWhatsappAccessToken] = useState<string | null>(null);
   const [checkingSetup, setCheckingSetup] = useState(true);
   const [broadcastGroupId, setBroadcastGroupId] = useState<string | null>(null);
   const [broadcastGroupName, setBroadcastGroupName] = useState<string | null>(null);
@@ -171,6 +172,9 @@ export default function ChatPage() {
 
         const setupComplete = data.settings?.access_token_added || data.settings?.webhook_verified;
         setIsSetupComplete(setupComplete);
+        if (data.settings?.access_token) {
+          setWhatsappAccessToken(data.settings.access_token);
+        }
         setCheckingSetup(false);
       } else {
         setCheckingSetup(false);
@@ -209,6 +213,11 @@ export default function ChatPage() {
           }));
 
           setUsers(transformedUsers);
+          setSelectedUser((prev) => {
+            if (!prev) return null;
+            const updated = transformedUsers.find(u => u.id === prev.id);
+            return updated ? { ...prev, ...updated } : prev;
+          });
         } else {
           console.error('Error fetching conversations:', result.error);
         }
@@ -387,6 +396,11 @@ export default function ChatPage() {
         }));
 
         setUsers(transformedUsers);
+        setSelectedUser((prev) => {
+          if (!prev) return null;
+          const updated = transformedUsers.find(u => u.id === prev.id);
+          return updated ? { ...prev, ...updated } : prev;
+        });
         console.log(`Refreshed ${transformedUsers.length} user conversations`);
       } else {
         console.error('Error refreshing users:', result.error);
@@ -581,6 +595,11 @@ export default function ChatPage() {
     try {
       console.log(`Sending message to ${selectedUser.id}: ${content}`);
 
+      const recipientPhone =
+        selectedUser.phone_number ||
+        (selectedUser as unknown as { phoneNumber?: string }).phoneNumber ||
+        (selectedUser as unknown as { phone?: string }).phone;
+
       // Call the WhatsApp API endpoint which handles both WhatsApp sending and database storage
       const response = await fetch('/api/send-message', {
         method: 'POST',
@@ -588,7 +607,8 @@ export default function ChatPage() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          to: selectedUser.phone_number,
+          to: recipientPhone,
+          contactId: selectedUser.id,
           message: content,
         }),
       });
@@ -776,6 +796,7 @@ export default function ChatPage() {
               broadcastGroupName={broadcastGroupName}
               messagingDisabled={messagingBlocked}
               messagingDisabledReason={messagingBlockedReason}
+              whatsappAccessToken={whatsappAccessToken}
             />
           </div>
         </>
@@ -816,6 +837,7 @@ export default function ChatPage() {
                 broadcastGroupName={broadcastGroupName}
                 messagingDisabled={messagingBlocked}
                 messagingDisabledReason={messagingBlockedReason}
+                whatsappAccessToken={whatsappAccessToken}
               />
             </div>
           )}

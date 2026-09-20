@@ -139,6 +139,8 @@ async function handleSingleUserCreation(
       success: true,
       user: {
         id: contact.id,
+        phone_number: contact.phoneNumber,
+        phoneNumber: contact.phoneNumber,
         name: contact.customName || contact.whatsappName || contact.phoneNumber,
         custom_name: contact.customName,
         whatsapp_name: contact.whatsappName,
@@ -291,6 +293,8 @@ async function handleBulkUserCreation(
         customName,
         user: {
           id: contact.id,
+          phone_number: contact.phoneNumber,
+          phoneNumber: contact.phoneNumber,
           name: contact.customName || contact.whatsappName || contact.phoneNumber,
           custom_name: contact.customName,
           whatsapp_name: contact.whatsappName,

@@ -121,6 +121,7 @@ interface ChatWindowProps {
   broadcastGroupName?: string | null;
   messagingDisabled?: boolean;
   messagingDisabledReason?: string | null;
+  whatsappAccessToken?: string | null;
 }
 
 export function ChatWindow({
@@ -137,6 +138,7 @@ export function ChatWindow({
   broadcastGroupName,
   messagingDisabled = false,
   messagingDisabledReason = null,
+  whatsappAccessToken,
 }: ChatWindowProps) {
   const [messageInput, setMessageInput] = useState("");
   const [playingAudio, setPlayingAudio] = useState<string | null>(null);
@@ -149,7 +151,35 @@ export function ChatWindow({
   const [sendingMedia, setSendingMedia] = useState(false);
   const [showUserInfo, setShowUserInfo] = useState(false);
   const [showTemplateSelector, setShowTemplateSelector] = useState(false);
+  const [activeWhatsappToken, setActiveWhatsappToken] = useState<string | null>(whatsappAccessToken || null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Sync token from prop or load from setup settings if needed
+  useEffect(() => {
+    if (whatsappAccessToken) {
+      setActiveWhatsappToken(whatsappAccessToken);
+      console.log('[ChatWindow] Connected WhatsApp account access token (from setup):', whatsappAccessToken);
+      return;
+    }
+
+    const fetchTokenFromSettings = async () => {
+      try {
+        const response = await fetch('/api/settings/save');
+        if (response.ok) {
+          const data = await response.json();
+          const token = data?.settings?.access_token || null;
+          setActiveWhatsappToken(token);
+          if (token) {
+            console.log('[ChatWindow] Loaded connected WhatsApp account access token from setup:', token);
+          }
+        }
+      } catch (err) {
+        console.error('[ChatWindow] Error fetching connected WhatsApp account settings:', err);
+      }
+    };
+
+    fetchTokenFromSettings();
+  }, [whatsappAccessToken]);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const unreadIndicatorRef = useRef<HTMLDivElement>(null);
   const audioRefs = useRef<{ [key: string]: HTMLAudioElement }>({});
@@ -231,8 +261,36 @@ export function ChatWindow({
     body: Record<string, string>;
     footer: Record<string, string>;
   }, mediaUrl?: string) => {
+    // Resolve the token used to send the WhatsApp template messages for connected WhatsApp account on setup page
+    let tokenUsed = activeWhatsappToken || whatsappAccessToken;
+    if (!tokenUsed) {
+      try {
+        const res = await fetch('/api/settings/save');
+        if (res.ok) {
+          const data = await res.json();
+          tokenUsed = data?.settings?.access_token || null;
+          if (tokenUsed) {
+            setActiveWhatsappToken(tokenUsed);
+          }
+        }
+      } catch (err) {
+        console.error('[ChatWindow] Failed to load WhatsApp token from setup before sending template:', err);
+      }
+    }
+
+    // Explicit console logs as requested
+    console.log('[ChatWindow] WhatsApp Template - Token used for sending message:', tokenUsed);
+    console.log('[ChatWindow] Sending template:', {
+      templateName,
+      token: tokenUsed,
+      recipient: selectedUser?.phone_number || broadcastGroupName,
+      variables,
+      mediaUrl,
+    });
+
     // Handle broadcast mode
     if (broadcastGroupName) {
+      console.log('[ChatWindow] [Broadcast] WhatsApp Template Send - Token used:', tokenUsed);
       // Call onSendMessage with template data - it will be routed to broadcast endpoint
       const templateMessage = `Template: ${templateName}`;
       // Store template data in a special format that the broadcast handler can use
@@ -249,6 +307,11 @@ export function ChatWindow({
 
     if (!selectedUser) return;
 
+    const recipientPhone =
+      selectedUser.phone_number ||
+      (selectedUser as unknown as { phoneNumber?: string }).phoneNumber ||
+      (selectedUser as unknown as { phone?: string }).phone;
+
     try {
       const response = await fetch('/api/send-template', {
         method: 'POST',
@@ -256,7 +319,9 @@ export function ChatWindow({
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          to: selectedUser.phone_number,
+          to: recipientPhone,
+          contactId: selectedUser.id,
+          contactName: selectedUser.custom_name || selectedUser.whatsapp_name || selectedUser.name,
           templateName,
           templateData,
           variables,
@@ -271,12 +336,12 @@ export function ChatWindow({
         throw new Error(errorMsg);
       }
 
-      console.log('Template sent successfully:', result);
+      console.log('[ChatWindow] Template sent successfully! Token used:', result.token || tokenUsed, result);
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('whatsapp:message-sent', { detail: result }));
       }
     } catch (error) {
-      console.error('Error sending template:', error);
+      console.error('[ChatWindow] Error sending template (token used: ' + tokenUsed + '):', error);
       throw error; // Let the template selector handle the error display
     }
   };
@@ -415,11 +480,17 @@ export function ChatWindow({
           caption: mf.caption || '',
         }));
 
+        const recipientPhone =
+          selectedUser.phone_number ||
+          (selectedUser as unknown as { phoneNumber?: string }).phoneNumber ||
+          (selectedUser as unknown as { phone?: string }).phone;
+
         const response = await fetch('/api/send-media', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            to: selectedUser.phone_number,
+            to: recipientPhone,
+            contactId: selectedUser.id,
             files: s3Files,
           }),
         });
@@ -493,11 +564,17 @@ export function ChatWindow({
         }
 
         // Step 4: Send message via server with S3 references
+        const recipientPhone =
+          selectedUser.phone_number ||
+          (selectedUser as unknown as { phoneNumber?: string }).phoneNumber ||
+          (selectedUser as unknown as { phone?: string }).phone;
+
         const response = await fetch('/api/send-media', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            to: selectedUser.phone_number,
+            to: recipientPhone,
+            contactId: selectedUser.id,
             files: s3Files,
           }),
         });
@@ -1526,6 +1603,7 @@ export function ChatWindow({
           isOpen={showTemplateSelector}
           onClose={() => setShowTemplateSelector(false)}
           onSendTemplate={handleSendTemplate}
+          whatsappAccessToken={activeWhatsappToken || whatsappAccessToken}
           selectedUser={selectedUser || {
             id: 'broadcast',
             name: broadcastGroupName || 'Broadcast Group',
