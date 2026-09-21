@@ -22,6 +22,7 @@ interface ChatUser {
   last_message?: string;
   last_message_time?: string;
   last_message_type?: string;
+  last_message_template_name?: string | null;
   last_message_sender?: string;
   unread_count?: number;
 }
@@ -136,6 +137,8 @@ export function UserList({ users, selectedUser, onUserSelect, currentUserId, onU
           return `${prefix}🎵 Audio`;
         case 'document':
           return `${prefix}📄 Document`;
+        case 'template':
+          return `${prefix}📋 Template: ${user.last_message_template_name || 'Message'}`;
         default:
           return `${prefix}📎 Media`;
       }

@@ -20,6 +20,7 @@ interface ChatUser {
   last_message_time?: string;
   last_message?: string;
   last_message_type?: string;
+  last_message_template_name?: string | null;
   last_message_sender?: string;
 }
 
@@ -60,6 +61,7 @@ interface ConversationApi {
   last_message_time?: string;
   last_message?: string;
   last_message_type?: string;
+  last_message_template_name?: string | null;
   last_message_sender?: string;
 }
 
@@ -484,6 +486,7 @@ export default function ChatPage() {
           last_message_time: conv.last_message_time,
           last_message: conv.last_message,
           last_message_type: conv.last_message_type,
+          last_message_template_name: conv.last_message_template_name,
           last_message_sender: conv.last_message_sender
         }));
 

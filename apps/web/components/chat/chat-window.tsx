@@ -3,7 +3,7 @@
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ArrowLeft, Send, MessageCircle, Loader2, X, Download, FileText, Image as ImageIcon, Play, Pause, Volume2, Paperclip, MessageSquare, Users, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Send, MessageCircle, Loader2, X, Download, FileText, Image as ImageIcon, Play, Pause, Volume2, Paperclip, MessageSquare, Users, AlertTriangle, Plus } from "lucide-react";
 import { useState, useRef, useEffect, useCallback } from "react";
 import Image from "next/image";
 import { MediaUpload } from "./media-upload";
@@ -11,6 +11,7 @@ import { UserInfoDialog } from "./user-info-dialog";
 import { TemplateSelector } from "./template-selector";
 import { MessageStatusIcon } from "./message-status-icon";
 import { BroadcastInfoDialog, BroadcastRecipient, BroadcastStats } from "./broadcast-info-dialog";
+import { EmojiReactionPicker } from "./emoji-reaction-picker";
 
 // Template interfaces
 interface TemplateComponent {
@@ -83,7 +84,7 @@ interface MediaData {
   template_name?: string;
   language?: string;
   header?: {
-    format: 'IMAGE' | 'VIDEO' | 'DOCUMENT';
+    format: 'IMAGE' | 'VIDEO' | 'DOCUMENT' | 'TEXT' | string;
     media_url?: string;
     text?: string;
     filename?: string;
@@ -95,7 +96,7 @@ interface MediaData {
     text?: string;
   };
   buttons?: Array<{
-    type: 'URL' | 'PHONE_NUMBER' | 'QUICK_REPLY';
+    type: 'URL' | 'PHONE_NUMBER' | 'QUICK_REPLY' | string;
     text: string;
     url?: string;
     phone_number?: string;
@@ -195,6 +196,7 @@ export function ChatWindow({
   // State for broadcast seen info dialog
   const [selectedBroadcastMessage, setSelectedBroadcastMessage] = useState<Message | null>(null);
   const [showBroadcastInfo, setShowBroadcastInfo] = useState(false);
+  const [emojiPickerMessageId, setEmojiPickerMessageId] = useState<string | null>(null);
 
   const normalizeReactions = useCallback((raw?: ReactionEntry[] | null) => {
     if (!raw || !Array.isArray(raw)) return [] as ReactionEntry[];
@@ -221,6 +223,7 @@ export function ChatWindow({
     const currentReaction = getUserReaction(message.reactions);
     const nextEmoji = currentReaction?.emoji === emoji ? '' : emoji;
     onReactToMessage(message.id, nextEmoji);
+    setEmojiPickerMessageId(null);
   }, [broadcastGroupName, getUserReaction, onReactToMessage]);
 
   // SessionStorage helpers for caching presigned URLs
@@ -795,9 +798,9 @@ export function ChatWindow({
       }
     }
 
-    const baseClasses = `max-w-[85%] px-4 py-3 rounded-2xl shadow-sm ${isOwn
-      ? 'bg-green-500 text-white ml-4'
-      : 'bg-white dark:bg-muted border border-border mr-4'
+    const baseClasses = `w-fit max-w-full px-4 py-3 rounded-2xl shadow-sm ${isOwn
+      ? 'bg-green-500 text-white ml-auto'
+      : 'bg-white dark:bg-muted border border-border mr-auto'
       }`;
 
     const isProcessing = processingMedia.has(message.id);
@@ -1131,42 +1134,42 @@ export function ChatWindow({
       case 'template':
         // Template message - display final rendered content cleanly
         return (
-          <div className={baseClasses}>
+          <div className={`${baseClasses} select-text w-full`}>
             {/* Template Content - Clean Display */}
-            <div className="space-y-3">
+            <div className="space-y-2.5">
               {/* Header Component */}
               {mediaData?.header && (
                 <div>
-                  {mediaData.header.format === 'IMAGE' && mediaData.header.media_url ? (
-                    <div className="mb-3 rounded-lg overflow-hidden">
+                  {mediaData.header.format === 'IMAGE' && (mediaData.header.media_url || mediaUrls[message.id]) ? (
+                    <div className="mb-2.5 rounded-xl overflow-hidden shadow-sm">
                       <Image
-                        src={mediaData.header.media_url}
+                        src={mediaData.header.media_url || mediaUrls[message.id]}
                         alt="Template header image"
-                        width={250}
-                        height={150}
-                        className="max-w-full h-auto object-cover rounded-lg"
+                        width={400}
+                        height={240}
+                        className="max-w-full h-auto object-cover rounded-xl"
                         style={{ maxWidth: '100%', height: 'auto' }}
                       />
                     </div>
-                  ) : mediaData.header.format === 'VIDEO' && mediaData.header.media_url ? (
-                    <div className="mb-3 rounded-lg overflow-hidden">
+                  ) : mediaData.header.format === 'VIDEO' && (mediaData.header.media_url || mediaUrls[message.id]) ? (
+                    <div className="mb-2.5 rounded-xl overflow-hidden shadow-sm">
                       <video
                         controls
-                        className="max-w-full h-auto rounded-lg"
+                        className="max-w-full h-auto rounded-xl"
                         preload="metadata"
                       >
-                        <source src={mediaData.header.media_url} type="video/mp4" />
+                        <source src={mediaData.header.media_url || mediaUrls[message.id]} type="video/mp4" />
                         Your browser does not support the video tag.
                       </video>
                     </div>
-                  ) : mediaData.header.format === 'DOCUMENT' && mediaData.header.media_url ? (
-                    <div className="flex items-center gap-3 p-3 bg-gray-100 dark:bg-gray-800 rounded-lg mb-3">
-                      <FileText className="h-5 w-5 text-gray-600" />
-                      <span className="text-sm font-medium">{mediaData.header.filename || 'Document'}</span>
+                  ) : mediaData.header.format === 'DOCUMENT' ? (
+                    <div className="flex items-center gap-3 p-3 bg-black/10 dark:bg-white/10 rounded-xl mb-2.5">
+                      <FileText className="h-5 w-5 opacity-80 shrink-0" />
+                      <span className="text-sm font-medium truncate">{mediaData.header.filename || 'Document'}</span>
                     </div>
                   ) : mediaData.header.text ? (
-                    <div className="mb-3">
-                      <p className="text-base font-semibold leading-relaxed">
+                    <div className="mb-2">
+                      <p className="text-base font-bold leading-snug">
                         {mediaData.header.text}
                       </p>
                     </div>
@@ -1175,25 +1178,16 @@ export function ChatWindow({
               )}
 
               {/* Body Component */}
-              {mediaData?.body && (
-                <div>
-                  <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
-                    {mediaData.body.text || message.content}
-                  </p>
-                </div>
-              )}
-
-              {/* If no structured data, show the processed content */}
-              {!mediaData?.body && !mediaData?.header && (
-                <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
-                  {message.content}
+              <div>
+                <p className="text-sm whitespace-pre-wrap break-words leading-relaxed font-normal">
+                  {mediaData?.body?.text || message.content}
                 </p>
-              )}
+              </div>
 
               {/* Footer Component */}
-              {mediaData?.footer && (
-                <div className="mt-2">
-                  <p className="text-xs opacity-75 leading-relaxed">
+              {mediaData?.footer?.text && (
+                <div className="pt-1">
+                  <p className="text-[11px] opacity-75 leading-tight">
                     {mediaData.footer.text}
                   </p>
                 </div>
@@ -1201,68 +1195,41 @@ export function ChatWindow({
 
               {/* Buttons Component */}
               {mediaData?.buttons && mediaData.buttons.length > 0 && (
-                <div className="mt-4">
-                  <div className="space-y-2">
-                    {mediaData.buttons.map((button: {
-                      type: string;
-                      text: string;
-                      url?: string;
-                      phone_number?: string;
-                    }, index: number) => (
+                <div className="mt-3 pt-2 border-t border-current/15 space-y-1.5">
+                  {mediaData.buttons.map((button: {
+                    type: string;
+                    text: string;
+                    url?: string;
+                    phone_number?: string;
+                  }, index: number) => {
+                    const isUrl = button.type === 'URL';
+                    const isPhone = button.type === 'PHONE_NUMBER';
+                    return (
                       <div
                         key={index}
                         className={`
-                          px-4 py-3 rounded-lg border border-opacity-30 border-current text-center font-medium
+                          w-full px-3.5 py-2 rounded-xl text-center font-medium text-xs sm:text-sm
+                          flex items-center justify-center gap-2 transition-all cursor-pointer select-none
                           ${isOwn
-                            ? 'bg-white bg-opacity-20 hover:bg-opacity-30'
-                            : 'bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600'
+                            ? 'bg-black/15 hover:bg-black/25 text-white active:bg-black/30'
+                            : 'bg-muted/80 hover:bg-muted text-foreground active:bg-muted/90 border border-border'
                           }
-                          cursor-pointer transition-colors
                         `}
                         onClick={() => {
-                          if (button.type === 'URL' && button.url) {
+                          if (isUrl && button.url) {
                             window.open(button.url, '_blank');
-                          } else if (button.type === 'PHONE_NUMBER' && button.phone_number) {
+                          } else if (isPhone && button.phone_number) {
                             window.open(`tel:${button.phone_number}`, '_self');
                           }
                         }}
                       >
-                        <div className="flex items-center justify-center gap-2">
-                          {button.type === 'URL' && (
-                            <>
-                              <span className="text-base">🔗</span>
-                              <span className="text-sm">{button.text}</span>
-                            </>
-                          )}
-                          {button.type === 'PHONE_NUMBER' && (
-                            <>
-                              <span className="text-base">📞</span>
-                              <span className="text-sm">{button.text}</span>
-                            </>
-                          )}
-                          {button.type === 'QUICK_REPLY' && (
-                            <>
-                              <span className="text-base">💬</span>
-                              <span className="text-sm">{button.text}</span>
-                            </>
-                          )}
-                          {!['URL', 'PHONE_NUMBER', 'QUICK_REPLY'].includes(button.type) && (
-                            <span className="text-sm">{button.text}</span>
-                          )}
-                        </div>
-                        {button.url && (
-                          <div className="text-xs opacity-60 mt-2 truncate border-t border-opacity-20 border-current pt-2">
-                            {button.url}
-                          </div>
-                        )}
-                        {button.phone_number && (
-                          <div className="text-xs opacity-60 mt-2 border-t border-opacity-20 border-current pt-2">
-                            {button.phone_number}
-                          </div>
-                        )}
+                        {isUrl && <span>🔗</span>}
+                        {isPhone && <span>📞</span>}
+                        {!isUrl && !isPhone && <span>💬</span>}
+                        <span>{button.text}</span>
                       </div>
-                    ))}
-                  </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -1275,12 +1242,20 @@ export function ChatWindow({
       default:
         // Text message or fallback
         const isOptimistic = message.id.startsWith('optimistic_');
+        const isButtonReply = message.content?.trim() === '[button]' || message.content?.trim().startsWith('[button]');
 
         return (
           <div className={`${baseClasses} ${isOptimistic ? 'opacity-70' : ''} transition-opacity duration-300`}>
-            <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
-              {message.content}
-            </p>
+            {isButtonReply ? (
+              <div className="flex items-center gap-1.5 py-0.5">
+                <span className="inline-block w-2 h-2 rounded-full bg-current opacity-60"></span>
+                <span className="text-sm italic opacity-90">Quick Reply Response</span>
+              </div>
+            ) : (
+              <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
+                {message.content}
+              </p>
+            )}
             {renderStatusFooter()}
           </div>
         );
@@ -1477,7 +1452,7 @@ export function ChatWindow({
                         )}
 
                         <div className={`flex ${isOwn ? 'justify-end' : 'justify-start'}`}>
-                          <div className="group">
+                          <div className={`group relative flex flex-col ${isOwn ? 'items-end' : 'items-start'} max-w-[85%] md:max-w-[70%]`}>
                             {renderMessageContent(message, isOwn)}
                             {getReactionSummary(message.reactions).length > 0 && (
                               <div className={`mt-1 flex flex-wrap gap-1 ${isOwn ? 'justify-end' : 'justify-start'}`}>
@@ -1492,7 +1467,7 @@ export function ChatWindow({
                               </div>
                             )}
                             {onReactToMessage && !broadcastGroupName && !message.isOptimistic && (
-                              <div className={`mt-1 flex gap-1 ${isOwn ? 'justify-end' : 'justify-start'} opacity-0 group-hover:opacity-100 transition-opacity`}>
+                              <div className={`mt-1 flex items-center gap-1 ${isOwn ? 'justify-end' : 'justify-start'} opacity-0 group-hover:opacity-100 transition-opacity`}>
                                 {REACTION_EMOJIS.map((emoji) => {
                                   const current = getUserReaction(message.reactions);
                                   const isSelected = current?.emoji === emoji;
@@ -1508,6 +1483,31 @@ export function ChatWindow({
                                     </button>
                                   );
                                 })}
+
+                                {/* Plus button for full emoji picker */}
+                                <div className="relative">
+                                  <button
+                                    type="button"
+                                    className="h-6 w-6 flex items-center justify-center text-xs rounded-full border bg-background border-border hover:bg-muted text-muted-foreground hover:text-foreground transition-colors active:scale-95"
+                                    onClick={() => setEmojiPickerMessageId(emojiPickerMessageId === message.id ? null : message.id)}
+                                    title="More reactions"
+                                  >
+                                    <Plus className="h-3.5 w-3.5" />
+                                  </button>
+
+                                  {emojiPickerMessageId === message.id && (
+                                    <EmojiReactionPicker
+                                      isOpen={true}
+                                      onClose={() => setEmojiPickerMessageId(null)}
+                                      onSelectEmoji={(emoji) => {
+                                        handleReactionClick(message, emoji);
+                                        setEmojiPickerMessageId(null);
+                                      }}
+                                      anchorPosition="top"
+                                      className={isOwn ? "right-0" : "left-0"}
+                                    />
+                                  )}
+                                </div>
                               </div>
                             )}
                           </div>

@@ -481,6 +481,7 @@ router.get('/conversations', async (req, res, next) => {
           m.contact_id,
           m.content,
           m.message_type,
+          m.media_data,
           m.timestamp AS last_message_time,
           m.is_sent_by_me
         FROM messages m
@@ -503,6 +504,7 @@ router.get('/conversations', async (req, res, next) => {
         lm.last_message_time,
         lm.content AS last_message,
         lm.message_type AS last_message_type,
+        lm.media_data AS last_message_media_data,
         lm.is_sent_by_me AS is_last_message_from_me
       FROM contacts c
       LEFT JOIN latest_messages lm ON lm.contact_id = c.id
@@ -511,19 +513,34 @@ router.get('/conversations', async (req, res, next) => {
       ORDER BY CASE WHEN lm.last_message_time IS NOT NULL THEN lm.last_message_time ELSE c.created_at END DESC
     `;
 
-        const conversations = rows.map((row) => ({
-            id: row.id,
-            phone_number: row.phone_number,
-            name: row.custom_name || row.whatsapp_name || row.phone_number,
-            custom_name: row.custom_name,
-            whatsapp_name: row.whatsapp_name,
-            last_active: row.last_active,
-            unread_count: Number(row.unread_count),
-            last_message_time: row.last_message_time,
-            last_message: row.last_message,
-            last_message_type: row.last_message_type,
-            last_message_sender: row.is_last_message_from_me ? userId : row.phone_number,
-        }));
+        const conversations = rows.map((row) => {
+            let templateName = null;
+            if (row.last_message_media_data) {
+                try {
+                    const parsed = typeof row.last_message_media_data === 'string'
+                        ? JSON.parse(row.last_message_media_data)
+                        : row.last_message_media_data;
+                    templateName = parsed?.template_name || null;
+                } catch {
+                    // ignore
+                }
+            }
+
+            return {
+                id: row.id,
+                phone_number: row.phone_number,
+                name: row.custom_name || row.whatsapp_name || row.phone_number,
+                custom_name: row.custom_name,
+                whatsapp_name: row.whatsapp_name,
+                last_active: row.last_active,
+                unread_count: Number(row.unread_count),
+                last_message_time: row.last_message_time,
+                last_message: row.last_message,
+                last_message_type: row.last_message_type,
+                last_message_template_name: templateName,
+                last_message_sender: row.is_last_message_from_me ? userId : row.phone_number,
+            };
+        });
 
         res.json({ conversations });
     } catch (error) {
@@ -1201,14 +1218,66 @@ router.post('/groups/:id/broadcast', async (req, res, next) => {
                         apiVersion,
                     });
 
-                    const bodyComponent = templateData.components?.find((c) => c.type === 'BODY');
-                    content = bodyComponent?.text || message || `Template: ${templateName}`;
+                    const components = Array.isArray(templateData?.components) ? templateData.components : [];
+                    const bodyComponent = components.find((c) => c.type === 'BODY');
+                    let displayContent = bodyComponent?.text || message || `Template: ${templateName}`;
+                    if (bodyComponent?.text && variables?.body) {
+                        for (const [key, value] of Object.entries(variables.body)) {
+                            displayContent = displayContent.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), value);
+                        }
+                    }
+                    content = displayContent;
+
+                    const formattedHeader = (() => {
+                        const headerComp = components.find((c) => c.type === 'HEADER');
+                        if (!headerComp) return null;
+                        let headerText = headerComp.text || null;
+                        if (headerText && variables?.header) {
+                            for (const [k, v] of Object.entries(variables.header)) {
+                                headerText = headerText.replace(new RegExp(`\\{\\{${k}\\}\\}`, 'g'), v);
+                            }
+                        }
+                        return {
+                            format: headerComp.format || 'TEXT',
+                            text: headerText,
+                            media_url: mediaUrl || null,
+                            filename: headerComp.format === 'DOCUMENT' ? (mediaUrl?.split('/').pop() || 'Document') : null,
+                        };
+                    })();
+
+                    const formattedFooter = (() => {
+                        const footerComp = components.find((c) => c.type === 'FOOTER');
+                        if (!footerComp?.text) return null;
+                        let footerText = footerComp.text;
+                        if (variables?.footer) {
+                            for (const [k, v] of Object.entries(variables.footer)) {
+                                footerText = footerText.replace(new RegExp(`\\{\\{${k}\\}\\}`, 'g'), v);
+                            }
+                        }
+                        return { text: footerText };
+                    })();
+
+                    const formattedButtons = (() => {
+                        if (Array.isArray(templateData.formatted_components?.buttons) && templateData.formatted_components.buttons.length > 0) {
+                            return templateData.formatted_components.buttons;
+                        }
+                        const btnComp = components.find((c) => c.type === 'BUTTONS');
+                        if (Array.isArray(btnComp?.buttons)) {
+                            return btnComp.buttons;
+                        }
+                        return [];
+                    })();
+
                     mediaData = {
                         type: 'template',
                         template_name: templateName,
                         template_id: templateData.id,
                         language: templateData.language,
                         variables: variables || {},
+                        header: formattedHeader,
+                        body: { text: displayContent },
+                        footer: formattedFooter,
+                        buttons: formattedButtons,
                         original_content: bodyComponent?.text || templateName,
                         broadcast_group_id: groupId,
                         broadcast_run_id: broadcastRunId,
@@ -1690,6 +1759,63 @@ router.post('/send-template', async (req, res, next) => {
             }
         }
 
+        const formattedHeader = (() => {
+            const headerComp = components.find((c) => c.type === 'HEADER');
+            if (!headerComp) return null;
+            let headerText = headerComp.text || null;
+            if (headerText && variables?.header) {
+                for (const [k, v] of Object.entries(variables.header)) {
+                    headerText = headerText.replace(new RegExp(`\\{\\{${k}\\}\\}`, 'g'), v);
+                }
+            }
+            return {
+                format: headerComp.format || 'TEXT',
+                text: headerText,
+                media_url: mediaUrl || null,
+                filename: headerComp.format === 'DOCUMENT' ? (mediaUrl?.split('/').pop() || 'Document') : null,
+            };
+        })();
+
+        const formattedBody = {
+            text: displayContent,
+        };
+
+        const formattedFooter = (() => {
+            const footerComp = components.find((c) => c.type === 'FOOTER');
+            if (!footerComp?.text) return null;
+            let footerText = footerComp.text;
+            if (variables?.footer) {
+                for (const [k, v] of Object.entries(variables.footer)) {
+                    footerText = footerText.replace(new RegExp(`\\{\\{${k}\\}\\}`, 'g'), v);
+                }
+            }
+            return { text: footerText };
+        })();
+
+        const formattedButtons = (() => {
+            if (Array.isArray(templateData.formatted_components?.buttons) && templateData.formatted_components.buttons.length > 0) {
+                return templateData.formatted_components.buttons;
+            }
+            const btnComp = components.find((c) => c.type === 'BUTTONS');
+            if (Array.isArray(btnComp?.buttons)) {
+                return btnComp.buttons;
+            }
+            return [];
+        })();
+
+        const fullMediaData = {
+            type: 'template',
+            template_name: templateName,
+            template_id: templateData.id,
+            language: templateData.language,
+            variables,
+            header: formattedHeader,
+            body: formattedBody,
+            footer: formattedFooter,
+            buttons: formattedButtons,
+            original_content: bodyComponent?.text || templateName,
+        };
+
         const timestamp = new Date();
         const createdMessage = await prisma.message.create({
             data: {
@@ -1702,14 +1828,7 @@ router.post('/send-template', async (req, res, next) => {
                 isRead: false,
                 status: 'SENT',
                 messageType: 'template',
-                mediaData: {
-                    type: 'template',
-                    template_name: templateName,
-                    template_id: templateData.id,
-                    language: templateData.language,
-                    variables,
-                    original_content: bodyComponent?.text || templateName,
-                },
+                mediaData: fullMediaData,
             },
         });
 

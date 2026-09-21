@@ -341,6 +341,20 @@ async function handleWebhookPost(req, res, pathToken = null) {
                             content = `[Document: ${message.document?.filename || 'File'}]`;
                             mediaData = { type: 'document', id: message.document?.id, filename: message.document?.filename, mime_type: message.document?.mime_type };
                             break;
+                        case 'button':
+                            content = message.button?.text || message.button?.payload || '[Button Reply]';
+                            messageType = 'text';
+                            break;
+                        case 'interactive':
+                            if (message.interactive?.button_reply?.title) {
+                                content = message.interactive.button_reply.title;
+                            } else if (message.interactive?.list_reply?.title) {
+                                content = message.interactive.list_reply.title;
+                            } else {
+                                content = '[Interactive Response]';
+                            }
+                            messageType = 'text';
+                            break;
                         default:
                             content = `[${message.type || 'Message'}]`;
                     }
