@@ -105,6 +105,76 @@ async function upsertMessageReaction(params: {
   return { updated: true };
 }
 
+const STATUS_RANK: Record<string, number> = {
+  PENDING: 1,
+  SENT: 2,
+  DELIVERED: 3,
+  READ: 4,
+  FAILED: 5,
+};
+
+async function processStatusUpdate(statusItem: any) {
+  const messageId = statusItem?.id;
+  const rawStatus = statusItem?.status;
+  const timestampSec = statusItem?.timestamp ? parseInt(statusItem.timestamp, 10) : null;
+  const statusDate = timestampSec ? new Date(timestampSec * 1000) : new Date();
+
+  if (!messageId || !rawStatus) return;
+
+  const targetStatus = String(rawStatus).toUpperCase();
+  if (!['SENT', 'DELIVERED', 'READ', 'FAILED'].includes(targetStatus)) return;
+
+  const existing = await prisma.message.findUnique({
+    where: { id: messageId },
+    select: { id: true, status: true, deliveredAt: true },
+  });
+
+  if (!existing) {
+    console.log(`[Webhook Status /:token] Message ${messageId} not found in database yet. Status: ${targetStatus}`);
+    return;
+  }
+
+  const currentRank = STATUS_RANK[existing.status] || 0;
+  const newRank = STATUS_RANK[targetStatus] || 0;
+
+  if (newRank < currentRank && currentRank !== STATUS_RANK.FAILED) {
+    return;
+  }
+
+  const updateData: any = {};
+  if (targetStatus === 'FAILED') {
+    updateData.status = 'FAILED';
+    if (Array.isArray(statusItem.errors) && statusItem.errors.length > 0) {
+      const err = statusItem.errors[0];
+      updateData.errorMessage = err.error_data?.details || err.message || err.title || `Error ${err.code}`;
+    } else {
+      updateData.errorMessage = 'Message delivery failed';
+    }
+  } else if (targetStatus === 'READ') {
+    updateData.status = 'READ';
+    updateData.isRead = true;
+    updateData.readAt = statusDate;
+    if (!existing.deliveredAt) {
+      updateData.deliveredAt = statusDate;
+    }
+  } else if (targetStatus === 'DELIVERED') {
+    updateData.status = 'DELIVERED';
+    updateData.deliveredAt = statusDate;
+  } else if (targetStatus === 'SENT') {
+    updateData.status = 'SENT';
+  }
+
+  try {
+    await prisma.message.update({
+      where: { id: messageId },
+      data: updateData,
+    });
+    console.log(`[Webhook Status /:token] Updated ${messageId} -> ${targetStatus}`);
+  } catch (e) {
+    console.error(`[Webhook Status /:token] Error updating ${messageId}:`, e);
+  }
+}
+
 /**
  * GET handler for WhatsApp webhook verification
  * WhatsApp calls this endpoint to verify user-specific webhook URLs.
@@ -363,6 +433,15 @@ export async function POST(
 
         const messages: WhatsAppMessage[] = value.messages || [];
         const contacts: WhatsAppContact[] = value.contacts || [];
+
+        // Process status updates (sent, delivered, read, failed)
+        const statuses = Array.isArray(value.statuses) ? value.statuses : [];
+        if (statuses.length > 0) {
+          console.log(`[Webhook POST /:token] Processing ${statuses.length} status updates`);
+          for (const s of statuses) {
+            await processStatusUpdate(s);
+          }
+        }
 
         if (messages.length === 0) continue;
 

@@ -77,17 +77,20 @@ model Contact {
 /// Messages exchanged between a platform user and their WhatsApp contacts.
 /// Each message is owned by a specific platform user and involves one of their contacts.
 model Message {
-  id          String    @id @db.Text
-  userId      String    @map("user_id") // Platform user who owns this message
-  contactId   String    @map("contact_id") @db.Uuid // Contact involved in this message
-  content     String
-  timestamp   DateTime  @default(now())
-  isSentByMe  Boolean   @default(false) @map("is_sent_by_me") // true = user sent, false = contact sent
-  messageType String    @default("text") @map("message_type")
-  mediaData   Json?     @map("media_data")
-  reactions   Json?     @map("reactions")
-  isRead      Boolean   @default(false) @map("is_read")
-  readAt      DateTime? @map("read_at")
+  id           String        @id @db.Text
+  userId       String        @map("user_id") // Platform user who owns this message
+  contactId    String        @map("contact_id") @db.Uuid // Contact involved in this message
+  content      String
+  timestamp    DateTime      @default(now())
+  isSentByMe   Boolean       @default(false) @map("is_sent_by_me") // true = user sent, false = contact sent
+  messageType  String        @default("text") @map("message_type")
+  mediaData    Json?         @map("media_data")
+  reactions    Json?         @map("reactions")
+  isRead       Boolean       @default(false) @map("is_read")
+  readAt       DateTime?     @map("read_at")
+  status       MessageStatus @default(SENT)
+  deliveredAt  DateTime?     @map("delivered_at")
+  errorMessage String?       @map("error_message")
 
   // Relations
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -97,8 +100,17 @@ model Message {
   @@index([contactId], name: "idx_messages_contact_id")
   @@index([timestamp(sort: Desc)], name: "idx_messages_timestamp")
   @@index([isRead], name: "idx_messages_is_read")
+  @@index([status], name: "idx_messages_status")
   @@index([userId, contactId, timestamp(sort: Desc)], name: "idx_messages_user_contact_conversation")
   @@map("messages")
+}
+
+enum MessageStatus {
+  PENDING
+  SENT
+  DELIVERED
+  READ
+  FAILED
 }
 
 /// Broadcast group owned by a platform user.

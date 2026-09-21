@@ -21,6 +21,8 @@ import {
   Loader2,
   Copy,
   Check,
+  CheckCheck,
+  Clock,
   ExternalLink,
   Eye,
   EyeOff,
@@ -599,7 +601,8 @@ export default function SetupPage() {
     setEmbeddedStep("Opening Meta WhatsApp login...");
 
     const redirectUri = `${window.location.origin}/protected/setup`;
-    const oauthUrl = `https://www.facebook.com/v23.0/dialog/oauth?client_id=${META_APP_ID}&config_id=${META_CONFIG_ID}&response_type=code&redirect_uri=${encodeURIComponent(redirectUri)}`;
+    const scopes = "whatsapp_business_management,whatsapp_business_messaging";
+    const oauthUrl = `https://www.facebook.com/v23.0/dialog/oauth?client_id=${META_APP_ID}&config_id=${META_CONFIG_ID}&response_type=code&scope=${encodeURIComponent(scopes)}&redirect_uri=${encodeURIComponent(redirectUri)}`;
 
     // If FB JS SDK is loaded and ready, invoke FB.login
     if (window.FB) {
@@ -625,6 +628,7 @@ export default function SetupPage() {
             extras: {
               sessionInfoVersion: "3",
               version: "v4",
+              scope: scopes,
             },
           }
         );
@@ -1286,6 +1290,69 @@ export default function SetupPage() {
                       )}
                     </div>
                   )}
+
+                  {/* Real-Time Message Status Receipts & Permissions Showcase */}
+                  <div className="mt-4 p-4 rounded-xl bg-gradient-to-r from-emerald-500/5 via-teal-500/5 to-sky-500/5 border border-emerald-500/20 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                        <h4 className="text-sm font-semibold text-foreground">
+                          Real-Time Delivery Receipts &amp; Permissions
+                        </h4>
+                      </div>
+                      <Badge className="bg-emerald-600 text-white text-[10px]">
+                        Active in Chat
+                      </Badge>
+                    </div>
+
+                    <p className="text-xs text-muted-foreground leading-relaxed">
+                      WaChat processes WhatsApp Cloud API webhooks (the <code className="text-[11px] font-mono bg-muted px-1.5 py-0.5 rounded">messages</code> field) to track delivery statuses in real time.
+                    </p>
+
+                    {/* Status Indicators Legend */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+                      <div className="flex items-center gap-2 p-2 rounded-lg bg-background border text-xs">
+                        <Check className="h-3.5 w-3.5 text-muted-foreground" />
+                        <div>
+                          <span className="font-semibold block text-[11px]">Sent</span>
+                          <span className="text-[10px] text-muted-foreground">Unseen (Single Tick)</span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 p-2 rounded-lg bg-background border text-xs">
+                        <CheckCheck className="h-3.5 w-3.5 text-muted-foreground" />
+                        <div>
+                          <span className="font-semibold block text-[11px]">Delivered</span>
+                          <span className="text-[10px] text-muted-foreground">Unseen (Double Tick)</span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 p-2 rounded-lg bg-background border text-xs">
+                        <CheckCheck className="h-3.5 w-3.5 text-[#53bdeb]" />
+                        <div>
+                          <span className="font-semibold block text-[11px] text-sky-600 dark:text-sky-400">Seen</span>
+                          <span className="text-[10px] text-muted-foreground">Read (Blue Ticks)</span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 p-2 rounded-lg bg-background border text-xs">
+                        <AlertCircle className="h-3.5 w-3.5 text-red-500" />
+                        <div>
+                          <span className="font-semibold block text-[11px] text-red-600 dark:text-red-400">Failed</span>
+                          <span className="text-[10px] text-muted-foreground">Undelivered Mark</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Permissions summary */}
+                    <div className="pt-2 border-t border-border flex flex-wrap gap-2 text-[11px] text-muted-foreground items-center justify-between">
+                      <span className="flex items-center gap-1.5">
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
+                        Active Meta Scopes: <code className="font-mono text-[10px] bg-muted px-1 rounded">whatsapp_business_messaging</code>, <code className="font-mono text-[10px] bg-muted px-1 rounded">whatsapp_business_management</code>
+                      </span>
+                      <span className="italic text-[10px]">Broadcast messages include click-to-view seen popup</span>
+                    </div>
+                  </div>
               </CardContent>
 
               <CardFooter className="border-t bg-muted/30 pt-4 pb-4 flex items-center justify-between text-xs text-muted-foreground">
@@ -1774,6 +1841,69 @@ export default function SetupPage() {
                       </form>
                     </CardContent>
                   </Card>
+
+                  {/* Real-Time Message Status Receipts & Permissions Showcase */}
+                  <div className="mt-4 p-4 rounded-xl bg-gradient-to-r from-emerald-500/5 via-teal-500/5 to-sky-500/5 border border-emerald-500/20 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                        <h4 className="text-sm font-semibold text-foreground">
+                          Real-Time Delivery Receipts &amp; Permissions
+                        </h4>
+                      </div>
+                      <Badge className="bg-emerald-600 text-white text-[10px]">
+                        Active in Chat
+                      </Badge>
+                    </div>
+
+                    <p className="text-xs text-muted-foreground leading-relaxed">
+                      WaChat listens to WhatsApp Cloud API webhooks (the <code className="text-[11px] font-mono bg-muted px-1.5 py-0.5 rounded">messages</code> subscription) to update message delivery statuses in real-time.
+                    </p>
+
+                    {/* Status Indicators Legend */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+                      <div className="flex items-center gap-2 p-2 rounded-lg bg-background border text-xs">
+                        <Check className="h-3.5 w-3.5 text-muted-foreground" />
+                        <div>
+                          <span className="font-semibold block text-[11px]">Sent</span>
+                          <span className="text-[10px] text-muted-foreground">Unseen (Single Tick)</span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 p-2 rounded-lg bg-background border text-xs">
+                        <CheckCheck className="h-3.5 w-3.5 text-muted-foreground" />
+                        <div>
+                          <span className="font-semibold block text-[11px]">Delivered</span>
+                          <span className="text-[10px] text-muted-foreground">Unseen (Double Tick)</span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 p-2 rounded-lg bg-background border text-xs">
+                        <CheckCheck className="h-3.5 w-3.5 text-[#53bdeb]" />
+                        <div>
+                          <span className="font-semibold block text-[11px] text-sky-600 dark:text-sky-400">Seen</span>
+                          <span className="text-[10px] text-muted-foreground">Read (Blue Ticks)</span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 p-2 rounded-lg bg-background border text-xs">
+                        <AlertCircle className="h-3.5 w-3.5 text-red-500" />
+                        <div>
+                          <span className="font-semibold block text-[11px] text-red-600 dark:text-red-400">Failed</span>
+                          <span className="text-[10px] text-muted-foreground">Undelivered Mark</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Permissions summary */}
+                    <div className="pt-2 border-t border-border flex flex-wrap gap-2 text-[11px] text-muted-foreground items-center justify-between">
+                      <span className="flex items-center gap-1.5">
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
+                        Meta Scopes: <code className="font-mono text-[10px] bg-muted px-1 rounded">whatsapp_business_messaging</code>, <code className="font-mono text-[10px] bg-muted px-1 rounded">whatsapp_business_management</code>
+                      </span>
+                      <span className="italic text-[10px]">Broadcast messages include seen popups on click</span>
+                    </div>
+                  </div>
                 </div>
               </TabsContent>
             </Tabs>

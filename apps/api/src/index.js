@@ -10,6 +10,7 @@ import razorpayWebhookRouter from './routes/razorpay-webhook.routes.js';
 import razorpayRouter from './routes/razorpay.routes.js';
 import subscriptionRouter from './routes/subscription.routes.js';
 import wachatRouter from './routes/wachat.routes.js';
+import webhookRouter from './routes/webhook.routes.js';
 
 const app = express();
 const { corsMiddleware, limiter, securityHeaders } = createSecurityMiddleware();
@@ -38,6 +39,7 @@ app.use('/api', (_req, res, next) => {
 app.use('/api/razorpay/webhook', express.raw({ type: 'application/json' }), razorpayWebhookRouter);
 app.use(express.json({ limit: '2mb' }));
 
+app.use('/api/webhook', webhookRouter);
 app.use('/api/flow-endpoint', flowEndpointRouter);
 app.use('/api', razorpayRouter);
 app.use('/api', subscriptionRouter);

@@ -11,6 +11,9 @@
     "@repo/db#build": {
       "cache": false
     },
+    "@repo/api#build": {
+      "outputs": []
+    },
     "check-types": {
       "dependsOn": ["^check-types"]
     },

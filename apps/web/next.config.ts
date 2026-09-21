@@ -65,6 +65,14 @@ const nextConfig: NextConfig = {
           destination: `${apiBase}/api/media/:path*`,
         },
         {
+          source: '/api/webhook',
+          destination: `${apiBase}/api/webhook`,
+        },
+        {
+          source: '/api/webhook/:path*',
+          destination: `${apiBase}/api/webhook/:path*`,
+        },
+        {
           source: '/api/razorpay/webhook',
           destination: `${apiBase}/api/razorpay/webhook`,
         },

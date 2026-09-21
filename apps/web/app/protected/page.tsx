@@ -40,6 +40,13 @@ interface Message {
   media_data?: string | null;
   reactions?: ReactionEntry[] | null;
   isOptimistic?: boolean;
+  is_read?: boolean;
+  status?: string | null;
+  delivered_at?: string | null;
+  read_at?: string | null;
+  error_message?: string | null;
+  broadcast_stats?: any;
+  recipients?: any[];
 }
 
 interface ConversationApi {
@@ -247,8 +254,62 @@ export default function ChatPage() {
 
     refreshMessages();
 
-    // Set up polling for message updates
-    const interval = setInterval(refreshMessages, 5000); // Poll every 5 seconds
+    // Set up polling for message updates as resilient fallback
+    const interval = setInterval(refreshMessages, 4000); // Poll every 4 seconds
+
+    // Real-time SSE stream for instantaneous status marks and incoming messages
+    let eventSource: EventSource | null = null;
+    try {
+      eventSource = new EventSource(`/api/messages/stream?conversationId=${selectedUser.id}`);
+
+      eventSource.onmessage = (event) => {
+        try {
+          if (!event.data) return;
+          const data = JSON.parse(event.data);
+
+          if (data.type === 'status_update' && data.messageId) {
+            console.log('[SSE] Real-time message status update:', data);
+            setMessages((prev) =>
+              prev.map((msg) =>
+                msg.id === data.messageId
+                  ? {
+                      ...msg,
+                      status: data.status,
+                      delivered_at: data.deliveredAt || msg.delivered_at,
+                      read_at: data.readAt || msg.read_at,
+                      error_message: data.errorMessage || msg.error_message,
+                      is_read: data.status === 'read' ? true : msg.is_read,
+                    }
+                  : msg
+              )
+            );
+          } else if (data.type === 'new_message' && data.message) {
+            console.log('[SSE] Real-time new message:', data.message);
+            setMessages((prev) => {
+              if (prev.some((m) => m.id === data.message.id)) return prev;
+              return [
+                ...prev,
+                {
+                  ...data.message,
+                  is_sent_by_me: data.message.sender_id === user.id,
+                },
+              ];
+            });
+          }
+        } catch {
+          // ignore parse errors
+        }
+      };
+
+      eventSource.onerror = () => {
+        if (eventSource) {
+          eventSource.close();
+          eventSource = null;
+        }
+      };
+    } catch {
+      // SSE not supported or blocked, polling continues
+    }
 
     const handleMessageSent = () => {
       refreshMessages();
@@ -257,6 +318,9 @@ export default function ChatPage() {
 
     return () => {
       clearInterval(interval);
+      if (eventSource) {
+        eventSource.close();
+      }
       window.removeEventListener('whatsapp:message-sent', handleMessageSent);
     };
   }, [selectedUser, user, refreshMessages]);
@@ -304,10 +368,38 @@ export default function ChatPage() {
     fetchBroadcastMessages();
 
     // Set up polling for broadcast message updates
-    const interval = setInterval(fetchBroadcastMessages, 5000); // Poll every 5 seconds
+    const interval = setInterval(fetchBroadcastMessages, 4000); // Poll every 4 seconds
+
+    // SSE connection for broadcast status updates
+    let eventSource: EventSource | null = null;
+    try {
+      eventSource = new EventSource(`/api/messages/stream?conversationId=${broadcastGroupId}`);
+      eventSource.onmessage = (event) => {
+        try {
+          if (!event.data) return;
+          const data = JSON.parse(event.data);
+          if (data.type === 'status_update' || data.type === 'new_message') {
+            fetchBroadcastMessages();
+          }
+        } catch {
+          // ignore
+        }
+      };
+      eventSource.onerror = () => {
+        if (eventSource) {
+          eventSource.close();
+          eventSource = null;
+        }
+      };
+    } catch {
+      // ignore
+    }
 
     return () => {
       clearInterval(interval);
+      if (eventSource) {
+        eventSource.close();
+      }
     };
   }, [broadcastGroupId, user, selectedUser]);
 

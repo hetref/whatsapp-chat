@@ -15,6 +15,7 @@ import {
     getUserMediaPrefix,
     isWhatsAppSupportedFileType,
 } from '../services/aws-s3.service.js';
+import { chatEventBus } from '../services/event-bus.service.js';
 
 const router = Router();
 const upload = multer({
@@ -567,22 +568,31 @@ router.get('/messages', async (req, res, next) => {
                 mediaData: true,
                 reactions: true,
                 readAt: true,
+                status: true,
+                deliveredAt: true,
+                errorMessage: true,
             },
         });
 
-        const formatted = messages.map((msg) => ({
-            id: msg.id,
-            sender_id: msg.isSentByMe ? userId : contact.phoneNumber,
-            receiver_id: msg.isSentByMe ? contact.phoneNumber : userId,
-            content: msg.content,
-            timestamp: msg.timestamp.toISOString(),
-            is_sent_by_me: msg.isSentByMe,
-            is_read: msg.isRead,
-            message_type: msg.messageType,
-            media_data: msg.mediaData,
-            reactions: msg.reactions,
-            read_at: msg.readAt?.toISOString() || null,
-        })).reverse();
+        const formatted = messages.map((msg) => {
+            const rawStatus = msg.status ? String(msg.status).toLowerCase() : (msg.isRead ? 'read' : 'sent');
+            return {
+                id: msg.id,
+                sender_id: msg.isSentByMe ? userId : contact.phoneNumber,
+                receiver_id: msg.isSentByMe ? contact.phoneNumber : userId,
+                content: msg.content,
+                timestamp: msg.timestamp.toISOString(),
+                is_sent_by_me: msg.isSentByMe,
+                is_read: msg.isRead,
+                message_type: msg.messageType,
+                media_data: msg.mediaData,
+                reactions: msg.reactions,
+                read_at: msg.readAt?.toISOString() || null,
+                delivered_at: msg.deliveredAt?.toISOString() || null,
+                status: rawStatus,
+                error_message: msg.errorMessage || null,
+            };
+        }).reverse();
 
         res.json({ messages: formatted });
     } catch (error) {
@@ -707,6 +717,57 @@ router.post('/messages/mark-read', async (req, res, next) => {
 
 router.get('/messages/mark-read', (_req, res) => {
     res.json({ status: 'Mark Messages as Read API', timestamp: new Date().toISOString() });
+});
+
+/**
+ * Server-Sent Events (SSE) stream for real-time message status updates and incoming messages
+ */
+router.get('/messages/stream', (req, res) => {
+    const userId = getUserId(req, res);
+    if (!userId) return;
+
+    const conversationId = req.query.conversationId ? String(req.query.conversationId) : null;
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    if (res.flushHeaders) {
+        res.flushHeaders();
+    }
+
+    // Acknowledge connection
+    res.write(`data: ${JSON.stringify({ type: 'connected', timestamp: new Date().toISOString() })}\n\n`);
+
+    const onEvent = (data) => {
+        try {
+            res.write(`data: ${JSON.stringify(data)}\n\n`);
+        } catch {
+            // connection dropped
+        }
+    };
+
+    chatEventBus.on(`user:${userId}`, onEvent);
+    if (conversationId) {
+        chatEventBus.on(`conversation:${conversationId}`, onEvent);
+    }
+
+    // Keep alive heartbeat every 20 seconds
+    const pingTimer = setInterval(() => {
+        try {
+            res.write(': keepalive\n\n');
+        } catch {
+            clearInterval(pingTimer);
+        }
+    }, 20000);
+
+    req.on('close', () => {
+        clearInterval(pingTimer);
+        chatEventBus.off(`user:${userId}`, onEvent);
+        if (conversationId) {
+            chatEventBus.off(`conversation:${conversationId}`, onEvent);
+        }
+    });
 });
 
 router.get('/groups', async (req, res, next) => {
@@ -961,7 +1022,33 @@ router.get('/groups/:id/messages', async (req, res, next) => {
             return;
         }
 
-        const messages = await prisma.message.findMany({ where: { userId }, orderBy: { timestamp: 'asc' } });
+        const members = await prisma.groupMember.findMany({
+            where: { groupId },
+            include: { contact: true },
+        });
+        const contactMap = new Map(members.map((m) => [m.contact.id, m.contact]));
+
+        const messages = await prisma.message.findMany({
+            where: { userId },
+            orderBy: { timestamp: 'asc' },
+            select: {
+                id: true,
+                userId: true,
+                contactId: true,
+                content: true,
+                timestamp: true,
+                isSentByMe: true,
+                isRead: true,
+                messageType: true,
+                mediaData: true,
+                reactions: true,
+                readAt: true,
+                status: true,
+                deliveredAt: true,
+                errorMessage: true,
+            },
+        });
+
         const broadcastMessages = messages.filter((msg) => {
             if (!msg.mediaData) return false;
             try {
@@ -972,26 +1059,81 @@ router.get('/groups/:id/messages', async (req, res, next) => {
             }
         });
 
-        const uniqueBroadcasts = new Map();
+        // Group messages by broadcast_run_id (or timestamp if sent earlier)
+        const broadcastRuns = new Map();
         for (const msg of broadcastMessages) {
-            const key = msg.timestamp.toISOString();
-            if (!uniqueBroadcasts.has(key) || msg.id < uniqueBroadcasts.get(key).id) {
-                uniqueBroadcasts.set(key, msg);
+            let runId = null;
+            try {
+                const parsed = typeof msg.mediaData === 'string' ? JSON.parse(msg.mediaData) : msg.mediaData;
+                runId = parsed?.broadcast_run_id;
+            } catch {
+                // ignore
             }
+            const key = runId || msg.timestamp.toISOString();
+
+            if (!broadcastRuns.has(key)) {
+                broadcastRuns.set(key, []);
+            }
+            broadcastRuns.get(key).push(msg);
         }
 
-        const formattedMessages = Array.from(uniqueBroadcasts.values()).map((msg) => ({
-            id: msg.id,
-            sender_id: msg.userId,
-            receiver_id: msg.contactId,
-            content: msg.content,
-            timestamp: msg.timestamp.toISOString(),
-            is_sent_by_me: true,
-            message_type: msg.messageType,
-            media_data: msg.mediaData,
-            reactions: msg.reactions,
-            is_read: true,
-        }));
+        const formattedMessages = Array.from(broadcastRuns.values()).map((items) => {
+            const rep = items[0];
+            const total = items.length;
+            const readCount = items.filter((m) => m.status === 'READ').length;
+            const deliveredCount = items.filter((m) => m.status === 'DELIVERED').length;
+            const failedCount = items.filter((m) => m.status === 'FAILED').length;
+            const sentCount = items.filter((m) => m.status === 'SENT' || m.status === 'PENDING').length;
+
+            let overallStatus = 'sent';
+            if (failedCount === total && total > 0) {
+                overallStatus = 'failed';
+            } else if (readCount === total && total > 0) {
+                overallStatus = 'read';
+            } else if (readCount > 0) {
+                overallStatus = 'read';
+            } else if (deliveredCount > 0) {
+                overallStatus = 'delivered';
+            }
+
+            const recipients = items.map((m) => {
+                const c = contactMap.get(m.contactId);
+                const rawStatus = m.status ? String(m.status).toLowerCase() : (m.isRead ? 'read' : 'sent');
+                return {
+                    message_id: m.id,
+                    contact_id: m.contactId,
+                    contact_name: c?.customName || c?.whatsappName || c?.phoneNumber || 'Contact',
+                    phone_number: c?.phoneNumber || '',
+                    status: rawStatus,
+                    delivered_at: m.deliveredAt?.toISOString() || null,
+                    read_at: m.readAt?.toISOString() || null,
+                    error_message: m.errorMessage || null,
+                    timestamp: m.timestamp.toISOString(),
+                };
+            });
+
+            return {
+                id: rep.id,
+                sender_id: rep.userId,
+                receiver_id: groupId,
+                content: rep.content,
+                timestamp: rep.timestamp.toISOString(),
+                is_sent_by_me: true,
+                message_type: rep.messageType,
+                media_data: rep.mediaData,
+                reactions: rep.reactions,
+                is_read: true,
+                status: overallStatus,
+                broadcast_stats: {
+                    total,
+                    read_count: readCount,
+                    delivered_count: deliveredCount,
+                    sent_count: sentCount,
+                    failed_count: failedCount,
+                },
+                recipients,
+            };
+        });
 
         res.json({ success: true, messages: formattedMessages, count: formattedMessages.length });
     } catch (error) {
@@ -1037,6 +1179,7 @@ router.post('/groups/:id/broadcast', async (req, res, next) => {
         const phoneNumberId = settings.phoneNumberId;
         const apiVersion = settings.apiVersion || 'v23.0';
 
+        const broadcastRunId = `bc_${Date.now()}_${randomUUID().slice(0, 8)}`;
         const results = { success: 0, failed: 0, errors: [] };
 
         for (const member of members) {
@@ -1044,7 +1187,7 @@ router.post('/groups/:id/broadcast', async (req, res, next) => {
                 const cleanPhone = cleanPhoneNumber(member.contact.phoneNumber);
                 let messageResponse;
                 let content = message;
-                let mediaData = { broadcast_group_id: groupId };
+                let mediaData = { broadcast_group_id: groupId, broadcast_run_id: broadcastRunId };
 
                 if (templateName && templateData) {
                     messageResponse = await sendTemplateMessage({
@@ -1068,6 +1211,7 @@ router.post('/groups/:id/broadcast', async (req, res, next) => {
                         variables: variables || {},
                         original_content: bodyComponent?.text || templateName,
                         broadcast_group_id: groupId,
+                        broadcast_run_id: broadcastRunId,
                     };
                 } else {
                     messageResponse = await sendTextMessage({
@@ -1089,7 +1233,8 @@ router.post('/groups/:id/broadcast', async (req, res, next) => {
                         content,
                         timestamp: new Date(),
                         isSentByMe: true,
-                        isRead: true,
+                        isRead: false,
+                        status: 'SENT',
                         messageType: templateName ? 'template' : 'text',
                         mediaData: JSON.stringify(mediaData),
                     },
@@ -1410,7 +1555,7 @@ router.post('/send-message', async (req, res, next) => {
         }
 
         const timestamp = new Date();
-        await prisma.message.create({
+        const createdMessage = await prisma.message.create({
             data: {
                 id: messageId,
                 userId,
@@ -1418,12 +1563,30 @@ router.post('/send-message', async (req, res, next) => {
                 content: message,
                 timestamp,
                 isSentByMe: true,
-                isRead: true,
+                isRead: false,
+                status: 'SENT',
                 messageType: 'text',
             },
         });
 
-        res.json({ success: true, messageId, timestamp: timestamp.toISOString() });
+        // Broadcast to real-time streams
+        chatEventBus.publishNewMessage({
+            userId,
+            contactId: contact.id,
+            message: {
+                id: createdMessage.id,
+                sender_id: userId,
+                receiver_id: contact.phoneNumber,
+                content: createdMessage.content,
+                timestamp: timestamp.toISOString(),
+                is_sent_by_me: true,
+                is_read: false,
+                status: 'sent',
+                message_type: 'text',
+            },
+        });
+
+        res.json({ success: true, messageId, timestamp: timestamp.toISOString(), status: 'sent' });
     } catch (error) {
         next(error);
     }
@@ -1528,7 +1691,7 @@ router.post('/send-template', async (req, res, next) => {
         }
 
         const timestamp = new Date();
-        await prisma.message.create({
+        const createdMessage = await prisma.message.create({
             data: {
                 id: messageId,
                 userId,
@@ -1536,7 +1699,8 @@ router.post('/send-template', async (req, res, next) => {
                 content: displayContent,
                 timestamp,
                 isSentByMe: true,
-                isRead: true,
+                isRead: false,
+                status: 'SENT',
                 messageType: 'template',
                 mediaData: {
                     type: 'template',
@@ -1549,12 +1713,31 @@ router.post('/send-template', async (req, res, next) => {
             },
         });
 
+        // Broadcast to real-time streams
+        chatEventBus.publishNewMessage({
+            userId,
+            contactId: contact.id,
+            message: {
+                id: createdMessage.id,
+                sender_id: userId,
+                receiver_id: contact.phoneNumber,
+                content: createdMessage.content,
+                timestamp: timestamp.toISOString(),
+                is_sent_by_me: true,
+                is_read: false,
+                status: 'sent',
+                message_type: 'template',
+                media_data: createdMessage.mediaData,
+            },
+        });
+
         res.json({
             success: true,
             messageId,
             templateName,
             displayContent,
             timestamp: timestamp.toISOString(),
+            status: 'sent',
             token: settings.accessToken,
         });
     } catch (error) {
@@ -1799,10 +1982,19 @@ router.post('/send-media', upload.array('files', 10), async (req, res, next) => 
                     filename: fileName,
                 });
 
-                const messageId = messageResponse.messages?.[0]?.id || `outgoing_media_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
-                const timestamp = new Date();
+                const mediaPayload = {
+                    type: mediaType,
+                    id: mediaId,
+                    mime_type: mimeType,
+                    filename: fileName,
+                    caption,
+                    s3_key: s3Key,
+                    s3_uploaded: true,
+                    s3_owner_id: getUserMediaPrefix(userId),
+                    upload_timestamp: timestamp.toISOString(),
+                };
 
-                await prisma.message.create({
+                const createdMessage = await prisma.message.create({
                     data: {
                         id: messageId,
                         userId,
@@ -1810,23 +2002,32 @@ router.post('/send-media', upload.array('files', 10), async (req, res, next) => 
                         content: caption || `[${mediaType}]`,
                         timestamp,
                         isSentByMe: true,
-                        isRead: true,
+                        isRead: false,
+                        status: 'SENT',
                         messageType: mediaType,
-                        mediaData: JSON.stringify({
-                            type: mediaType,
-                            id: mediaId,
-                            mime_type: mimeType,
-                            filename: fileName,
-                            caption,
-                            s3_key: s3Key,
-                            s3_uploaded: true,
-                            s3_owner_id: getUserMediaPrefix(userId),
-                            upload_timestamp: timestamp.toISOString(),
-                        }),
+                        mediaData: JSON.stringify(mediaPayload),
                     },
                 });
 
-                results.push({ success: true, filename: fileName, messageId, mediaType, s3Key });
+                // Broadcast to real-time streams
+                chatEventBus.publishNewMessage({
+                    userId,
+                    contactId: contact.id,
+                    message: {
+                        id: createdMessage.id,
+                        sender_id: userId,
+                        receiver_id: contact.phoneNumber,
+                        content: createdMessage.content,
+                        timestamp: timestamp.toISOString(),
+                        is_sent_by_me: true,
+                        is_read: false,
+                        status: 'sent',
+                        message_type: mediaType,
+                        media_data: createdMessage.mediaData,
+                    },
+                });
+
+                results.push({ success: true, filename: fileName, messageId, mediaType, s3Key, status: 'sent' });
             } catch (error) {
                 results.push({
                     success: false,

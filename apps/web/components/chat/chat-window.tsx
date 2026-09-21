@@ -9,6 +9,8 @@ import Image from "next/image";
 import { MediaUpload } from "./media-upload";
 import { UserInfoDialog } from "./user-info-dialog";
 import { TemplateSelector } from "./template-selector";
+import { MessageStatusIcon } from "./message-status-icon";
+import { BroadcastInfoDialog, BroadcastRecipient, BroadcastStats } from "./broadcast-info-dialog";
 
 // Template interfaces
 interface TemplateComponent {
@@ -50,8 +52,13 @@ interface Message {
   media_data?: string | null;
   is_read?: boolean;
   read_at?: string | null;
+  delivered_at?: string | null;
+  status?: string | null;
+  error_message?: string | null;
   isOptimistic?: boolean; // Flag for optimistic messages
   reactions?: ReactionEntry[] | null;
+  broadcast_stats?: BroadcastStats | null;
+  recipients?: BroadcastRecipient[] | null;
 }
 
 interface ReactionEntry {
@@ -184,6 +191,10 @@ export function ChatWindow({
   const unreadIndicatorRef = useRef<HTMLDivElement>(null);
   const audioRefs = useRef<{ [key: string]: HTMLAudioElement }>({});
   const REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
+
+  // State for broadcast seen info dialog
+  const [selectedBroadcastMessage, setSelectedBroadcastMessage] = useState<Message | null>(null);
+  const [showBroadcastInfo, setShowBroadcastInfo] = useState(false);
 
   const normalizeReactions = useCallback((raw?: ReactionEntry[] | null) => {
     if (!raw || !Array.isArray(raw)) return [] as ReactionEntry[];
@@ -791,6 +802,35 @@ export function ChatWindow({
 
     const isProcessing = processingMedia.has(message.id);
 
+    const renderStatusFooter = () => {
+      const isBroadcast = Boolean(broadcastGroupName || message.broadcast_stats);
+      return (
+        <div className={`flex items-center gap-1.5 ${isOwn ? 'justify-end' : 'justify-start'} mt-1.5`}>
+          <span className={`text-[11px] leading-none select-none ${isOwn ? 'text-green-100/80' : 'text-muted-foreground'}`}>
+            {formatTime(message.timestamp)}
+          </span>
+          {isOwn && (
+            <MessageStatusIcon
+              status={message.status}
+              isOptimistic={message.isOptimistic || message.id.startsWith('optimistic_')}
+              isBroadcast={isBroadcast}
+              broadcastStats={message.broadcast_stats}
+              readAt={message.read_at}
+              deliveredAt={message.delivered_at}
+              errorMessage={message.error_message}
+              isOwn={isOwn}
+              onClick={() => {
+                if (isBroadcast) {
+                  setSelectedBroadcastMessage(message);
+                  setShowBroadcastInfo(true);
+                }
+              }}
+            />
+          )}
+        </div>
+      );
+    };
+
     switch (messageType) {
       case 'image':
         const currentImageUrl = mediaUrls[message.id];
@@ -858,9 +898,7 @@ export function ChatWindow({
                 {mediaData.caption}
               </p>
             )}
-            <span className={`text-xs block ${isOwn ? 'text-green-100' : 'text-muted-foreground'}`}>
-              {formatTime(message.timestamp)}
-            </span>
+            {renderStatusFooter()}
           </div>
         );
 
@@ -929,9 +967,7 @@ export function ChatWindow({
                 </div>
               </div>
             )}
-            <span className={`text-xs block ${isOwn ? 'text-green-100' : 'text-muted-foreground'}`}>
-              {formatTime(message.timestamp)}
-            </span>
+            {renderStatusFooter()}
           </div>
         );
 
@@ -1023,9 +1059,7 @@ export function ChatWindow({
                 </div>
               </div>
             )}
-            <span className={`text-xs block ${isOwn ? 'text-green-100' : 'text-muted-foreground'}`}>
-              {formatTime(message.timestamp)}
-            </span>
+            {renderStatusFooter()}
           </div>
         );
 
@@ -1090,9 +1124,7 @@ export function ChatWindow({
                 {mediaData.caption}
               </p>
             )}
-            <span className={`text-xs mt-1 block ${isOwn ? 'text-green-100' : 'text-muted-foreground'}`}>
-              {formatTime(message.timestamp)}
-            </span>
+            {renderStatusFooter()}
           </div>
         );
 
@@ -1235,10 +1267,8 @@ export function ChatWindow({
               )}
             </div>
 
-            {/* Timestamp */}
-            <span className={`text-xs mt-3 block ${isOwn ? 'text-green-100' : 'text-muted-foreground'}`}>
-              {formatTime(message.timestamp)}
-            </span>
+            {/* Timestamp & Status */}
+            {renderStatusFooter()}
           </div>
         );
 
@@ -1251,17 +1281,7 @@ export function ChatWindow({
             <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
               {message.content}
             </p>
-            <div className="flex items-center gap-2 mt-2">
-              <span className={`text-xs ${isOwn ? 'text-green-100' : 'text-muted-foreground'}`}>
-                {formatTime(message.timestamp)}
-              </span>
-              {isOptimistic && isOwn && (
-                <span className="text-xs text-green-200 flex items-center gap-1">
-                  <span className="inline-block w-1 h-1 bg-green-200 rounded-full animate-pulse"></span>
-                  Sending...
-                </span>
-              )}
-            </div>
+            {renderStatusFooter()}
           </div>
         );
     }
@@ -1621,6 +1641,17 @@ export function ChatWindow({
           onUpdateName={handleUpdateName}
         />
       )}
+
+      {/* Broadcast Message Delivery & Seen Info Modal */}
+      <BroadcastInfoDialog
+        open={showBroadcastInfo}
+        onOpenChange={setShowBroadcastInfo}
+        messageContent={selectedBroadcastMessage?.content}
+        timestamp={selectedBroadcastMessage?.timestamp}
+        groupName={broadcastGroupName}
+        stats={selectedBroadcastMessage?.broadcast_stats}
+        recipients={selectedBroadcastMessage?.recipients}
+      />
     </div>
   );
 } 
