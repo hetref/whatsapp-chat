@@ -80,9 +80,18 @@ export default function ChatPage() {
   const [broadcastGroupName, setBroadcastGroupName] = useState<string | null>(null);
   const { messagingBlocked, messagingBlockedReason } = useSubscriptionStatus();
 
-  const normalizeReactions = useCallback((raw?: ReactionEntry[] | null) => {
-    if (!raw || !Array.isArray(raw)) return [] as ReactionEntry[];
-    return raw.filter((entry) => entry?.from);
+  const normalizeReactions = useCallback((raw?: ReactionEntry[] | null | string) => {
+    if (!raw) return [] as ReactionEntry[];
+    let list: unknown = raw;
+    if (typeof list === 'string') {
+      try {
+        list = JSON.parse(list);
+      } catch {
+        return [];
+      }
+    }
+    if (!Array.isArray(list)) return [] as ReactionEntry[];
+    return (list as ReactionEntry[]).filter((entry) => entry && entry.emoji && entry.from);
   }, []);
 
   const upsertReactionList = useCallback((params: {
@@ -113,10 +122,12 @@ export default function ChatPage() {
       const result = await response.json();
 
       if (response.ok && result.messages) {
-        const mappedMessages = result.messages.map((msg: Message) => ({
-          ...msg,
-          is_sent_by_me: msg.sender_id === user.id,
-        }));
+        const mappedMessages = result.messages
+          .filter((msg: Message) => msg.message_type !== 'reaction' && msg.content !== '[reaction]')
+          .map((msg: Message) => ({
+            ...msg,
+            is_sent_by_me: msg.sender_id === user.id,
+          }));
 
         setMessages((prevMessages) => {
           const optimisticMessages = prevMessages.filter(msg => msg.isOptimistic);
@@ -285,8 +296,23 @@ export default function ChatPage() {
                   : msg
               )
             );
+          } else if (data.type === 'reaction_update' && data.messageId) {
+            console.log('[SSE] Real-time reaction update:', data);
+            setMessages((prev) =>
+              prev.map((msg) =>
+                msg.id === data.messageId
+                  ? {
+                      ...msg,
+                      reactions: data.reactions,
+                    }
+                  : msg
+              )
+            );
           } else if (data.type === 'new_message' && data.message) {
             console.log('[SSE] Real-time new message:', data.message);
+            if (data.message.message_type === 'reaction' || data.message.content === '[reaction]') {
+              return;
+            }
             setMessages((prev) => {
               if (prev.some((m) => m.id === data.message.id)) return prev;
               return [

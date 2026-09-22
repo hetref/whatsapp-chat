@@ -4,8 +4,6 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
@@ -22,7 +20,6 @@ import {
   Copy,
   Check,
   CheckCheck,
-  Clock,
   ExternalLink,
   Eye,
   EyeOff,
@@ -38,6 +35,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import LogoIcon from "@/components/logo-icon";
 
 interface UserSettings {
   access_token_added: boolean;
@@ -842,22 +840,24 @@ export default function SetupPage() {
 
   if (isPopupCallback) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background p-6">
-        <div className="text-center space-y-4 max-w-sm p-6 bg-card border rounded-2xl shadow-xl">
-          <div className="h-12 w-12 rounded-full bg-emerald-100 dark:bg-emerald-950 flex items-center justify-center text-emerald-600 mx-auto">
-            <CheckCircle2 className="h-7 w-7" />
+      <div className="min-h-screen flex items-center justify-center bg-[#FAF8F5] dark:bg-[#0C0F0D] p-6">
+        <div className="text-center space-y-4 max-w-sm p-6 bg-white/90 dark:bg-stone-900/90 border border-stone-200/80 dark:border-stone-800/80 rounded-2xl shadow-xl">
+          <div className="size-12 rounded-2xl bg-[#5F7C65]/12 border border-[#5F7C65]/25 flex items-center justify-center text-[#5F7C65] mx-auto">
+            <CheckCircle2 className="h-6 w-6 text-[#5F7C65]" />
           </div>
-          <h2 className="text-lg font-bold">Meta Authorization Received!</h2>
-          <p className="text-xs text-muted-foreground">
+          <h2 className="text-lg font-semibold tracking-tight text-stone-900 dark:text-stone-100">
+            Meta Authorization Received!
+          </h2>
+          <p className="text-xs text-stone-600 dark:text-stone-400 leading-relaxed">
             Connecting your WhatsApp account to WaChat... This window will close automatically.
           </p>
-          <Loader2 className="h-5 w-5 animate-spin text-emerald-600 mx-auto" />
+          <Loader2 className="h-5 w-5 animate-spin text-[#5F7C65] mx-auto" />
           <Button
             type="button"
             variant="outline"
             size="sm"
             onClick={() => window.close()}
-            className="mt-2 text-xs"
+            className="mt-2 text-xs rounded-xl border-stone-300 dark:border-stone-700"
           >
             Close Window
           </Button>
@@ -868,30 +868,29 @@ export default function SetupPage() {
 
   if (loading) {
     return (
-      <div className="h-full flex items-center justify-center">
+      <div className="h-full flex items-center justify-center bg-[#FAF8F5]/50 dark:bg-[#0C0F0D]">
         <div className="text-center">
-          <Loader2 className="h-12 w-12 animate-spin mx-auto mb-4 text-emerald-500" />
-          <p className="text-muted-foreground">Loading WhatsApp settings...</p>
+          <Loader2 className="h-10 w-10 animate-spin mx-auto mb-3 text-[#5F7C65]" />
+          <p className="text-sm font-medium text-stone-600 dark:text-stone-400">Loading WhatsApp configuration...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="h-full overflow-y-auto bg-gradient-to-br from-background via-background to-muted/20">
-      <div className="container max-w-5xl mx-auto py-8 px-4 pb-16">
+    <div className="h-full overflow-y-auto bg-[#FAF8F5]/50 dark:bg-[#0C0F0D]">
+      <div className="w-full px-4 sm:px-6 lg:px-8 py-6 sm:py-8 pb-16">
         {/* Header */}
         <div className="mb-8">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="h-10 w-10 rounded-xl bg-emerald-500/10 dark:bg-emerald-500/20 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
-              <Phone className="h-5 w-5" />
-            </div>
-            <h1 className="text-3xl font-bold bg-gradient-to-r from-emerald-600 via-teal-600 to-green-600 bg-clip-text text-transparent">
-              WhatsApp Configuration
-            </h1>
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold tracking-wide uppercase bg-[#5F7C65]/10 text-[#2D583F] dark:text-[#8EAE95] border border-[#5F7C65]/20 mb-3">
+            <LogoIcon className="size-3.5 text-[#5F7C65]" />
+            <span>Cloud API Gateway</span>
           </div>
-          <p className="text-muted-foreground text-base">
-            Connect your WhatsApp Cloud Business API to send and receive messages with WaChat
+          <h1 className="text-2xl sm:text-3xl font-semibold tracking-[-0.035em] text-stone-900 dark:text-stone-100">
+            WhatsApp <span className="font-[Georgia,serif] italic font-normal text-[#2D583F] dark:text-[#8EAE95]">Configuration</span>
+          </h1>
+          <p className="text-stone-600 dark:text-stone-400 text-sm sm:text-base mt-1.5 max-w-2xl leading-relaxed">
+            Connect and manage your WhatsApp Cloud Business API to send and receive real-time messages with WaChat.
           </p>
         </div>
 
@@ -900,63 +899,64 @@ export default function SetupPage() {
         {/* ========================================================================= */}
         {isConnected ? (
           <div className="space-y-6">
-            {/* Status Card */}
-            <Card className="border-emerald-200 dark:border-emerald-900/60 bg-gradient-to-b from-emerald-50/50 to-background dark:from-emerald-950/20 dark:to-background shadow-md">
-              <CardHeader className="pb-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <div className="flex items-center gap-3">
-                    <div className="h-12 w-12 rounded-full bg-emerald-100 dark:bg-emerald-900/50 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
-                      <CheckCircle2 className="h-7 w-7" />
+            {/* Status Card (Doppelrand Architecture) */}
+            <div className="rounded-2xl border border-stone-200/80 dark:border-stone-800/80 bg-white/80 dark:bg-stone-900/70 backdrop-blur-md shadow-[0_4px_20px_-4px_rgba(30,45,35,0.06)] p-1.5">
+              <div className="rounded-[calc(1rem-0.125rem)] bg-[#FAF8F5]/80 dark:bg-stone-900/90 p-5 sm:p-6 border border-stone-200/60 dark:border-stone-800/60">
+                {/* Header Strip */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-stone-200/70 dark:border-stone-800/70">
+                  <div className="flex items-center gap-3.5">
+                    <div className="size-12 rounded-2xl bg-[#5F7C65]/12 dark:bg-[#5F7C65]/20 border border-[#5F7C65]/25 flex items-center justify-center text-[#5F7C65] shrink-0">
+                      <CheckCircle2 className="size-6 text-[#5F7C65]" />
                     </div>
                     <div>
                       <div className="flex items-center gap-2">
-                        <CardTitle className="text-xl font-bold text-foreground">
-                          WhatsApp Connected & Active
-                        </CardTitle>
-                        <Badge className="bg-emerald-600 text-white hover:bg-emerald-700">
+                        <h2 className="text-lg sm:text-xl font-semibold tracking-tight text-stone-900 dark:text-stone-100">
+                          WhatsApp Connected &amp; Active
+                        </h2>
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold tracking-wide uppercase bg-[#5F7C65]/12 text-[#2D583F] dark:text-[#8EAE95] border border-[#5F7C65]/25">
+                          <span className="size-1.5 rounded-full bg-[#5F7C65] animate-pulse" />
                           Live
-                        </Badge>
+                        </span>
                       </div>
-                      <CardDescription className="mt-1">
-                        Your WhatsApp Cloud API account is fully integrated and receiving messages.
-                      </CardDescription>
+                      <p className="text-xs sm:text-sm text-stone-600 dark:text-stone-400 mt-0.5">
+                        Your WhatsApp Cloud API account is fully integrated and actively receiving messages.
+                      </p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 flex-wrap">
+
+                  <div className="flex items-center gap-2 flex-wrap sm:shrink-0">
                     <Button
                       variant="outline"
                       size="sm"
                       onClick={handleSyncPhone}
                       disabled={syncingPhone}
-                      className="border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-300 text-xs"
+                      className="rounded-xl border border-stone-300/80 dark:border-stone-700 bg-white/80 dark:bg-stone-800/80 hover:bg-stone-100 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-200 text-xs h-9 px-3.5 shadow-2xs font-medium transition-all active:scale-[0.98]"
                       title="Refresh status and check Meta for phone numbers"
                     >
-                      <RefreshCw className={cn("mr-1.5 h-3.5 w-3.5", syncingPhone && "animate-spin")} />
+                      <RefreshCw className={cn("mr-1.5 h-3.5 w-3.5 text-[#5F7C65]", syncingPhone && "animate-spin")} />
                       {syncingPhone ? "Syncing..." : "Sync from Meta"}
                     </Button>
                     <Link href="/protected">
-                      <Button className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm text-xs">
+                      <Button className="rounded-xl bg-[#5F7C65] hover:bg-[#526D57] text-white text-xs h-9 px-4 font-medium shadow-[inset_0_1px_2px_0_rgba(255,255,255,0.2),inset_0_-1px_2px_0_rgba(0,0,0,0.18)] transition-all active:scale-[0.98] flex items-center gap-1.5">
                         Go to Chat
-                        <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
+                        <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
                       </Button>
                     </Link>
                     <Button
                       variant="outline"
                       size="sm"
-                      className="border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 dark:border-red-900 dark:hover:bg-red-950/40 text-xs"
+                      className="rounded-xl border border-stone-300/80 dark:border-stone-700 bg-white/50 dark:bg-stone-800/50 text-stone-600 dark:text-stone-400 hover:text-red-700 dark:hover:text-red-400 hover:bg-red-50/60 dark:hover:bg-red-950/25 hover:border-red-200 text-xs h-9 px-3 font-medium transition-all active:scale-[0.98] flex items-center gap-1.5"
                       onClick={() => setDisconnectDialogOpen(true)}
                     >
-                      <Unplug className="mr-1.5 h-3.5 w-3.5" />
+                      <Unplug className="h-3.5 w-3.5" />
                       Disconnect
                     </Button>
                   </div>
                 </div>
-              </CardHeader>
 
-              <CardContent className="pt-2">
                 {/* Notice if Phone Number ID is not yet attached */}
                 {!settings?.phone_number_id && (
-                  <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/25 flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                  <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/25 flex flex-col sm:flex-row sm:items-center justify-between gap-3 mt-4">
                     <div className="flex items-start sm:items-center gap-3">
                       <AlertCircle className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5 sm:mt-0" />
                       <div>
@@ -973,13 +973,13 @@ export default function SetupPage() {
                         placeholder="Paste Phone Number ID"
                         value={phoneNumberId}
                         onChange={(e) => setPhoneNumberId(e.target.value)}
-                        className="font-mono text-xs w-44 h-8"
+                        className="font-mono text-xs w-44 h-8 rounded-lg border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-900"
                       />
                       <Button
                         type="submit"
                         size="sm"
                         disabled={savingPhoneId || !phoneNumberId.trim()}
-                        className="text-xs h-8 bg-emerald-600 hover:bg-emerald-700 text-white"
+                        className="text-xs h-8 rounded-lg bg-[#5F7C65] hover:bg-[#526D57] text-white font-medium"
                       >
                         {savingPhoneId ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
                         Save ID
@@ -988,381 +988,175 @@ export default function SetupPage() {
                   </div>
                 )}
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
-                  {/* Phone Number */}
-                  <div className="p-4 rounded-xl bg-card border shadow-xs space-y-1">
+                {/* 4-Item Metadata Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-5">
+                  {/* Card 1: Connected Phone */}
+                  <div className="p-4 rounded-xl border border-stone-200/80 dark:border-stone-800/80 bg-white/90 dark:bg-stone-900/60 shadow-2xs space-y-1.5 transition-all hover:border-stone-300 dark:hover:border-stone-700">
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2 text-muted-foreground text-xs font-semibold uppercase tracking-wider">
-                        <Phone className="h-3.5 w-3.5 text-emerald-600" />
-                        Connected Phone
+                      <div className="flex items-center gap-1.5 text-stone-500 dark:text-stone-400 text-[10px] font-semibold uppercase tracking-wider">
+                        <Phone className="h-3.5 w-3.5 text-[#5F7C65]" />
+                        <span>Connected Phone</span>
                       </div>
                       {phoneRegStatus?.status === 'CONNECTED' ? (
-                        <Badge className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20 text-[10px] font-medium">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold tracking-wide uppercase bg-[#5F7C65]/10 text-[#2D583F] dark:text-[#8EAE95] border border-[#5F7C65]/20">
+                          <span className="size-1 rounded-full bg-[#5F7C65]" />
                           Registered &amp; Active
-                        </Badge>
+                        </span>
                       ) : phoneRegStatus?.code_verification_status === 'VERIFIED' ? (
-                        <Badge className="bg-amber-500/10 text-amber-600 border-amber-500/20 text-[10px] font-medium">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold tracking-wide uppercase bg-amber-500/10 text-amber-800 dark:text-amber-300 border border-amber-500/20">
                           Verified (Registration Needed)
-                        </Badge>
+                        </span>
                       ) : null}
                     </div>
-                    <p className="text-lg font-bold text-foreground font-mono">
+                    <p className="text-base sm:text-lg font-bold text-stone-900 dark:text-stone-100 font-mono tracking-tight">
                       {settings?.phone_number || settings?.phone_number_id || "WhatsApp Account (WABA Active)"}
                     </p>
                     {settings?.full_name ? (
-                      <p className="text-xs text-muted-foreground">
-                        Verified Name: <span className="font-medium text-foreground">{settings.full_name}</span>
+                      <p className="text-xs text-stone-500 dark:text-stone-400">
+                        Verified Name: <span className="font-medium text-stone-800 dark:text-stone-200">{settings.full_name}</span>
                       </p>
                     ) : (
-                      <p className="text-xs text-muted-foreground">
+                      <p className="text-xs text-stone-500 dark:text-stone-400">
                         Account linked via Meta Embedded Signup
                       </p>
                     )}
                   </div>
 
-                  {/* Phone Number ID */}
-                  <div className="p-4 rounded-xl bg-card border shadow-xs space-y-1">
+                  {/* Card 2: Phone Number ID */}
+                  <div className="p-4 rounded-xl border border-stone-200/80 dark:border-stone-800/80 bg-white/90 dark:bg-stone-900/60 shadow-2xs space-y-1.5 transition-all hover:border-stone-300 dark:hover:border-stone-700">
                     <div className="flex items-center justify-between">
-                      <span className="text-muted-foreground text-xs font-semibold uppercase tracking-wider">
+                      <span className="text-stone-500 dark:text-stone-400 text-[10px] font-semibold uppercase tracking-wider">
                         Phone Number ID
                       </span>
                       <Button
                         type="button"
                         variant="ghost"
                         size="icon"
-                        className="h-6 w-6"
+                        className="size-7 rounded-lg text-stone-500 hover:text-stone-900 dark:hover:text-stone-100 hover:bg-stone-200/60 dark:hover:bg-stone-800 transition-colors"
                         onClick={() => copyToClipboard(settings?.phone_number_id || "", "phone")}
+                        title="Copy Phone Number ID"
                       >
                         {copiedPhoneId ? (
-                          <Check className="h-3.5 w-3.5 text-emerald-600" />
+                          <Check className="h-3.5 w-3.5 text-[#5F7C65]" />
                         ) : (
                           <Copy className="h-3.5 w-3.5" />
                         )}
                       </Button>
                     </div>
-                    <p className="text-sm font-mono text-foreground truncate">
+                    <p className="text-sm font-mono text-stone-900 dark:text-stone-100 truncate">
                       {settings?.phone_number_id || (
-                        <span className="text-xs text-muted-foreground italic">Pending Sync · Click &quot;Sync from Meta&quot;</span>
+                        <span className="text-xs text-stone-400 italic">Pending Sync · Click &quot;Sync from Meta&quot;</span>
                       )}
+                    </p>
+                    <p className="text-xs text-stone-500 dark:text-stone-400">
+                      Unique Meta identifier for this phone line
                     </p>
                   </div>
 
-                  {/* Business Account ID */}
-                  <div className="p-4 rounded-xl bg-card border shadow-xs space-y-1">
+                  {/* Card 3: Business Account ID */}
+                  <div className="p-4 rounded-xl border border-stone-200/80 dark:border-stone-800/80 bg-white/90 dark:bg-stone-900/60 shadow-2xs space-y-1.5 transition-all hover:border-stone-300 dark:hover:border-stone-700">
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2 text-muted-foreground text-xs font-semibold uppercase tracking-wider">
-                        <Building2 className="h-3.5 w-3.5 text-emerald-600" />
-                        WhatsApp Business Account (WABA)
+                      <div className="flex items-center gap-1.5 text-stone-500 dark:text-stone-400 text-[10px] font-semibold uppercase tracking-wider">
+                        <Building2 className="h-3.5 w-3.5 text-[#5F7C65]" />
+                        <span>WhatsApp Business Account (WABA)</span>
                       </div>
                       <Button
                         type="button"
                         variant="ghost"
                         size="icon"
-                        className="h-6 w-6"
+                        className="size-7 rounded-lg text-stone-500 hover:text-stone-900 dark:hover:text-stone-100 hover:bg-stone-200/60 dark:hover:bg-stone-800 transition-colors"
                         onClick={() => copyToClipboard(settings?.business_account_id || "", "waba")}
+                        title="Copy WABA ID"
                       >
                         {copiedWabaId ? (
-                          <Check className="h-3.5 w-3.5 text-emerald-600" />
+                          <Check className="h-3.5 w-3.5 text-[#5F7C65]" />
                         ) : (
                           <Copy className="h-3.5 w-3.5" />
                         )}
                       </Button>
                     </div>
-                    <p className="text-sm font-mono text-foreground truncate">
+                    <p className="text-sm font-mono text-stone-900 dark:text-stone-100 truncate">
                       {settings?.business_account_id || "N/A"}
                     </p>
+                    <p className="text-xs text-stone-500 dark:text-stone-400">
+                      Parent organization account ID on Meta
+                    </p>
                   </div>
 
-                    {/* Webhook Status */}
-                    <div className="p-4 rounded-xl bg-card border shadow-xs space-y-2">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2 text-muted-foreground text-xs font-semibold uppercase tracking-wider">
-                          <Radio className="h-3.5 w-3.5 text-emerald-600" />
-                          Webhook Status
-                        </div>
-                        <Badge variant="outline" className="text-xs text-emerald-600 border-emerald-300">
-                          {settings?.webhook_verified ? "Subscribed & Verified" : "Active"}
-                        </Badge>
+                  {/* Card 4: Webhook Status */}
+                  <div className="p-4 rounded-xl border border-stone-200/80 dark:border-stone-800/80 bg-white/90 dark:bg-stone-900/60 shadow-2xs space-y-2 transition-all hover:border-stone-300 dark:hover:border-stone-700">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 text-stone-500 dark:text-stone-400 text-[10px] font-semibold uppercase tracking-wider">
+                        <Radio className="h-3.5 w-3.5 text-[#5F7C65]" />
+                        <span>Webhook Status</span>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <p className="text-xs text-muted-foreground truncate font-mono flex-1">
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold tracking-wide uppercase bg-[#5F7C65]/10 text-[#2D583F] dark:text-[#8EAE95] border border-[#5F7C65]/20">
+                        {settings?.webhook_verified ? "Subscribed & Verified" : "Active"}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 min-w-0 bg-stone-100/80 dark:bg-stone-800/60 px-2.5 py-1 rounded-lg border border-stone-200/60 dark:border-stone-700/60">
+                        <p className="text-xs text-stone-600 dark:text-stone-300 truncate font-mono">
                           {webhookUrl}
                         </p>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6"
-                          onClick={() => copyToClipboard(webhookUrl, "webhook")}
-                          title="Copy Webhook URL"
-                        >
-                          {copiedWebhookUrl ? (
-                            <Check className="h-3.5 w-3.5 text-emerald-600" />
-                          ) : (
-                            <Copy className="h-3.5 w-3.5 text-muted-foreground" />
-                          )}
-                        </Button>
                       </div>
-
-                      {metaWebhookSyncInfo?.meta_configured_url && !metaWebhookSyncInfo.url_matches_active_domain && (
-                        <div className="mt-2 p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg text-xs space-y-1.5 text-amber-700 dark:text-amber-400">
-                          <div className="font-semibold flex items-center gap-1.5">
-                            <AlertCircle className="h-4 w-4 text-amber-600 flex-shrink-0" />
-                            <span>Meta App Callback URL is pointing to another domain:</span>
-                          </div>
-                          <p className="font-mono text-[11px] truncate bg-background/60 p-1.5 rounded border border-amber-500/20">
-                            {metaWebhookSyncInfo.meta_configured_url}
-                          </p>
-                          <p className="text-muted-foreground text-[11px]">
-                            To receive messages in development, update Callback URL in Meta App Dashboard → Webhooks to:
-                          </p>
-                          <div className="flex items-center gap-1.5">
-                            <code className="font-mono text-[11px] bg-background/80 p-1.5 rounded border select-all flex-1 truncate">
-                              {metaWebhookSyncInfo.current_domain_url}
-                            </code>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              className="h-6 px-2 text-[11px]"
-                              onClick={() => copyToClipboard(metaWebhookSyncInfo.current_domain_url || "", "webhook")}
-                            >
-                              Copy
-                            </Button>
-                          </div>
-                        </div>
-                      )}
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="size-7 rounded-lg text-stone-500 hover:text-stone-900 dark:hover:text-stone-100 hover:bg-stone-200/60 dark:hover:bg-stone-800 transition-colors shrink-0"
+                        onClick={() => copyToClipboard(webhookUrl, "webhook")}
+                        title="Copy Webhook URL"
+                      >
+                        {copiedWebhookUrl ? (
+                          <Check className="h-3.5 w-3.5 text-[#5F7C65]" />
+                        ) : (
+                          <Copy className="h-3.5 w-3.5" />
+                        )}
+                      </Button>
                     </div>
-                  </div>
 
-                  {/* Cloud API Registration Section (Fixes Error #133010) */}
-                  {settings?.phone_number_id && settings?.has_access_token && (
-                    <div className="mt-4 p-4 rounded-xl bg-blue-500/5 border border-blue-500/20 space-y-3">
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <ShieldCheck className="h-4 w-4 text-blue-600 dark:text-blue-400 shrink-0" />
-                            <h4 className="text-sm font-semibold text-foreground">
-                              WhatsApp Cloud API Registration
-                            </h4>
-                            {phoneRegStatus?.status === 'CONNECTED' ? (
-                              <span className="px-2 py-0.5 text-[11px] font-medium rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300">
-                                Registered &amp; Active
-                              </span>
-                            ) : (
-                              <span className="px-2 py-0.5 text-[11px] font-medium rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300">
-                                Registration Required to Send Messages
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-xs text-muted-foreground mt-1">
-                            {phoneRegStatus?.status === 'CONNECTED'
-                              ? 'Your phone number is fully registered with WhatsApp Cloud API and ready to send and receive messages.'
-                              : 'Meta requires phone numbers to be registered with a 6-digit PIN. If you see "(#133010) Account not registered", click Register below to activate your number.'}
-                          </p>
+                    {metaWebhookSyncInfo?.meta_configured_url && !metaWebhookSyncInfo.url_matches_active_domain && (
+                      <div className="mt-2 p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-xs space-y-1.5 text-amber-800 dark:text-amber-300">
+                        <div className="font-semibold flex items-center gap-1.5">
+                          <AlertCircle className="h-4 w-4 text-amber-600 shrink-0" />
+                          <span>Meta App Callback URL points to another domain:</span>
                         </div>
-
-                        <div className="flex items-center gap-2 shrink-0">
+                        <p className="font-mono text-[11px] truncate bg-white/60 dark:bg-stone-900/60 p-1.5 rounded-lg border border-amber-500/20">
+                          {metaWebhookSyncInfo.meta_configured_url}
+                        </p>
+                        <p className="text-stone-600 dark:text-stone-400 text-[11px]">
+                          To receive messages in development, update Callback URL in Meta App Dashboard → Webhooks to:
+                        </p>
+                        <div className="flex items-center gap-1.5">
+                          <code className="font-mono text-[11px] bg-white/80 dark:bg-stone-900/80 p-1.5 rounded-lg border border-stone-200/80 dark:border-stone-700 select-all flex-1 truncate">
+                            {metaWebhookSyncInfo.current_domain_url}
+                          </code>
                           <Button
                             type="button"
                             variant="outline"
                             size="sm"
-                            onClick={checkPhoneRegistration}
-                            disabled={checkingPhoneStatus || deregisteringPhone}
-                            className="text-xs h-8"
+                            className="h-6 px-2 text-[11px] rounded-lg border-stone-300 dark:border-stone-700"
+                            onClick={() => copyToClipboard(metaWebhookSyncInfo.current_domain_url || "", "webhook")}
                           >
-                            {checkingPhoneStatus ? (
-                              <Loader2 className="h-3 w-3 animate-spin mr-1" />
-                            ) : (
-                              <RefreshCw className="h-3 w-3 mr-1" />
-                            )}
-                            Check Status
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={handleDeregisterPhone}
-                            disabled={checkingPhoneStatus || deregisteringPhone}
-                            className="text-xs h-8 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-800 hover:bg-amber-50 dark:hover:bg-amber-950/40"
-                            title="Attempt to disconnect the number from Meta Cloud API"
-                          >
-                            {deregisteringPhone ? (
-                              <Loader2 className="h-3 w-3 animate-spin mr-1" />
-                            ) : (
-                              <Unplug className="h-3 w-3 mr-1" />
-                            )}
-                            Deregister API
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            onClick={() => setShowPinInput(!showPinInput)}
-                            className="text-xs h-8 bg-blue-600 hover:bg-blue-700 text-white"
-                          >
-                            {phoneRegStatus?.status === 'CONNECTED'
-                              ? 'Re-Register / Update PIN'
-                              : 'Register Phone Number'}
+                            Copy
                           </Button>
                         </div>
                       </div>
-
-                      {showPinInput && (
-                        <form onSubmit={handleRegisterPhone} className="pt-3 border-t border-blue-500/20 space-y-3">
-                          <div className="flex flex-col sm:flex-row sm:items-end gap-3">
-                            <div className="space-y-1 flex-1 max-w-xs">
-                              <Label htmlFor="pin-input" className="text-xs font-medium">
-                                6-Digit Two-Step Verification PIN
-                              </Label>
-                              <Input
-                                id="pin-input"
-                                value={phonePin}
-                                onChange={(e) => setPhonePin(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                                placeholder="123456"
-                                maxLength={6}
-                                className="font-mono text-sm tracking-widest text-center"
-                              />
-                            </div>
-                            <Button
-                              type="submit"
-                              disabled={registeringPhone || phonePin.length !== 6}
-                              className="text-xs h-9 bg-emerald-600 hover:bg-emerald-700 text-white shrink-0"
-                            >
-                              {registeringPhone ? (
-                                <>
-                                  <Loader2 className="h-3 w-3 animate-spin mr-1" />
-                                  Registering with Meta...
-                                </>
-                              ) : (
-                                'Confirm & Register with Cloud API'
-                              )}
-                            </Button>
-                          </div>
-                          <p className="text-[11px] text-muted-foreground">
-                            Note: If you previously set a two-step verification PIN in WhatsApp Manager, enter that exact 6-digit PIN. Otherwise, enter any 6 digits (e.g. 123456) to establish your PIN.
-                          </p>
-                        </form>
-                      )}
-
-                      {phoneRegError && (
-                        <div className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/25 text-xs text-red-700 dark:text-red-300 space-y-2.5">
-                          <div className="flex items-start gap-2">
-                            <AlertCircle className="h-4 w-4 text-red-600 shrink-0 mt-0.5" />
-                            <div>
-                              <span className="font-semibold text-sm block">
-                                {phoneRegError.includes('existing WhatsApp account') || phoneRegError.includes('Cannot create certificate')
-                                  ? 'Cannot Create Certificate: Phone Number Active on Mobile WhatsApp'
-                                  : 'Registration Failed'}
-                              </span>
-                              <p className="mt-1 leading-relaxed">{phoneRegError}</p>
-                            </div>
-                          </div>
-
-                          {(phoneRegError.includes('existing WhatsApp account') || phoneRegError.includes('Cannot create certificate')) && (
-                            <div className="p-3 bg-background/90 rounded-lg border border-red-500/20 space-y-2 text-foreground">
-                              <p className="font-semibold text-xs text-red-700 dark:text-red-300">
-                                How to resolve this in 3 quick steps:
-                              </p>
-                              <ol className="list-decimal list-inside space-y-1.5 text-xs text-muted-foreground">
-                                <li>
-                                  Open <strong>WhatsApp</strong> or <strong>WhatsApp Business</strong> on the mobile phone using this number.
-                                </li>
-                                <li>
-                                  Go to <strong>Settings → Account → Delete my account</strong> (this releases the number from the mobile app so Meta Cloud API can take it over).
-                                </li>
-                                <li>
-                                  Wait <strong>3 minutes</strong> for Meta to release the number, then click <strong>&quot;Confirm &amp; Register with Cloud API&quot;</strong> above.
-                                </li>
-                              </ol>
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      {phoneRegSuccess && (
-                        <div className="p-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-700 dark:text-emerald-300 flex items-start gap-2">
-                          <Check className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
-                          <div>
-                            <span className="font-semibold">Success: </span>
-                            {phoneRegSuccess}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Real-Time Message Status Receipts & Permissions Showcase */}
-                  <div className="mt-4 p-4 rounded-xl bg-gradient-to-r from-emerald-500/5 via-teal-500/5 to-sky-500/5 border border-emerald-500/20 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                        <h4 className="text-sm font-semibold text-foreground">
-                          Real-Time Delivery Receipts &amp; Permissions
-                        </h4>
-                      </div>
-                      <Badge className="bg-emerald-600 text-white text-[10px]">
-                        Active in Chat
-                      </Badge>
-                    </div>
-
-                    <p className="text-xs text-muted-foreground leading-relaxed">
-                      WaChat processes WhatsApp Cloud API webhooks (the <code className="text-[11px] font-mono bg-muted px-1.5 py-0.5 rounded">messages</code> field) to track delivery statuses in real time.
-                    </p>
-
-                    {/* Status Indicators Legend */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
-                      <div className="flex items-center gap-2 p-2 rounded-lg bg-background border text-xs">
-                        <Check className="h-3.5 w-3.5 text-muted-foreground" />
-                        <div>
-                          <span className="font-semibold block text-[11px]">Sent</span>
-                          <span className="text-[10px] text-muted-foreground">Unseen (Single Tick)</span>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2 p-2 rounded-lg bg-background border text-xs">
-                        <CheckCheck className="h-3.5 w-3.5 text-muted-foreground" />
-                        <div>
-                          <span className="font-semibold block text-[11px]">Delivered</span>
-                          <span className="text-[10px] text-muted-foreground">Unseen (Double Tick)</span>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2 p-2 rounded-lg bg-background border text-xs">
-                        <CheckCheck className="h-3.5 w-3.5 text-[#53bdeb]" />
-                        <div>
-                          <span className="font-semibold block text-[11px] text-sky-600 dark:text-sky-400">Seen</span>
-                          <span className="text-[10px] text-muted-foreground">Read (Blue Ticks)</span>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2 p-2 rounded-lg bg-background border text-xs">
-                        <AlertCircle className="h-3.5 w-3.5 text-red-500" />
-                        <div>
-                          <span className="font-semibold block text-[11px] text-red-600 dark:text-red-400">Failed</span>
-                          <span className="text-[10px] text-muted-foreground">Undelivered Mark</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Permissions summary */}
-                    <div className="pt-2 border-t border-border flex flex-wrap gap-2 text-[11px] text-muted-foreground items-center justify-between">
-                      <span className="flex items-center gap-1.5">
-                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
-                        Active Meta Scopes: <code className="font-mono text-[10px] bg-muted px-1 rounded">whatsapp_business_messaging</code>, <code className="font-mono text-[10px] bg-muted px-1 rounded">whatsapp_business_management</code>
-                      </span>
-                      <span className="italic text-[10px]">Broadcast messages include click-to-view seen popup</span>
-                    </div>
+                    )}
                   </div>
-              </CardContent>
-
-              <CardFooter className="border-t bg-muted/30 pt-4 pb-4 flex items-center justify-between text-xs text-muted-foreground">
-                <div className="flex items-center gap-2">
-                  <ShieldCheck className="h-4 w-4 text-emerald-600" />
-                  <span>Cloud API Version: <strong>{settings?.api_version || "v23.0"}</strong></span>
                 </div>
-                <span>Need to change accounts? Disconnect above to re-link.</span>
-              </CardFooter>
-            </Card>
+
+                {/* Card Bottom Footer */}
+                <div className="mt-6 pt-4 border-t border-stone-200/70 dark:border-stone-800/70 flex flex-col sm:flex-row items-center justify-between text-xs text-stone-500 dark:text-stone-400 gap-2">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="h-4 w-4 text-[#5F7C65]" />
+                    <span>Cloud API Version: <strong className="text-stone-700 dark:text-stone-300 font-mono">{settings?.api_version || "v23.0"}</strong></span>
+                  </div>
+                  <span>Need to change accounts? Disconnect above to re-link.</span>
+                </div>
+              </div>
+            </div>
           </div>
         ) : (
           /* ========================================================================= */
@@ -1372,22 +1166,22 @@ export default function SetupPage() {
             {/* Choose Setup Method Tabs */}
             <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
               <div className="flex justify-center mb-6">
-                <TabsList className="grid w-full max-w-md grid-cols-2 p-1 bg-muted/80 rounded-xl">
+                <TabsList className="grid w-full max-w-md grid-cols-2 p-1 bg-stone-200/60 dark:bg-stone-800/60 rounded-xl border border-stone-300/40 dark:border-stone-700/40">
                   <TabsTrigger
                     value="embedded"
-                    className="flex items-center gap-2 py-2.5 rounded-lg data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm font-medium"
+                    className="flex items-center justify-center gap-2 py-2 rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-stone-900 data-[state=active]:text-stone-900 dark:data-[state=active]:text-stone-100 data-[state=active]:shadow-2xs font-medium text-xs sm:text-sm text-stone-600 dark:text-stone-400"
                   >
-                    <Zap className="h-4 w-4 text-emerald-600" />
+                    <Zap className="h-4 w-4 text-[#5F7C65]" />
                     <span>1-Click Connect</span>
-                    <Badge variant="secondary" className="ml-1 text-[10px] bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                    <span className="ml-1 text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded-full bg-[#5F7C65]/12 text-[#2D583F] dark:text-[#8EAE95]">
                       Recommended
-                    </Badge>
+                    </span>
                   </TabsTrigger>
                   <TabsTrigger
                     value="manual"
-                    className="flex items-center gap-2 py-2.5 rounded-lg data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm font-medium"
+                    className="flex items-center justify-center gap-2 py-2 rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-stone-900 data-[state=active]:text-stone-900 dark:data-[state=active]:text-stone-100 data-[state=active]:shadow-2xs font-medium text-xs sm:text-sm text-stone-600 dark:text-stone-400"
                   >
-                    <Sliders className="h-4 w-4 text-muted-foreground" />
+                    <Sliders className="h-4 w-4 text-stone-500" />
                     <span>Manual Setup</span>
                   </TabsTrigger>
                 </TabsList>
@@ -1397,141 +1191,137 @@ export default function SetupPage() {
               {/* TAB 1: 1-CLICK EMBEDDED SIGNUP (RECOMMENDED)                  */}
               {/* ============================================================= */}
               <TabsContent value="embedded" className="space-y-6 focus-visible:outline-none">
-                <Card className="border-emerald-200/80 dark:border-emerald-900/60 shadow-lg">
-                  <CardHeader className="text-center pb-4">
-                    <div className="mx-auto h-16 w-16 rounded-2xl bg-emerald-50 dark:bg-emerald-950/50 flex items-center justify-center text-emerald-600 dark:text-emerald-400 mb-2">
-                      <Zap className="h-8 w-8" />
+                <div className="rounded-2xl border border-stone-200/80 dark:border-stone-800/80 bg-white/80 dark:bg-stone-900/70 backdrop-blur-md shadow-[0_4px_20px_-4px_rgba(30,45,35,0.06)] p-1.5">
+                  <div className="rounded-[calc(1rem-0.125rem)] bg-[#FAF8F5]/80 dark:bg-stone-900/90 p-6 sm:p-8 border border-stone-200/60 dark:border-stone-800/60 text-center">
+                    <div className="mx-auto size-14 rounded-2xl bg-[#5F7C65]/12 dark:bg-[#5F7C65]/20 border border-[#5F7C65]/25 flex items-center justify-center text-[#5F7C65] mb-3">
+                      <Zap className="h-7 w-7" />
                     </div>
-                    <CardTitle className="text-2xl font-bold">
+                    <h2 className="text-xl sm:text-2xl font-semibold tracking-[-0.025em] text-stone-900 dark:text-stone-100">
                       Connect with WhatsApp Embedded Signup
-                    </CardTitle>
-                    <CardDescription className="text-base max-w-xl mx-auto">
+                    </h2>
+                    <p className="text-stone-600 dark:text-stone-400 text-sm max-w-lg mx-auto mt-1.5 leading-relaxed">
                       Log in with Facebook to select your WhatsApp Business Account and phone number.
                       Everything is configured automatically in under 60 seconds.
-                    </CardDescription>
-                  </CardHeader>
+                    </p>
 
-                  <CardContent className="space-y-6 max-w-xl mx-auto">
-                    {/* Benefits List */}
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-center">
-                      <div className="p-3 rounded-xl bg-muted/40 border space-y-1">
-                        <CheckCircle2 className="h-5 w-5 text-emerald-600 mx-auto" />
-                        <p className="font-semibold text-xs text-foreground">No Manual Tokens</p>
-                        <p className="text-[11px] text-muted-foreground">Permanent system token issued automatically</p>
+                    <div className="space-y-6 max-w-xl mx-auto mt-6 text-left">
+                      {/* Benefits 3-col */}
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-center">
+                        <div className="p-3.5 rounded-xl border border-stone-200/80 dark:border-stone-800/80 bg-white/90 dark:bg-stone-900/80 shadow-2xs space-y-1">
+                          <CheckCircle2 className="h-5 w-5 text-[#5F7C65] mx-auto" />
+                          <p className="font-semibold text-xs text-stone-900 dark:text-stone-100">No Manual Tokens</p>
+                          <p className="text-[11px] text-stone-500 dark:text-stone-400">Permanent system token issued automatically</p>
+                        </div>
+                        <div className="p-3.5 rounded-xl border border-stone-200/80 dark:border-stone-800/80 bg-white/90 dark:bg-stone-900/80 shadow-2xs space-y-1">
+                          <Radio className="h-5 w-5 text-[#5F7C65] mx-auto" />
+                          <p className="font-semibold text-xs text-stone-900 dark:text-stone-100">Instant Webhooks</p>
+                          <p className="text-[11px] text-stone-500 dark:text-stone-400">Auto-subscribed to receive real-time messages</p>
+                        </div>
+                        <div className="p-3.5 rounded-xl border border-stone-200/80 dark:border-stone-800/80 bg-white/90 dark:bg-stone-900/80 shadow-2xs space-y-1">
+                          <ShieldCheck className="h-5 w-5 text-[#5F7C65] mx-auto" />
+                          <p className="font-semibold text-xs text-stone-900 dark:text-stone-100">Official Meta Flow</p>
+                          <p className="text-[11px] text-stone-500 dark:text-stone-400">Secured directly by Meta Business Platform</p>
+                        </div>
                       </div>
-                      <div className="p-3 rounded-xl bg-muted/40 border space-y-1">
-                        <Radio className="h-5 w-5 text-emerald-600 mx-auto" />
-                        <p className="font-semibold text-xs text-foreground">Instant Webhooks</p>
-                        <p className="text-[11px] text-muted-foreground">Auto-subscribed to receive real-time messages</p>
-                      </div>
-                      <div className="p-3 rounded-xl bg-muted/40 border space-y-1">
-                        <ShieldCheck className="h-5 w-5 text-emerald-600 mx-auto" />
-                        <p className="font-semibold text-xs text-foreground">Official Meta Flow</p>
-                        <p className="text-[11px] text-muted-foreground">Secured directly by Meta Business Platform</p>
-                      </div>
-                    </div>
 
-                    {/* Progress / Status feedback */}
-                    {connectingEmbedded && (
-                      <div className="space-y-3">
-                        <div className="p-4 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 flex items-center gap-3">
-                          <Loader2 className="h-5 w-5 text-emerald-600 animate-spin flex-shrink-0" />
+                      {/* Progress / Status feedback */}
+                      {connectingEmbedded && (
+                        <div className="space-y-3">
+                          <div className="p-4 rounded-xl bg-[#5F7C65]/10 border border-[#5F7C65]/20 flex items-center gap-3">
+                            <Loader2 className="h-5 w-5 text-[#5F7C65] animate-spin shrink-0" />
+                            <div className="text-sm">
+                              <p className="font-medium text-stone-900 dark:text-stone-100">Connecting to Meta...</p>
+                              <p className="text-xs text-[#2D583F] dark:text-[#8EAE95]">{embeddedStep}</p>
+                            </div>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setConnectingEmbedded(false);
+                              loadSettings();
+                            }}
+                            className="w-full text-xs text-stone-500 hover:text-stone-900 dark:hover:text-stone-100 border-dashed rounded-xl"
+                          >
+                            <RefreshCw className="mr-2 h-3.5 w-3.5" />
+                            Already completed in Meta popup? Refresh connection status
+                          </Button>
+                        </div>
+                      )}
+
+                      {embeddedError && (
+                        <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 flex items-start gap-3">
+                          <AlertCircle className="h-5 w-5 text-red-600 mt-0.5 shrink-0" />
                           <div className="text-sm">
-                            <p className="font-medium text-emerald-900 dark:text-emerald-100">Connecting to Meta...</p>
-                            <p className="text-xs text-emerald-700 dark:text-emerald-300">{embeddedStep}</p>
+                            <p className="font-medium text-red-900 dark:text-red-200">Connection Failed</p>
+                            <p className="text-xs text-red-700 dark:text-red-300">{embeddedError}</p>
                           </div>
                         </div>
+                      )}
+
+                      {embeddedSuccess && (
+                        <div className="p-4 rounded-xl bg-[#5F7C65]/10 border border-[#5F7C65]/20 flex items-center gap-3">
+                          <CheckCircle2 className="h-5 w-5 text-[#5F7C65] shrink-0" />
+                          <p className="text-sm font-medium text-[#2D583F] dark:text-[#8EAE95]">
+                            WhatsApp connected successfully! Loading your account...
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Main Connect Buttons */}
+                      <div className="space-y-3 pt-2">
+                        <button
+                          type="button"
+                          id="connect-whatsapp-btn"
+                          onClick={handleLaunchEmbeddedSignup}
+                          disabled={connectingEmbedded}
+                          className="w-full py-3.5 px-6 text-sm sm:text-base font-semibold text-white rounded-xl shadow-md hover:shadow-lg hover:brightness-105 active:scale-[0.99] transition-all flex items-center justify-center gap-3 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed border-0"
+                          style={{
+                            backgroundColor: "#1877F2",
+                            color: "#FFFFFF",
+                          }}
+                        >
+                          {connectingEmbedded ? (
+                            <>
+                              <Loader2 className="h-5 w-5 animate-spin text-white shrink-0" />
+                              <span>{embeddedStep || "Connecting WhatsApp..."}</span>
+                            </>
+                          ) : (
+                            <>
+                              <svg className="h-5 w-5 fill-white shrink-0" viewBox="0 0 24 24">
+                                <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
+                              </svg>
+                              <span>Connect WhatsApp via Facebook</span>
+                            </>
+                          )}
+                        </button>
+
                         <Button
                           type="button"
                           variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            setConnectingEmbedded(false);
-                            loadSettings();
-                          }}
-                          className="w-full text-xs text-muted-foreground hover:text-foreground border-dashed"
+                          onClick={handleOpenDirectPopup}
+                          disabled={connectingEmbedded}
+                          className="w-full h-11 text-xs sm:text-sm font-medium border border-stone-300 dark:border-stone-700 bg-white/80 dark:bg-stone-800 text-stone-800 dark:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-700 rounded-xl flex items-center justify-center gap-2 shadow-2xs"
                         >
-                          <RefreshCw className="mr-2 h-3.5 w-3.5" />
-                          Already completed in Meta popup? Refresh connection status
+                          <ExternalLink className="h-4 w-4 text-[#5F7C65] shrink-0" />
+                          <span>Launch Meta Authorization Window</span>
                         </Button>
-                      </div>
-                    )}
 
-                    {embeddedError && (
-                      <div className="p-4 rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 flex items-start gap-3">
-                        <AlertCircle className="h-5 w-5 text-red-600 mt-0.5 flex-shrink-0" />
-                        <div className="text-sm">
-                          <p className="font-medium text-red-900 dark:text-red-100">Connection Failed</p>
-                          <p className="text-xs text-red-700 dark:text-red-300">{embeddedError}</p>
-                        </div>
-                      </div>
-                    )}
-
-                    {embeddedSuccess && (
-                      <div className="p-4 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 flex items-center gap-3">
-                        <CheckCircle2 className="h-5 w-5 text-emerald-600 flex-shrink-0" />
-                        <p className="text-sm font-medium text-emerald-900 dark:text-emerald-100">
-                          WhatsApp connected successfully! Loading your account...
-                        </p>
-                      </div>
-                    )}
-
-                    {/* Main Connect Buttons */}
-                    <div className="space-y-3 pt-2">
-                      <button
-                        type="button"
-                        id="connect-whatsapp-btn"
-                        onClick={handleLaunchEmbeddedSignup}
-                        disabled={connectingEmbedded}
-                        className="w-full py-4 px-6 text-base sm:text-lg font-bold text-white rounded-xl shadow-lg hover:shadow-xl hover:brightness-110 active:scale-[0.99] transition-all flex items-center justify-center gap-3 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed border-0"
-                        style={{
-                          backgroundColor: "#1877F2",
-                          color: "#FFFFFF",
-                        }}
-                      >
-                        {connectingEmbedded ? (
-                          <>
-                            <Loader2 className="h-6 w-6 animate-spin text-white shrink-0" />
-                            <span>{embeddedStep || "Connecting WhatsApp..."}</span>
-                          </>
-                        ) : (
-                          <>
-                            {/* Facebook / Meta F Logo */}
-                            <svg className="h-6 w-6 fill-white shrink-0" viewBox="0 0 24 24">
-                              <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
-                            </svg>
-                            <span>Connect WhatsApp via Facebook</span>
-                          </>
-                        )}
-                      </button>
-
-                      {/* Direct popup button fallback */}
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={handleOpenDirectPopup}
-                        disabled={connectingEmbedded}
-                        className="w-full h-11 text-sm font-medium border-emerald-300 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 flex items-center justify-center gap-2"
-                      >
-                        <ExternalLink className="h-4 w-4 text-emerald-600 shrink-0" />
-                        <span>Launch Meta Authorization Window</span>
-                      </Button>
-
-                      <div className="text-center pt-1">
-                        <p className="text-xs text-muted-foreground">
+                        <p className="text-xs text-stone-500 dark:text-stone-400 text-center">
                           Direct Meta OAuth 2.0 flow. Once authorized, your WhatsApp account is linked in under 60 seconds.
                         </p>
                       </div>
                     </div>
-                  </CardContent>
 
-                  <CardFooter className="border-t bg-muted/20 text-center py-4 text-xs text-muted-foreground flex flex-col gap-1">
-                    <p>
-                      App ID: <span className="font-mono">{META_APP_ID}</span> | Login Config: <span className="font-mono">{META_CONFIG_ID}</span>
-                    </p>
-                    <p>Powered by Meta Facebook Login for Business & WhatsApp Cloud API v23.0</p>
-                  </CardFooter>
-                </Card>
+                    <div className="mt-8 pt-4 border-t border-stone-200/70 dark:border-stone-800/70 text-center text-xs text-stone-500 dark:text-stone-400 space-y-1">
+                      <p>
+                        App ID: <span className="font-mono">{META_APP_ID}</span> | Login Config: <span className="font-mono">{META_CONFIG_ID}</span>
+                      </p>
+                      <p>Powered by Meta Facebook Login for Business &amp; WhatsApp Cloud API v23.0</p>
+                    </div>
+                  </div>
+                </div>
               </TabsContent>
 
               {/* ============================================================= */}
@@ -1540,28 +1330,30 @@ export default function SetupPage() {
               <TabsContent value="manual" className="space-y-6 focus-visible:outline-none">
                 <div className="grid md:grid-cols-2 gap-6">
                   {/* Access Token Configuration */}
-                  <Card className="shadow-lg">
-                    <CardHeader>
-                      <CardTitle className="text-xl flex items-center gap-2">
-                        <span>Access Token Configuration</span>
-                        {settings?.access_token_added && (
-                          <CheckCircle2 className="h-5 w-5 text-emerald-600" />
-                        )}
-                      </CardTitle>
-                      <CardDescription>
-                        Manually provide credentials from your Meta Business Suite
-                      </CardDescription>
-                    </CardHeader>
+                  <div className="rounded-2xl border border-stone-200/80 dark:border-stone-800/80 bg-white/80 dark:bg-stone-900/70 backdrop-blur-md shadow-[0_4px_20px_-4px_rgba(30,45,35,0.06)] p-1.5">
+                    <div className="rounded-[calc(1rem-0.125rem)] bg-[#FAF8F5]/80 dark:bg-stone-900/90 p-5 sm:p-6 border border-stone-200/60 dark:border-stone-800/60 space-y-4">
+                      <div>
+                        <div className="flex items-center justify-between">
+                          <h3 className="text-base sm:text-lg font-semibold tracking-tight text-stone-900 dark:text-stone-100 flex items-center gap-2">
+                            <span>Access Token Configuration</span>
+                            {settings?.access_token_added && (
+                              <CheckCircle2 className="h-4 w-4 text-[#5F7C65]" />
+                            )}
+                          </h3>
+                        </div>
+                        <p className="text-xs text-stone-500 dark:text-stone-400 mt-1">
+                          Manually provide credentials from your Meta Business Suite
+                        </p>
+                      </div>
 
-                    <CardContent>
                       <form onSubmit={handleSaveAccessToken} className="space-y-4">
-                        <div className="space-y-2">
-                          <div className="flex items-center gap-2">
-                            <Label htmlFor="access-token">Access Token *</Label>
+                        <div className="space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <Label htmlFor="access-token" className="text-xs font-medium text-stone-700 dark:text-stone-300">Access Token *</Label>
                             {settings?.has_access_token && (
-                              <Badge variant="secondary" className="text-xs">
+                              <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full bg-[#5F7C65]/10 text-[#2D583F] dark:text-[#8EAE95]">
                                 Configured
-                              </Badge>
+                              </span>
                             )}
                           </div>
                           <div className="relative flex items-center gap-2">
@@ -1579,7 +1371,7 @@ export default function SetupPage() {
                                   setAccessToken(e.target.value);
                                 }
                               }}
-                              className="font-mono text-sm pr-20"
+                              className="font-mono text-sm pr-20 rounded-xl border-stone-300 dark:border-stone-700 focus-visible:ring-[#5F7C65]"
                             />
                             {accessToken && (
                               <div className="absolute right-2 flex items-center gap-1">
@@ -1587,45 +1379,45 @@ export default function SetupPage() {
                                   type="button"
                                   variant="ghost"
                                   size="icon"
-                                  className="h-8 w-8"
+                                  className="h-7 w-7 rounded-lg text-stone-500 hover:text-stone-900"
                                   onClick={() => setShowAccessToken(!showAccessToken)}
                                   title={showAccessToken ? "Hide token" : "Show token"}
                                 >
                                   {showAccessToken ? (
-                                    <EyeOff className="h-4 w-4" />
+                                    <EyeOff className="h-3.5 w-3.5" />
                                   ) : (
-                                    <Eye className="h-4 w-4" />
+                                    <Eye className="h-3.5 w-3.5" />
                                   )}
                                 </Button>
                                 <Button
                                   type="button"
                                   variant="ghost"
                                   size="icon"
-                                  className="h-8 w-8"
+                                  className="h-7 w-7 rounded-lg text-stone-500 hover:text-stone-900"
                                   onClick={() => copyToClipboard(accessToken, "access")}
                                   title="Copy token"
                                 >
                                   {copiedAccessToken ? (
-                                    <Check className="h-4 w-4 text-emerald-600" />
+                                    <Check className="h-3.5 w-3.5 text-[#5F7C65]" />
                                   ) : (
-                                    <Copy className="h-4 w-4" />
+                                    <Copy className="h-3.5 w-3.5" />
                                   )}
                                 </Button>
                               </div>
                             )}
                           </div>
-                          <p className="text-xs text-muted-foreground">
+                          <p className="text-[11px] text-stone-500 dark:text-stone-400">
                             System User or temporary token from Meta Business Manager
                           </p>
                         </div>
 
-                        <div className="space-y-2">
-                          <div className="flex items-center gap-2">
-                            <Label htmlFor="phone-number-id">Phone Number ID *</Label>
+                        <div className="space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <Label htmlFor="phone-number-id" className="text-xs font-medium text-stone-700 dark:text-stone-300">Phone Number ID *</Label>
                             {settings?.has_phone_number_id && (
-                              <Badge variant="secondary" className="text-xs">
+                              <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full bg-[#5F7C65]/10 text-[#2D583F] dark:text-[#8EAE95]">
                                 Configured
-                              </Badge>
+                              </span>
                             )}
                           </div>
                           <Input
@@ -1634,20 +1426,20 @@ export default function SetupPage() {
                             placeholder="Enter your Phone Number ID"
                             value={phoneNumberId}
                             onChange={(e) => setPhoneNumberId(e.target.value)}
-                            className="font-mono text-sm"
+                            className="font-mono text-sm rounded-xl border-stone-300 dark:border-stone-700 focus-visible:ring-[#5F7C65]"
                           />
-                          <p className="text-xs text-muted-foreground">
+                          <p className="text-[11px] text-stone-500 dark:text-stone-400">
                             Found in WhatsApp API Setup in Meta App Dashboard
                           </p>
                         </div>
 
-                        <div className="space-y-2">
-                          <div className="flex items-center gap-2">
-                            <Label htmlFor="business-account-id">Business Account ID *</Label>
+                        <div className="space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <Label htmlFor="business-account-id" className="text-xs font-medium text-stone-700 dark:text-stone-300">Business Account ID *</Label>
                             {settings?.has_business_account_id && (
-                              <Badge variant="secondary" className="text-xs">
+                              <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full bg-[#5F7C65]/10 text-[#2D583F] dark:text-[#8EAE95]">
                                 Configured
-                              </Badge>
+                              </span>
                             )}
                           </div>
                           <Input
@@ -1656,45 +1448,45 @@ export default function SetupPage() {
                             placeholder="Enter your WhatsApp Business Account ID"
                             value={businessAccountId}
                             onChange={(e) => setBusinessAccountId(e.target.value)}
-                            className="font-mono text-sm"
+                            className="font-mono text-sm rounded-xl border-stone-300 dark:border-stone-700 focus-visible:ring-[#5F7C65]"
                           />
-                          <p className="text-xs text-muted-foreground">
+                          <p className="text-[11px] text-stone-500 dark:text-stone-400">
                             Your WhatsApp Business Account (WABA) ID
                           </p>
                         </div>
 
-                        <div className="space-y-2">
-                          <Label htmlFor="api-version">API Version</Label>
+                        <div className="space-y-1.5">
+                          <Label htmlFor="api-version" className="text-xs font-medium text-stone-700 dark:text-stone-300">API Version</Label>
                           <Input
                             id="api-version"
                             type="text"
                             placeholder="v23.0"
                             value={apiVersion}
                             onChange={(e) => setApiVersion(e.target.value)}
-                            className="font-mono text-sm"
+                            className="font-mono text-sm rounded-xl border-stone-300 dark:border-stone-700 focus-visible:ring-[#5F7C65]"
                           />
-                          <p className="text-xs text-muted-foreground">
+                          <p className="text-[11px] text-stone-500 dark:text-stone-400">
                             Default: v23.0
                           </p>
                         </div>
 
                         {accessTokenError && (
-                          <div className="text-sm text-red-600 bg-red-50 dark:bg-red-950/20 p-3 rounded-lg flex items-start gap-2">
-                            <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                          <div className="text-xs text-red-600 bg-red-500/10 p-3 rounded-xl border border-red-500/20 flex items-start gap-2">
+                            <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
                             <span>{accessTokenError}</span>
                           </div>
                         )}
 
                         {accessTokenSuccess && (
-                          <div className="text-sm text-emerald-600 bg-emerald-50 dark:bg-emerald-950/20 p-3 rounded-lg flex items-center gap-2">
-                            <CheckCircle2 className="h-4 w-4" />
+                          <div className="text-xs text-[#2D583F] dark:text-[#8EAE95] bg-[#5F7C65]/10 p-3 rounded-xl border border-[#5F7C65]/20 flex items-center gap-2">
+                            <CheckCircle2 className="h-4 w-4 text-[#5F7C65]" />
                             <span>Access token saved successfully!</span>
                           </div>
                         )}
 
                         <Button
                           type="submit"
-                          className="w-full bg-emerald-600 hover:bg-emerald-700 text-white"
+                          className="w-full rounded-xl bg-[#5F7C65] hover:bg-[#526D57] text-white shadow-[inset_0_1px_2px_0_rgba(255,255,255,0.2),inset_0_-1px_2px_0_rgba(0,0,0,0.18)] transition-all active:scale-[0.98] text-xs sm:text-sm font-medium h-9"
                           disabled={savingAccessToken}
                         >
                           {savingAccessToken ? (
@@ -1707,39 +1499,41 @@ export default function SetupPage() {
                           )}
                         </Button>
                       </form>
-                    </CardContent>
-                  </Card>
+                    </div>
+                  </div>
 
                   {/* Webhook Configuration */}
-                  <Card className="shadow-lg">
-                    <CardHeader>
-                      <CardTitle className="text-xl flex items-center gap-2">
-                        <span>Webhook Setup</span>
-                        {settings?.webhook_verified && (
-                          <CheckCircle2 className="h-5 w-5 text-emerald-600" />
-                        )}
-                      </CardTitle>
-                      <CardDescription>
-                        Required for receiving incoming WhatsApp messages
-                      </CardDescription>
-                    </CardHeader>
+                  <div className="rounded-2xl border border-stone-200/80 dark:border-stone-800/80 bg-white/80 dark:bg-stone-900/70 backdrop-blur-md shadow-[0_4px_20px_-4px_rgba(30,45,35,0.06)] p-1.5">
+                    <div className="rounded-[calc(1rem-0.125rem)] bg-[#FAF8F5]/80 dark:bg-stone-900/90 p-5 sm:p-6 border border-stone-200/60 dark:border-stone-800/60 space-y-4">
+                      <div>
+                        <div className="flex items-center justify-between">
+                          <h3 className="text-base sm:text-lg font-semibold tracking-tight text-stone-900 dark:text-stone-100 flex items-center gap-2">
+                            <span>Webhook Setup</span>
+                            {settings?.webhook_verified && (
+                              <CheckCircle2 className="h-4 w-4 text-[#5F7C65]" />
+                            )}
+                          </h3>
+                        </div>
+                        <p className="text-xs text-stone-500 dark:text-stone-400 mt-1">
+                          Required for receiving incoming WhatsApp messages
+                        </p>
+                      </div>
 
-                    <CardContent>
                       <form onSubmit={handleSaveWebhook} className="space-y-4">
                         {/* Webhook URL */}
-                        <div className="space-y-2">
-                          <div className="flex items-center gap-2">
-                            <Label>Webhook Callback URL</Label>
-                            <Badge variant="secondary" className="text-xs">
+                        <div className="space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <Label className="text-xs font-medium text-stone-700 dark:text-stone-300">Webhook Callback URL</Label>
+                            <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full bg-stone-200/70 dark:bg-stone-800 text-stone-600 dark:text-stone-400">
                               Unique to You
-                            </Badge>
+                            </span>
                           </div>
                           <div className="flex gap-2">
                             <Input
                               type="text"
                               value={webhookUrl || "Generating unique webhook URL..."}
                               readOnly
-                              className="font-mono text-sm bg-muted"
+                              className="font-mono text-xs bg-stone-100/80 dark:bg-stone-800/60 rounded-xl border-stone-300 dark:border-stone-700"
                             />
                             <Button
                               type="button"
@@ -1747,27 +1541,28 @@ export default function SetupPage() {
                               size="icon"
                               onClick={() => copyToClipboard(webhookUrl, "webhook")}
                               disabled={!webhookUrl}
+                              className="rounded-xl border-stone-300 dark:border-stone-700 shrink-0"
                             >
                               {copiedWebhookUrl ? (
-                                <Check className="h-4 w-4 text-emerald-600" />
+                                <Check className="h-4 w-4 text-[#5F7C65]" />
                               ) : (
                                 <Copy className="h-4 w-4" />
                               )}
                             </Button>
                           </div>
-                          <p className="text-xs text-muted-foreground">
+                          <p className="text-[11px] text-stone-500 dark:text-stone-400">
                             Copy this URL to your Meta Webhooks configuration
                           </p>
                         </div>
 
                         {/* Verify Token */}
-                        <div className="space-y-2">
-                          <div className="flex items-center gap-2">
-                            <Label htmlFor="verify-token">Verify Token *</Label>
+                        <div className="space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <Label htmlFor="verify-token" className="text-xs font-medium text-stone-700 dark:text-stone-300">Verify Token *</Label>
                             {settings?.has_verify_token && (
-                              <Badge variant="secondary" className="text-xs">
+                              <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full bg-[#5F7C65]/10 text-[#2D583F] dark:text-[#8EAE95]">
                                 Configured
-                              </Badge>
+                              </span>
                             )}
                           </div>
                           <div className="flex gap-2">
@@ -1777,7 +1572,7 @@ export default function SetupPage() {
                               placeholder="Enter a secure verify token"
                               value={verifyToken}
                               onChange={(e) => setVerifyToken(e.target.value)}
-                              className="font-mono text-sm"
+                              className="font-mono text-sm rounded-xl border-stone-300 dark:border-stone-700 focus-visible:ring-[#5F7C65]"
                             />
                             {verifyToken && (
                               <Button
@@ -1785,48 +1580,49 @@ export default function SetupPage() {
                                 variant="outline"
                                 size="icon"
                                 onClick={() => copyToClipboard(verifyToken, "verify")}
+                                className="rounded-xl border-stone-300 dark:border-stone-700 shrink-0"
                               >
                                 {copiedVerifyToken ? (
-                                  <Check className="h-4 w-4 text-emerald-600" />
+                                  <Check className="h-4 w-4 text-[#5F7C65]" />
                                 ) : (
                                   <Copy className="h-4 w-4" />
                                 )}
                               </Button>
                             )}
                           </div>
-                          <p className="text-xs text-muted-foreground">
+                          <p className="text-[11px] text-stone-500 dark:text-stone-400">
                             Custom string matched when Meta verifies your webhook
                           </p>
                         </div>
 
                         {/* Quick steps */}
-                        <div className="bg-muted/50 p-4 rounded-xl space-y-2 text-xs">
-                          <p className="font-semibold text-foreground">Steps in Meta Dashboard:</p>
-                          <ol className="list-decimal list-inside space-y-1 text-muted-foreground">
+                        <div className="bg-[#FAF8F5]/90 dark:bg-stone-950/40 p-3.5 rounded-xl border border-stone-200/70 dark:border-stone-800/70 space-y-1.5 text-xs">
+                          <p className="font-semibold text-stone-900 dark:text-stone-100">Steps in Meta Dashboard:</p>
+                          <ol className="list-decimal list-inside space-y-1 text-stone-600 dark:text-stone-400 text-[11px]">
                             <li>Go to Meta App Dashboard → WhatsApp → Configuration</li>
                             <li>Paste the Webhook Callback URL and Verify Token</li>
                             <li>Click &quot;Verify and Save&quot; in Meta</li>
-                            <li>Subscribe to the <span className="font-mono">messages</span> field</li>
+                            <li>Subscribe to the <span className="font-mono font-semibold">messages</span> field</li>
                           </ol>
                         </div>
 
                         {webhookError && (
-                          <div className="text-sm text-red-600 bg-red-50 dark:bg-red-950/20 p-3 rounded-lg flex items-start gap-2">
-                            <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                          <div className="text-xs text-red-600 bg-red-500/10 p-3 rounded-xl border border-red-500/20 flex items-start gap-2">
+                            <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
                             <span>{webhookError}</span>
                           </div>
                         )}
 
                         {webhookSuccess && (
-                          <div className="text-sm text-emerald-600 bg-emerald-50 dark:bg-emerald-950/20 p-3 rounded-lg flex items-center gap-2">
-                            <CheckCircle2 className="h-4 w-4" />
+                          <div className="text-xs text-[#2D583F] dark:text-[#8EAE95] bg-[#5F7C65]/10 p-3 rounded-xl border border-[#5F7C65]/20 flex items-center gap-2">
+                            <CheckCircle2 className="h-4 w-4 text-[#5F7C65]" />
                             <span>Webhook configuration saved!</span>
                           </div>
                         )}
 
                         <Button
                           type="submit"
-                          className="w-full bg-emerald-600 hover:bg-emerald-700 text-white"
+                          className="w-full rounded-xl bg-[#5F7C65] hover:bg-[#526D57] text-white shadow-[inset_0_1px_2px_0_rgba(255,255,255,0.2),inset_0_-1px_2px_0_rgba(0,0,0,0.18)] transition-all active:scale-[0.98] text-xs sm:text-sm font-medium h-9"
                           disabled={savingWebhook}
                         >
                           {savingWebhook ? (
@@ -1839,69 +1635,6 @@ export default function SetupPage() {
                           )}
                         </Button>
                       </form>
-                    </CardContent>
-                  </Card>
-
-                  {/* Real-Time Message Status Receipts & Permissions Showcase */}
-                  <div className="mt-4 p-4 rounded-xl bg-gradient-to-r from-emerald-500/5 via-teal-500/5 to-sky-500/5 border border-emerald-500/20 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                        <h4 className="text-sm font-semibold text-foreground">
-                          Real-Time Delivery Receipts &amp; Permissions
-                        </h4>
-                      </div>
-                      <Badge className="bg-emerald-600 text-white text-[10px]">
-                        Active in Chat
-                      </Badge>
-                    </div>
-
-                    <p className="text-xs text-muted-foreground leading-relaxed">
-                      WaChat listens to WhatsApp Cloud API webhooks (the <code className="text-[11px] font-mono bg-muted px-1.5 py-0.5 rounded">messages</code> subscription) to update message delivery statuses in real-time.
-                    </p>
-
-                    {/* Status Indicators Legend */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
-                      <div className="flex items-center gap-2 p-2 rounded-lg bg-background border text-xs">
-                        <Check className="h-3.5 w-3.5 text-muted-foreground" />
-                        <div>
-                          <span className="font-semibold block text-[11px]">Sent</span>
-                          <span className="text-[10px] text-muted-foreground">Unseen (Single Tick)</span>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2 p-2 rounded-lg bg-background border text-xs">
-                        <CheckCheck className="h-3.5 w-3.5 text-muted-foreground" />
-                        <div>
-                          <span className="font-semibold block text-[11px]">Delivered</span>
-                          <span className="text-[10px] text-muted-foreground">Unseen (Double Tick)</span>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2 p-2 rounded-lg bg-background border text-xs">
-                        <CheckCheck className="h-3.5 w-3.5 text-[#53bdeb]" />
-                        <div>
-                          <span className="font-semibold block text-[11px] text-sky-600 dark:text-sky-400">Seen</span>
-                          <span className="text-[10px] text-muted-foreground">Read (Blue Ticks)</span>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2 p-2 rounded-lg bg-background border text-xs">
-                        <AlertCircle className="h-3.5 w-3.5 text-red-500" />
-                        <div>
-                          <span className="font-semibold block text-[11px] text-red-600 dark:text-red-400">Failed</span>
-                          <span className="text-[10px] text-muted-foreground">Undelivered Mark</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Permissions summary */}
-                    <div className="pt-2 border-t border-border flex flex-wrap gap-2 text-[11px] text-muted-foreground items-center justify-between">
-                      <span className="flex items-center gap-1.5">
-                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
-                        Meta Scopes: <code className="font-mono text-[10px] bg-muted px-1 rounded">whatsapp_business_messaging</code>, <code className="font-mono text-[10px] bg-muted px-1 rounded">whatsapp_business_management</code>
-                      </span>
-                      <span className="italic text-[10px]">Broadcast messages include seen popups on click</span>
                     </div>
                   </div>
                 </div>
@@ -1912,30 +1645,33 @@ export default function SetupPage() {
 
         {/* Confirmation Dialog for Disconnecting */}
         <Dialog open={disconnectDialogOpen} onOpenChange={setDisconnectDialogOpen}>
-          <DialogContent className="sm:max-w-md">
+          <DialogContent className="sm:max-w-md rounded-2xl border border-stone-200/80 dark:border-stone-800/80 bg-white/95 dark:bg-stone-900/95 backdrop-blur-md p-6">
             <DialogHeader>
-              <div className="mx-auto h-12 w-12 rounded-full bg-red-100 dark:bg-red-950/50 flex items-center justify-center text-red-600 mb-2">
+              <div className="mx-auto size-12 rounded-2xl bg-red-50 dark:bg-red-950/40 border border-red-200/60 dark:border-red-900/40 flex items-center justify-center text-red-600 dark:text-red-400 mb-2">
                 <Unplug className="h-6 w-6" />
               </div>
-              <DialogTitle className="text-center text-xl">Disconnect WhatsApp Account?</DialogTitle>
-              <DialogDescription className="text-center text-sm">
+              <DialogTitle className="text-center text-lg font-semibold tracking-tight text-stone-900 dark:text-stone-100">
+                Disconnect WhatsApp Account?
+              </DialogTitle>
+              <DialogDescription className="text-center text-xs sm:text-sm text-stone-500 dark:text-stone-400 leading-relaxed">
                 Are you sure you want to disconnect this WhatsApp number? You will not be able to send or receive messages in WaChat until you reconnect.
               </DialogDescription>
             </DialogHeader>
 
             {disconnectError && (
-              <div className="p-3 rounded-lg bg-red-50 dark:bg-red-950/30 text-red-600 text-xs flex items-center gap-2">
-                <AlertCircle className="h-4 w-4 flex-shrink-0" />
+              <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-700 dark:text-red-300 text-xs flex items-center gap-2">
+                <AlertCircle className="h-4 w-4 flex-shrink-0 text-red-600" />
                 <span>{disconnectError}</span>
               </div>
             )}
 
-            <DialogFooter className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 pt-2">
+            <DialogFooter className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 pt-3 border-t border-stone-200/70 dark:border-stone-800/70">
               <Button
                 type="button"
                 variant="outline"
                 onClick={() => setDisconnectDialogOpen(false)}
                 disabled={disconnecting}
+                className="rounded-xl border border-stone-300 dark:border-stone-700 text-stone-700 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-800 text-xs font-medium h-9 px-4"
               >
                 Cancel
               </Button>
@@ -1944,6 +1680,7 @@ export default function SetupPage() {
                 variant="destructive"
                 onClick={handleDisconnect}
                 disabled={disconnecting}
+                className="rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-medium h-9 px-4 shadow-sm"
               >
                 {disconnecting ? (
                   <>

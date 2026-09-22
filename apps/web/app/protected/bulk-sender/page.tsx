@@ -2,33 +2,45 @@
 
 import { useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Toaster, toast } from "@/components/ui/toast";
+import LogoIcon from "@/components/logo-icon";
+import { MediaPickerDialog } from "@/components/media-picker-dialog";
 import {
   Upload,
   Download,
   FileText,
   CheckCircle2,
-  AlertCircle,
   Loader2,
   Send,
   Users,
   MessageSquareText,
   XCircle,
-  Eye,
   Plus,
   Trash2,
-  ImageIcon
+  Image as ImageIcon,
+  Video,
+  Hash,
+  Clock,
+  AlertTriangle,
+  RotateCcw,
+  Search,
+  Check,
+  ShieldCheck,
+  Calendar,
+  X,
+  User,
+  Phone,
+  UserPlus,
 } from "lucide-react";
-import { MediaPickerDialog } from "@/components/media-picker-dialog";
 
 interface Contact {
   name: string;
   phone_number: string;
   isValid: boolean;
   error?: string;
+  country?: string;
 }
 
 interface TemplateComponent {
@@ -95,23 +107,27 @@ export default function BulkSenderPage() {
   }>({
     header: {},
     body: {},
-    footer: {}
+    footer: {},
   });
   const [mediaUrl, setMediaUrl] = useState<string>("");
   const [mediaId, setMediaId] = useState<string>("");
   const [mediaInputType, setMediaInputType] = useState<"url" | "id">("url");
   const [mediaPickerOpen, setMediaPickerOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const [contactSearch, setContactSearch] = useState("");
+  const [resultsFilter, setResultsFilter] = useState<"ALL" | "SUCCESS" | "FAILED">("ALL");
 
   // Batch configuration
   const [batchSize, setBatchSize] = useState<number>(10);
   const [batchDelay, setBatchDelay] = useState<number>(5); // seconds
-  const [batches, setBatches] = useState<Array<{
-    id: number;
-    contacts: Contact[];
-    status: 'pending' | 'sending' | 'completed' | 'failed';
-    results: SendResult[];
-  }>>([]);
+  const [batches, setBatches] = useState<
+    Array<{
+      id: number;
+      contacts: Contact[];
+      status: "pending" | "sending" | "completed" | "failed";
+      results: SendResult[];
+    }>
+  >([]);
   const [currentBatchIndex, setCurrentBatchIndex] = useState<number>(-1);
   const [currentContactInBatch, setCurrentContactInBatch] = useState<number>(0);
   const [totalContactsInCurrentBatch, setTotalContactsInCurrentBatch] = useState<number>(0);
@@ -133,112 +149,237 @@ export default function BulkSenderPage() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const validatePhoneNumber = (phone: string): { isValid: boolean; error?: string } => {
-    // Remove all spaces and non-digit characters
-    const cleanPhone = phone.replace(/\s+/g, '').replace(/[^\d]/g, '');
+  // Country-specific phone validation rules based on ITU-T E.164
+  // Sorted with longest country codes first so prefixes are matched accurately
+  const COUNTRY_PHONE_RULES = [
+    // 3-digit country codes
+    { country: "United Arab Emirates", code: "971", minNationalDigits: 8, maxNationalDigits: 9, example: "971501234567" },
+    { country: "Saudi Arabia", code: "966", minNationalDigits: 9, maxNationalDigits: 9, example: "966501234567" },
+    { country: "Hong Kong", code: "852", minNationalDigits: 8, maxNationalDigits: 8, example: "85291234567" },
+    { country: "Taiwan", code: "886", minNationalDigits: 8, maxNationalDigits: 9, example: "886912345678" },
+    { country: "Ireland", code: "353", minNationalDigits: 8, maxNationalDigits: 9, example: "353871234567" },
+    { country: "Portugal", code: "351", minNationalDigits: 9, maxNationalDigits: 9, example: "351912345678" },
+    { country: "Finland", code: "358", minNationalDigits: 7, maxNationalDigits: 10, example: "358401234567" },
+    { country: "Nepal", code: "977", minNationalDigits: 10, maxNationalDigits: 10, example: "9779812345678" },
+    { country: "Bangladesh", code: "880", minNationalDigits: 10, maxNationalDigits: 10, example: "8801712345678" },
+    { country: "Qatar", code: "974", minNationalDigits: 8, maxNationalDigits: 8, example: "97433123456" },
+    { country: "Kuwait", code: "965", minNationalDigits: 8, maxNationalDigits: 8, example: "96591234567" },
+    { country: "Oman", code: "968", minNationalDigits: 8, maxNationalDigits: 8, example: "96891234567" },
+    { country: "Bahrain", code: "973", minNationalDigits: 8, maxNationalDigits: 8, example: "97339123456" },
+    { country: "Nigeria", code: "234", minNationalDigits: 10, maxNationalDigits: 10, example: "2348012345678" },
+    { country: "Kenya", code: "254", minNationalDigits: 9, maxNationalDigits: 9, example: "254712345678" },
+    { country: "Ghana", code: "233", minNationalDigits: 9, maxNationalDigits: 9, example: "233241234567" },
+    { country: "Israel", code: "972", minNationalDigits: 8, maxNationalDigits: 9, example: "972501234567" },
 
-    // Check if phone number has country code and 10 digits
-    // Format should be like: 919876543210 (country code + 10 digits)
-    if (!/^\d{11,15}$/.test(cleanPhone)) {
+    // 2-digit country codes
+    { country: "New Zealand", code: "64", minNationalDigits: 8, maxNationalDigits: 9, example: "6448888202 or 6421123456" },
+    { country: "Australia", code: "61", minNationalDigits: 9, maxNationalDigits: 9, example: "61412345678" },
+    { country: "Singapore", code: "65", minNationalDigits: 8, maxNationalDigits: 8, example: "6581234567" },
+    { country: "United Kingdom", code: "44", minNationalDigits: 9, maxNationalDigits: 10, example: "447911123456" },
+    { country: "India", code: "91", minNationalDigits: 10, maxNationalDigits: 10, example: "919876543210" },
+    { country: "Germany", code: "49", minNationalDigits: 7, maxNationalDigits: 12, example: "4915123456789" },
+    { country: "France", code: "33", minNationalDigits: 9, maxNationalDigits: 9, example: "33612345678" },
+    { country: "Spain", code: "34", minNationalDigits: 9, maxNationalDigits: 9, example: "34612345678" },
+    { country: "Italy", code: "39", minNationalDigits: 9, maxNationalDigits: 11, example: "393123456789" },
+    { country: "China", code: "86", minNationalDigits: 10, maxNationalDigits: 11, example: "8613912345678" },
+    { country: "Japan", code: "81", minNationalDigits: 9, maxNationalDigits: 10, example: "819012345678" },
+    { country: "South Korea", code: "82", minNationalDigits: 8, maxNationalDigits: 10, example: "821012345678" },
+    { country: "Brazil", code: "55", minNationalDigits: 10, maxNationalDigits: 11, example: "5511912345678" },
+    { country: "Mexico", code: "52", minNationalDigits: 10, maxNationalDigits: 10, example: "525512345678" },
+    { country: "South Africa", code: "27", minNationalDigits: 9, maxNationalDigits: 9, example: "27821234567" },
+    { country: "Pakistan", code: "92", minNationalDigits: 10, maxNationalDigits: 10, example: "923001234567" },
+    { country: "Indonesia", code: "62", minNationalDigits: 9, maxNationalDigits: 12, example: "628123456789" },
+    { country: "Malaysia", code: "60", minNationalDigits: 8, maxNationalDigits: 10, example: "60123456789" },
+    { country: "Philippines", code: "63", minNationalDigits: 10, maxNationalDigits: 10, example: "639171234567" },
+    { country: "Vietnam", code: "84", minNationalDigits: 9, maxNationalDigits: 10, example: "84901234567" },
+    { country: "Thailand", code: "66", minNationalDigits: 8, maxNationalDigits: 9, example: "66812345678" },
+    { country: "Netherlands", code: "31", minNationalDigits: 9, maxNationalDigits: 9, example: "31612345678" },
+    { country: "Belgium", code: "32", minNationalDigits: 8, maxNationalDigits: 9, example: "32470123456" },
+    { country: "Switzerland", code: "41", minNationalDigits: 9, maxNationalDigits: 9, example: "41791234567" },
+    { country: "Austria", code: "43", minNationalDigits: 8, maxNationalDigits: 12, example: "436641234567" },
+    { country: "Sweden", code: "46", minNationalDigits: 8, maxNationalDigits: 10, example: "46701234567" },
+    { country: "Norway", code: "47", minNationalDigits: 8, maxNationalDigits: 8, example: "4741234567" },
+    { country: "Denmark", code: "45", minNationalDigits: 8, maxNationalDigits: 8, example: "4520123456" },
+    { country: "Poland", code: "48", minNationalDigits: 9, maxNationalDigits: 9, example: "48501234567" },
+    { country: "Greece", code: "30", minNationalDigits: 10, maxNationalDigits: 10, example: "306912345678" },
+    { country: "Turkey", code: "90", minNationalDigits: 10, maxNationalDigits: 10, example: "905321234567" },
+    { country: "Egypt", code: "20", minNationalDigits: 9, maxNationalDigits: 10, example: "201012345678" },
+    { country: "Sri Lanka", code: "94", minNationalDigits: 9, maxNationalDigits: 9, example: "94712345678" },
+    { country: "Argentina", code: "54", minNationalDigits: 10, maxNationalDigits: 11, example: "5491112345678" },
+    { country: "Chile", code: "56", minNationalDigits: 9, maxNationalDigits: 9, example: "56912345678" },
+    { country: "Colombia", code: "57", minNationalDigits: 10, maxNationalDigits: 10, example: "573001234567" },
+    { country: "Peru", code: "51", minNationalDigits: 9, maxNationalDigits: 9, example: "51912345678" },
+
+    // 1-digit country codes
+    { country: "United States / Canada", code: "1", minNationalDigits: 10, maxNationalDigits: 10, example: "14155552671" },
+  ];
+
+  const validatePhoneNumber = (
+    phone: string
+  ): { isValid: boolean; error?: string; country?: string; formatted?: string } => {
+    if (!phone || typeof phone !== "string") {
+      return { isValid: false, error: "Phone number is required" };
+    }
+
+    // 1. Normalize: remove spaces, dashes, parentheses, dots
+    let clean = phone.trim().replace(/[\s\-\(\)\.]/g, "");
+
+    // 2. Remove leading + or 00 international exit code
+    if (clean.startsWith("+")) {
+      clean = clean.substring(1);
+    } else if (clean.startsWith("00")) {
+      clean = clean.substring(2);
+    }
+
+    // 3. Must only contain digits
+    if (!/^\d+$/.test(clean)) {
       return {
         isValid: false,
-        error: "Phone number must include country code and 10 digits (e.g., 919876543210)"
+        error: "Phone number must contain only numeric digits",
       };
     }
 
-    // Check if it starts with a valid country code (at least 1 digit)
-    if (cleanPhone.length < 11) {
+    // 4. International ITU-T E.164 bounds (7 to 15 digits total)
+    if (clean.length < 7) {
       return {
         isValid: false,
-        error: "Phone number too short. Must include country code and 10 digits"
+        error: `Phone number is too short (${clean.length} digits). Minimum 7 digits with country code required.`,
       };
     }
 
-    return { isValid: true };
+    if (clean.length > 15) {
+      return {
+        isValid: false,
+        error: `Phone number is too long (${clean.length} digits). Maximum 15 digits allowed under E.164.`,
+      };
+    }
+
+    // 5. Match against country code rules (sorted longest code first)
+    const matchedRule = COUNTRY_PHONE_RULES.find((rule) => clean.startsWith(rule.code));
+
+    if (matchedRule) {
+      let nationalNumber = clean.substring(matchedRule.code.length);
+
+      // Auto-strip domestic trunk zero (e.g., +64 04 888 8202 -> 6448888202)
+      if (
+        nationalNumber.startsWith("0") &&
+        nationalNumber.length - 1 >= matchedRule.minNationalDigits &&
+        nationalNumber.length - 1 <= matchedRule.maxNationalDigits
+      ) {
+        nationalNumber = nationalNumber.substring(1);
+        clean = matchedRule.code + nationalNumber;
+      }
+
+      const nationalLength = nationalNumber.length;
+
+      if (nationalLength < matchedRule.minNationalDigits) {
+        return {
+          isValid: false,
+          error: `${matchedRule.country} (+${matchedRule.code}) requires at least ${matchedRule.minNationalDigits} digits after country code. Found ${nationalLength}. (e.g. ${matchedRule.example})`,
+          country: matchedRule.country,
+          formatted: clean,
+        };
+      }
+
+      if (nationalLength > matchedRule.maxNationalDigits) {
+        return {
+          isValid: false,
+          error: `${matchedRule.country} (+${matchedRule.code}) cannot exceed ${matchedRule.maxNationalDigits} digits after country code. Found ${nationalLength}. (e.g. ${matchedRule.example})`,
+          country: matchedRule.country,
+          formatted: clean,
+        };
+      }
+
+      return {
+        isValid: true,
+        country: matchedRule.country,
+        formatted: clean,
+      };
+    }
+
+    // 6. Generic fallback for other valid ITU E.164 countries
+    return {
+      isValid: true,
+      country: "International",
+      formatted: clean,
+    };
   };
 
-  // Calculate quality-based message limits per Meta's documentation
-  const getQualityInfo = (template: WhatsAppTemplate): { rating: string; limit: number; color: string } => {
-    const qualityScore = template.quality_score as any;
+  const getQualityInfo = (
+    template: WhatsAppTemplate
+  ): { rating: string; limit: number; color: string } => {
+    const qualityScore = template.quality_score as Record<string, unknown> | undefined;
+    const rating = (qualityScore?.score as string) || "UNKNOWN";
 
-    // Check quality score structure from Meta API
-    // quality_score: { score: 'HIGH' | 'MEDIUM' | 'LOW' | 'UNKNOWN', date: timestamp }
-    const rating = qualityScore?.score || 'UNKNOWN';
-
-    let limit = 1000; // Default safe limit
-    let color = 'text-gray-600';
+    let limit = 1000;
+    let color = "text-stone-600 dark:text-stone-400";
 
     switch (rating.toUpperCase()) {
-      case 'HIGH':
-        limit = 100000; // High quality: up to 100K messages/day
-        color = 'text-green-600';
+      case "HIGH":
+        limit = 100000;
+        color = "text-[#2D583F] dark:text-emerald-400";
         break;
-      case 'MEDIUM':
-        limit = 10000; // Medium quality: up to 10K messages/day  
-        color = 'text-yellow-600';
+      case "MEDIUM":
+        limit = 10000;
+        color = "text-amber-600 dark:text-amber-400";
         break;
-      case 'LOW':
-        limit = 1000; // Low quality: up to 1K messages/day
-        color = 'text-orange-600';
+      case "LOW":
+        limit = 1000;
+        color = "text-orange-600 dark:text-orange-400";
         break;
-      case 'PENDING':
-      case 'FLAGGED':
-        limit = 250; // Restricted
-        color = 'text-red-600';
+      case "PENDING":
+      case "FLAGGED":
+        limit = 250;
+        color = "text-red-600 dark:text-red-400";
         break;
       default:
-        limit = 1000; // Unknown/unrated: conservative limit
-        color = 'text-gray-600';
+        limit = 1000;
+        color = "text-stone-600 dark:text-stone-400";
     }
 
     return { rating, limit, color };
   };
 
-  // Create batches from valid contacts
   const createBatches = (validContacts: Contact[]): void => {
     const batchesArray = [];
-    let contactsToProcess = [...validContacts];
+    const contactsToProcess = [...validContacts];
 
-    // Add test number to each batch if enabled
     if (includeSelfTest && testPhoneNumber) {
       const validation = validatePhoneNumber(testPhoneNumber);
       if (validation.isValid) {
         const testContact: Contact = {
-          name: '🧪 Test (You)',
-          phone_number: testPhoneNumber.replace(/\s+/g, '').replace(/[^\d]/g, ''),
-          isValid: true
+          name: "🧪 Test (You)",
+          phone_number: testPhoneNumber.replace(/\s+/g, "").replace(/[^\d]/g, ""),
+          isValid: true,
         };
 
-        // Add test contact to beginning of each batch
         for (let i = 0; i < contactsToProcess.length; i += batchSize) {
           const batchContacts = contactsToProcess.slice(i, i + batchSize);
           batchesArray.push({
             id: batchesArray.length + 1,
             contacts: [testContact, ...batchContacts],
-            status: 'pending' as const,
-            results: []
+            status: "pending" as const,
+            results: [],
           });
         }
       } else {
-        toast('Invalid test phone number format. Skipping self-test.', "warning");
-        // Create batches without test contact
+        toast("Invalid test phone number format. Skipping self-test.", "warning");
         for (let i = 0; i < contactsToProcess.length; i += batchSize) {
           batchesArray.push({
             id: batchesArray.length + 1,
             contacts: contactsToProcess.slice(i, i + batchSize),
-            status: 'pending' as const,
-            results: []
+            status: "pending" as const,
+            results: [],
           });
         }
       }
     } else {
-      // Create batches without test contact
       for (let i = 0; i < contactsToProcess.length; i += batchSize) {
         batchesArray.push({
           id: batchesArray.length + 1,
           contacts: contactsToProcess.slice(i, i + batchSize),
-          status: 'pending' as const,
-          results: []
+          status: "pending" as const,
+          results: [],
         });
       }
     }
@@ -250,7 +391,6 @@ export default function BulkSenderPage() {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    // Reset previous state
     setSelectedFile(file);
     setContacts([]);
     setSelectedTemplate(null);
@@ -261,20 +401,18 @@ export default function BulkSenderPage() {
     reader.onload = (e) => {
       try {
         const text = e.target?.result as string;
-        const lines = text.split('\n').filter(line => line.trim());
+        const lines = text.split("\n").filter((line) => line.trim());
 
-        // Check if CSV has header
         if (lines.length < 2) {
-          toast('CSV file must contain at least a header row and one data row', "error");
+          toast("CSV file must contain at least a header row and one data row", "error");
           setIsProcessing(false);
           setSelectedFile(null);
           return;
         }
 
-        // Parse header
-        const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
-        const nameIndex = headers.findIndex(h => h === 'name');
-        const phoneIndex = headers.findIndex(h => h === 'phone_number' || h === 'phone');
+        const headers = lines[0].split(",").map((h) => h.trim().toLowerCase());
+        const nameIndex = headers.findIndex((h) => h === "name");
+        const phoneIndex = headers.findIndex((h) => h === "phone_number" || h === "phone");
 
         if (nameIndex === -1 || phoneIndex === -1) {
           toast('CSV must contain "name" and "phone_number" columns', "error");
@@ -283,31 +421,29 @@ export default function BulkSenderPage() {
           return;
         }
 
-        // Parse data rows
         const parsedContacts: Contact[] = [];
         for (let i = 1; i < lines.length; i++) {
-          const values = lines[i].split(',').map(v => v.trim());
+          const values = lines[i].split(",").map((v) => v.trim());
+          if (values.length < 2) continue;
 
-          if (values.length < 2) continue; // Skip invalid rows
-
-          const name = values[nameIndex] || '';
-          const phone = values[phoneIndex] || '';
-
-          // Skip empty rows
+          const name = values[nameIndex] || "";
+          const phone = values[phoneIndex] || "";
           if (!name && !phone) continue;
 
           const validation = validatePhoneNumber(phone);
+          const cleanPhone = validation.formatted || phone.replace(/\s+/g, "").replace(/[^\d]/g, "");
 
           parsedContacts.push({
             name,
-            phone_number: phone.replace(/\s+/g, '').replace(/[^\d]/g, ''),
+            phone_number: cleanPhone,
             isValid: validation.isValid,
-            error: validation.error
+            error: validation.error,
+            country: validation.country,
           });
         }
 
         if (parsedContacts.length === 0) {
-          toast('No valid contacts found in CSV file', "error");
+          toast("No valid contacts found in CSV file", "error");
           setIsProcessing(false);
           setSelectedFile(null);
           return;
@@ -316,26 +452,28 @@ export default function BulkSenderPage() {
         setContacts(parsedContacts);
         setIsProcessing(false);
 
-        // Show summary
-        const validCount = parsedContacts.filter(c => c.isValid).length;
+        const validCount = parsedContacts.filter((c) => c.isValid).length;
         const invalidCount = parsedContacts.length - validCount;
 
         if (invalidCount > 0) {
-          toast(`Processed ${parsedContacts.length} contacts: ${validCount} valid, ${invalidCount} invalid. Please review invalid contacts.`, "warning", 7000);
+          toast(
+            `Processed ${parsedContacts.length} contacts: ${validCount} valid, ${invalidCount} invalid. Please review invalid contacts.`,
+            "warning",
+            7000
+          );
         } else {
           toast(`✓ Successfully processed ${validCount} valid contacts`, "success");
         }
-
       } catch (error) {
-        console.error('Error parsing CSV:', error);
-        toast('Failed to parse CSV file. Please check the format.', "error");
+        console.error("Error parsing CSV:", error);
+        toast("Failed to parse CSV file. Please check the format.", "error");
         setIsProcessing(false);
         setSelectedFile(null);
       }
     };
 
     reader.onerror = () => {
-      toast('Failed to read file', "error");
+      toast("Failed to read file", "error");
       setIsProcessing(false);
       setSelectedFile(null);
     };
@@ -344,29 +482,41 @@ export default function BulkSenderPage() {
   };
 
   const handleDownloadTemplate = () => {
-    const link = document.createElement('a');
-    link.href = '/bulk-message-template.csv';
-    link.download = 'bulk-message-template.csv';
+    const csvContent =
+      "name,phone_number\r\n" +
+      "Aryan Shinde,918828316840\r\n" +
+      "John Doe,14155552671\r\n" +
+      "Priya Sharma,919876543210\r\n" +
+      "Sarah Connor,447911123456\r\n" +
+      "Michael Scott,12125550198\r\n";
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", "bulk-message-template.csv");
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    toast("Downloaded sample CSV template", "success");
   };
 
   const fetchTemplates = async () => {
     setIsLoadingTemplates(true);
 
     try {
-      const response = await fetch('/api/templates?status=APPROVED');
+      const response = await fetch("/api/templates?status=APPROVED");
       const result = await response.json();
 
       if (!response.ok) {
-        throw new Error(result.error || result.message || 'Failed to fetch templates');
+        throw new Error(result.error || result.message || "Failed to fetch templates");
       }
 
       setTemplates(result.data || []);
     } catch (error) {
-      console.error('Error fetching templates:', error);
-      toast(`Failed to load templates: ${error instanceof Error ? error.message : 'Unknown error'}`, "error");
+      console.error("Error fetching templates:", error);
+      toast(`Failed to load templates: ${error instanceof Error ? error.message : "Unknown error"}`, "error");
     } finally {
       setIsLoadingTemplates(false);
     }
@@ -378,12 +528,15 @@ export default function BulkSenderPage() {
   };
 
   const hasMediaHeader = (template: WhatsAppTemplate): { hasMedia: boolean; format?: string } => {
-    const headerComponent = template.components.find(c => c.type === 'HEADER');
-    const hasMedia = headerComponent?.format && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(headerComponent.format);
+    const headerComponent = template.components?.find((c) => c.type === "HEADER");
+    const hasMedia =
+      headerComponent?.format && ["IMAGE", "VIDEO", "DOCUMENT"].includes(headerComponent.format.toUpperCase());
     return { hasMedia: !!hasMedia, format: headerComponent?.format };
   };
 
-  const extractVariables = (template: WhatsAppTemplate): {
+  const extractVariables = (
+    template: WhatsAppTemplate
+  ): {
     header: string[];
     body: string[];
     footer: string[];
@@ -393,32 +546,26 @@ export default function BulkSenderPage() {
     const bodyVariables: string[] = [];
     const footerVariables: string[] = [];
 
-    template.components.forEach(component => {
+    template.components?.forEach((component) => {
       if (component.text) {
         const matches = component.text.match(/\{\{(\d+)\}\}/g);
         if (matches) {
-          const componentVariables = matches.map(match => match.replace(/[{}]/g, ''));
+          const componentVariables = matches.map((match) => match.replace(/[{}]/g, ""));
 
           switch (component.type) {
-            case 'HEADER':
-              componentVariables.forEach(variable => {
-                if (!headerVariables.includes(variable)) {
-                  headerVariables.push(variable);
-                }
+            case "HEADER":
+              componentVariables.forEach((v) => {
+                if (!headerVariables.includes(v)) headerVariables.push(v);
               });
               break;
-            case 'BODY':
-              componentVariables.forEach(variable => {
-                if (!bodyVariables.includes(variable)) {
-                  bodyVariables.push(variable);
-                }
+            case "BODY":
+              componentVariables.forEach((v) => {
+                if (!bodyVariables.includes(v)) bodyVariables.push(v);
               });
               break;
-            case 'FOOTER':
-              componentVariables.forEach(variable => {
-                if (!footerVariables.includes(variable)) {
-                  footerVariables.push(variable);
-                }
+            case "FOOTER":
+              componentVariables.forEach((v) => {
+                if (!footerVariables.includes(v)) footerVariables.push(v);
               });
               break;
           }
@@ -426,18 +573,19 @@ export default function BulkSenderPage() {
       }
     });
 
-    headerVariables.sort((a, b) => parseInt(a) - parseInt(b));
-    bodyVariables.sort((a, b) => parseInt(a) - parseInt(b));
-    footerVariables.sort((a, b) => parseInt(a) - parseInt(b));
+    headerVariables.sort((a, b) => parseInt(a, 10) - parseInt(b, 10));
+    bodyVariables.sort((a, b) => parseInt(a, 10) - parseInt(b, 10));
+    footerVariables.sort((a, b) => parseInt(a, 10) - parseInt(b, 10));
 
-    const allVariables = [...new Set([...headerVariables, ...bodyVariables, ...footerVariables])]
-      .sort((a, b) => parseInt(a) - parseInt(b));
+    const allVariables = Array.from(new Set([...headerVariables, ...bodyVariables, ...footerVariables])).sort(
+      (a, b) => parseInt(a, 10) - parseInt(b, 10)
+    );
 
     return {
       header: headerVariables,
       body: bodyVariables,
       footer: footerVariables,
-      all: allVariables
+      all: allVariables,
     };
   };
 
@@ -445,24 +593,21 @@ export default function BulkSenderPage() {
     setSelectedTemplate(template);
     setShowTemplateSelector(false);
 
-    // Initialize variables and media inputs
     setVariables({
       header: {},
       body: {},
-      footer: {}
+      footer: {},
     });
     setMediaUrl("");
     setMediaId("");
     setMediaInputType("url");
 
-    // Calculate and set template quality
     const qualityInfo = getQualityInfo(template);
     setTemplateQuality({
       rating: qualityInfo.rating,
-      limit: qualityInfo.limit
+      limit: qualityInfo.limit,
     });
 
-    // Reset batch configuration
     setBatches([]);
     setCurrentBatchIndex(-1);
     setSendResults([]);
@@ -470,29 +615,28 @@ export default function BulkSenderPage() {
 
   const handleAddContact = () => {
     if (!newContactName.trim()) {
-      toast('Please enter a contact name', "warning");
+      toast("Please enter a contact name", "warning");
       return;
     }
     if (!newContactPhone.trim()) {
-      toast('Please enter a phone number', "warning");
+      toast("Please enter a phone number", "warning");
       return;
     }
 
-    const cleanPhone = newContactPhone.replace(/\s+/g, '').replace(/[^\d]/g, '');
+    const validation = validatePhoneNumber(newContactPhone);
+    const cleanPhone = validation.formatted || newContactPhone.replace(/\s+/g, "").replace(/[^\d]/g, "");
 
-    // Check for duplicates
-    if (contacts.some(c => c.phone_number === cleanPhone)) {
-      toast('This phone number already exists in the list', "warning");
+    if (contacts.some((c) => c.phone_number === cleanPhone)) {
+      toast("This phone number already exists in the list", "warning");
       return;
     }
-
-    const validation = validatePhoneNumber(cleanPhone);
 
     const newContact: Contact = {
-      name: newContactName,
+      name: newContactName.trim(),
       phone_number: cleanPhone,
       isValid: validation.isValid,
-      error: validation.error
+      error: validation.error,
+      country: validation.country,
     };
 
     setContacts([...contacts, newContact]);
@@ -501,9 +645,9 @@ export default function BulkSenderPage() {
     setShowAddContact(false);
 
     if (validation.isValid) {
-      toast('Contact added successfully', "success");
+      toast(`✓ Added ${newContact.name} (${validation.country || "Valid format"})`, "success");
     } else {
-      toast(`Contact added but has invalid phone number: ${validation.error}`, "warning", 7000);
+      toast(`Contact added with warning: ${validation.error}`, "warning", 8000);
     }
   };
 
@@ -515,17 +659,28 @@ export default function BulkSenderPage() {
 
   const handleConfirmSend = () => {
     if (!selectedTemplate) {
-      toast('Please select a template first', "warning");
+      toast("Please select a template first", "warning");
       return;
     }
 
-    const validContacts = contacts.filter(c => c.isValid);
+    const validContacts = contacts
+      .map((c) => {
+        const v = validatePhoneNumber(c.phone_number);
+        return {
+          ...c,
+          phone_number: v.formatted || c.phone_number,
+          isValid: c.isValid || v.isValid,
+          error: v.error || c.error,
+          country: v.country || c.country,
+        };
+      })
+      .filter((c) => c.isValid);
+
     if (validContacts.length === 0) {
-      toast('No valid contacts to send messages to', "warning");
+      toast("No valid contacts to send messages to", "warning");
       return;
     }
 
-    // Check if template has media header and validate media input
     const mediaHeader = hasMediaHeader(selectedTemplate);
     if (mediaHeader.hasMedia) {
       if (!mediaUrl.trim() && !mediaId.trim()) {
@@ -533,55 +688,43 @@ export default function BulkSenderPage() {
         return;
       }
 
-      // Validate URL format if URL is provided
       if (mediaUrl.trim()) {
         try {
           const url = new URL(mediaUrl);
-          if (!url.protocol.startsWith('https')) {
-            toast('Media URL must use HTTPS protocol', "error");
+          if (!url.protocol.startsWith("https")) {
+            toast("Media URL must use HTTPS protocol", "error");
             return;
           }
         } catch {
-          toast('Please provide a valid HTTPS URL for the media', "error");
+          toast("Please provide a valid HTTPS URL for the media", "error");
           return;
         }
       }
 
-      // Validate Media ID format if provided
       if (mediaId.trim() && !/^\d+$/.test(mediaId)) {
-        toast('Media ID must be a numeric value', "error");
+        toast("Media ID must be a numeric value", "error");
         return;
       }
     }
 
-    // Validate variables if template has any
     const templateVars = extractVariables(selectedTemplate);
     const missingVars: string[] = [];
 
-    templateVars.header.forEach(variable => {
-      if (!variables.header[variable]?.trim()) {
-        missingVars.push(`Header {{${variable}}}`);
-      }
+    templateVars.header.forEach((v) => {
+      if (!variables.header[v]?.trim()) missingVars.push(`Header {{${v}}}`);
     });
-
-    templateVars.body.forEach(variable => {
-      if (!variables.body[variable]?.trim()) {
-        missingVars.push(`Body {{${variable}}}`);
-      }
+    templateVars.body.forEach((v) => {
+      if (!variables.body[v]?.trim()) missingVars.push(`Body {{${v}}}`);
     });
-
-    templateVars.footer.forEach(variable => {
-      if (!variables.footer[variable]?.trim()) {
-        missingVars.push(`Footer {{${variable}}}`);
-      }
+    templateVars.footer.forEach((v) => {
+      if (!variables.footer[v]?.trim()) missingVars.push(`Footer {{${v}}}`);
     });
 
     if (missingVars.length > 0) {
-      toast(`Please fill in all variables: ${missingVars.join(', ')}`, "warning", 7000);
+      toast(`Please fill in all variables: ${missingVars.join(", ")}`, "warning", 7000);
       return;
     }
 
-    // Validate self-test phone number if enabled
     if (includeSelfTest) {
       if (!testPhoneNumber.trim()) {
         toast('Please enter your test phone number or disable "Include me in every batch"', "warning");
@@ -594,7 +737,6 @@ export default function BulkSenderPage() {
       }
     }
 
-    // Create batches and show confirmation
     createBatches(validContacts);
     setShowConfirmation(true);
   };
@@ -606,39 +748,42 @@ export default function BulkSenderPage() {
     setIsSending(true);
     setSendResults([]);
 
-    // Process batches one by one
     for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
       setCurrentBatchIndex(batchIndex);
       const batch = batches[batchIndex];
       setTotalContactsInCurrentBatch(batch.contacts.length);
       setCurrentContactInBatch(0);
 
-      // Update batch status to sending
-      setBatches(prev => prev.map((b, idx) =>
-        idx === batchIndex ? { ...b, status: 'sending' as const } : b
-      ));
+      setBatches((prev) =>
+        prev.map((b, idx) => (idx === batchIndex ? { ...b, status: "sending" as const } : b))
+      );
 
       const batchResults: SendResult[] = [];
 
-      // Send messages to all contacts in this batch
       for (let contactIndex = 0; contactIndex < batch.contacts.length; contactIndex++) {
         const contact = batch.contacts[contactIndex];
         setCurrentContactInBatch(contactIndex + 1);
 
         try {
-          const response = await fetch('/api/send-template', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
+          const templateLang =
+            selectedTemplate.language === "en"
+              ? "en_US"
+              : selectedTemplate.language || "en_US";
+
+          const response = await fetch("/api/send-template", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               to: contact.phone_number,
               contactName: contact.name,
               templateName: selectedTemplate.name,
-              templateData: selectedTemplate,
+              templateData: {
+                ...selectedTemplate,
+                language: templateLang,
+              },
               variables: variables,
               mediaUrl: mediaUrl || undefined,
-              mediaId: mediaId || undefined
+              mediaId: mediaId || undefined,
             }),
           });
 
@@ -648,32 +793,30 @@ export default function BulkSenderPage() {
             batchResults.push({
               contact,
               success: true,
-              messageId: result.messageId
+              messageId: result.messageId,
             });
           } else {
             batchResults.push({
               contact,
               success: false,
-              error: result.error || result.message || 'Failed to send'
+              error: result.error || result.message || "Failed to send",
             });
           }
         } catch (error) {
           batchResults.push({
             contact,
             success: false,
-            error: error instanceof Error ? error.message : 'Network error'
+            error: error instanceof Error ? error.message : "Network error",
           });
         }
 
-        // Update batch results in real-time
-        setBatches(prev => prev.map((b, idx) =>
-          idx === batchIndex ? { ...b, results: [...batchResults] } : b
-        ));
+        setBatches((prev) =>
+          prev.map((b, idx) => (idx === batchIndex ? { ...b, results: [...batchResults] } : b))
+        );
 
-        // Add to overall results in real-time
-        setSendResults(prev => {
+        setSendResults((prev) => {
           const newResults = [...prev];
-          const existingIndex = newResults.findIndex(r => r.contact.phone_number === contact.phone_number);
+          const existingIndex = newResults.findIndex((r) => r.contact.phone_number === contact.phone_number);
           if (existingIndex >= 0) {
             newResults[existingIndex] = batchResults[batchResults.length - 1];
           } else {
@@ -682,25 +825,25 @@ export default function BulkSenderPage() {
           return newResults;
         });
 
-        // Small delay between individual messages (1 second)
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise((resolve) => setTimeout(resolve, 1000));
       }
 
-      // Update batch with results and mark as completed
-      setBatches(prev => prev.map((b, idx) =>
-        idx === batchIndex ? {
-          ...b,
-          status: 'completed' as const,
-          results: batchResults
-        } : b
-      ));
+      setBatches((prev) =>
+        prev.map((b, idx) =>
+          idx === batchIndex
+            ? {
+                ...b,
+                status: "completed" as const,
+                results: batchResults,
+              }
+            : b
+        )
+      );
 
-      // Reset current contact counter
       setCurrentContactInBatch(0);
 
-      // Wait for batch delay before next batch (unless it's the last batch)
       if (batchIndex < batches.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, batchDelay * 1000));
+        await new Promise((resolve) => setTimeout(resolve, batchDelay * 1000));
       }
     }
 
@@ -709,1080 +852,1230 @@ export default function BulkSenderPage() {
     setCurrentContactInBatch(0);
     setTotalContactsInCurrentBatch(0);
 
-    // Show summary
-    const allResults = batches.flatMap(b => b.results);
-    const successCount = allResults.filter(r => r.success).length;
+    const allResults = batches.flatMap((b) => b.results);
+    const successCount = allResults.filter((r) => r.success).length;
     const failCount = allResults.length - successCount;
 
     if (failCount === 0) {
-      toast(`✓ Successfully sent messages to all ${successCount} contacts across ${batches.length} batch${batches.length !== 1 ? 'es' : ''}!`, "success", 8000);
+      toast(
+        `✓ Successfully sent messages to all ${successCount} contacts across ${batches.length} batch${batches.length !== 1 ? "es" : ""}!`,
+        "success",
+        8000
+      );
     } else {
-      toast(`Bulk send completed! ${successCount} sent successfully, ${failCount} failed. Check the results for details.`, "warning", 10000);
+      toast(
+        `Bulk send completed! ${successCount} sent successfully, ${failCount} failed. Check the results for details.`,
+        "warning",
+        10000
+      );
     }
   };
 
-  const validContactsCount = contacts.filter(c => c.isValid).length;
+  const handleExportResults = () => {
+    if (sendResults.length === 0) return;
+    const headers = "Name,Phone Number,Status,Message ID,Error\n";
+    const rows = sendResults
+      .map(
+        (r) =>
+          `"${r.contact.name}","${r.contact.phone_number}","${r.success ? "SENT" : "FAILED"}","${r.messageId || ""}","${(r.error || "").replace(/"/g, '""')}"`
+      )
+      .join("\n");
+    const blob = new Blob([headers + rows], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `bulk-broadcast-results-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const validContactsCount = contacts.filter((c) => c.isValid || validatePhoneNumber(c.phone_number).isValid).length;
   const invalidContactsCount = contacts.length - validContactsCount;
-  const filteredTemplates = templates.filter(t =>
-    t.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    t.category.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredTemplates = templates.filter(
+    (t) =>
+      t.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      t.category.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  const displayedContacts = contacts.filter(
+    (c) =>
+      !contactSearch.trim() ||
+      c.name.toLowerCase().includes(contactSearch.toLowerCase()) ||
+      c.phone_number.includes(contactSearch)
+  );
+
+  const displayedResults = sendResults.filter((r) => {
+    if (resultsFilter === "SUCCESS") return r.success;
+    if (resultsFilter === "FAILED") return !r.success;
+    return true;
+  });
+
   return (
-    <div className="min-h-screen h-full w-full overflow-y-auto">
+    <div className="h-full w-full overflow-y-auto bg-[#FAF8F5]/50 dark:bg-[#0C0F0D] text-stone-800 dark:text-stone-200 flex flex-col">
       <Toaster />
-      <div className="container max-w-6xl mx-auto p-6 space-y-6 pb-12">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+
+      {/* Main Full-Width Responsive Canvas matching templates, media, setup, api-keys */}
+      <div className="w-full px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6 pb-20">
+        {/* ======================================================================= */}
+        {/* HEADER SECTION - Editorial Botanical Typography & Action                */}
+        {/* ======================================================================= */}
+        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 pb-2">
           <div>
-            <h1 className="text-3xl font-bold">Bulk Message Sender</h1>
-            <p className="text-muted-foreground mt-1">
-              Send template messages to multiple contacts at once
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold tracking-wide uppercase bg-[#5F7C65]/10 text-[#2D583F] dark:text-[#8EAE95] border border-[#5F7C65]/20 mb-2.5">
+              <LogoIcon className="size-3.5 text-[#5F7C65]" />
+              <span>High-Throughput Campaign Engine &amp; Broadcast Dispatcher</span>
+            </div>
+            <h1 className="text-2xl sm:text-3xl font-semibold tracking-[-0.035em] text-stone-900 dark:text-stone-100">
+              Bulk{" "}
+              <span className="font-[Georgia,serif] italic font-normal text-[#2D583F] dark:text-[#8EAE95]">
+                Broadcast
+              </span>{" "}
+              Sender
+            </h1>
+            <p className="text-stone-600 dark:text-stone-400 text-xs sm:text-sm mt-1 max-w-2xl leading-relaxed">
+              Dispatch personalized WhatsApp template campaigns to customer lists with automatic batch rate-limiting, delivery self-testing, and real-time telemetry.
             </p>
           </div>
-          <Button
-            variant="outline"
-            onClick={handleDownloadTemplate}
-            className="gap-2"
-          >
-            <Download className="h-4 w-4" />
-            Download CSV Template
-          </Button>
+
+          <div className="flex items-center gap-2 shrink-0 sm:pt-1 flex-wrap">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleDownloadTemplate}
+              className="h-9 sm:h-10 px-3.5 rounded-xl border border-stone-300/80 dark:border-stone-700/80 bg-white/80 dark:bg-stone-900/80 hover:bg-stone-100 dark:hover:bg-stone-800 text-stone-700 dark:text-stone-300 text-xs font-medium gap-1.5 shadow-2xs transition-all cursor-pointer"
+            >
+              <Download className="size-3.5 text-[#5F7C65]" />
+              <span>Sample CSV</span>
+            </Button>
+
+            {contacts.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setContacts([]);
+                  setSelectedFile(null);
+                  setSelectedTemplate(null);
+                  setBatches([]);
+                  setSendResults([]);
+                  if (fileInputRef.current) fileInputRef.current.value = "";
+                  toast("Recipient workspace reset", "info");
+                }}
+                className="h-9 sm:h-10 px-3 rounded-xl text-xs text-stone-500 hover:text-red-600 dark:hover:text-red-400 gap-1.5"
+              >
+                <RotateCcw className="size-3.5" />
+                <span>Reset List</span>
+              </Button>
+            )}
+          </div>
         </div>
 
-        {/* Step 1: Upload CSV */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
-                <span className="text-green-700 dark:text-green-300 font-semibold">1</span>
+        {/* Step 1: Upload Contact List */}
+        <div className="rounded-3xl border border-stone-200/80 dark:border-stone-800/80 bg-white/80 dark:bg-stone-900/70 backdrop-blur-md p-1.5 shadow-[0_4px_20px_-4px_rgba(30,45,35,0.06)]">
+          <div className="rounded-[calc(1.5rem-0.125rem)] bg-[#FAF8F5]/60 dark:bg-stone-950/40 p-5 sm:p-7 space-y-6">
+            {/* Step Header */}
+            <div className="flex items-center justify-between pb-4 border-b border-stone-200/60 dark:border-stone-800/60">
+              <div className="flex items-center gap-3">
+                <div className="size-8 rounded-xl bg-[#2D583F] text-white font-mono font-bold text-xs flex items-center justify-center shadow-2xs">
+                  01
+                </div>
+                <div>
+                  <h2 className="text-sm sm:text-base font-semibold text-stone-900 dark:text-stone-100 tracking-tight">
+                    Recipient List & Contacts Staging
+                  </h2>
+                  <p className="text-[11px] sm:text-xs text-stone-500 dark:text-stone-400">
+                    Import recipient phone numbers via CSV or manually append individual target contacts.
+                  </p>
+                </div>
               </div>
-              Upload Contact List
-            </CardTitle>
-            <CardDescription>
-              Upload a CSV file containing contact names and phone numbers
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <div className="flex items-center gap-4">
-                <Input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".csv"
-                  onChange={handleFileUpload}
-                  className="hidden"
-                />
-                <Button
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={isProcessing}
-                  className="gap-2"
-                >
-                  {isProcessing ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Processing...
-                    </>
-                  ) : (
-                    <>
-                      <Upload className="h-4 w-4" />
-                      Choose CSV File
-                    </>
+
+              {contacts.length > 0 && (
+                <div className="flex items-center gap-2 font-mono text-xs">
+                  <span className="px-2.5 py-1 rounded-full bg-emerald-50 text-[#2D583F] dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200/80 font-semibold">
+                    {validContactsCount} Valid
+                  </span>
+                  {invalidContactsCount > 0 && (
+                    <span className="px-2.5 py-1 rounded-full bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300 border border-red-200/80 font-semibold">
+                      {invalidContactsCount} Invalid
+                    </span>
                   )}
-                </Button>
-                {selectedFile && (
-                  <div className="flex items-center gap-2 text-sm">
-                    <FileText className="h-4 w-4 text-muted-foreground" />
-                    <span>{selectedFile.name}</span>
+                </div>
+              )}
+            </div>
+
+            {/* CSV Dropzone / Upload Area */}
+            <div className="space-y-4">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".csv"
+                onChange={handleFileUpload}
+                className="hidden"
+              />
+
+              {!selectedFile ? (
+                <div
+                  onClick={() => fileInputRef.current?.click()}
+                  className="rounded-2xl border-2 border-dashed border-stone-300/80 dark:border-stone-700/80 hover:border-[#5F7C65] p-8 text-center bg-white/50 dark:bg-stone-900/40 transition-all cursor-pointer space-y-3 group"
+                >
+                  <div className="size-12 rounded-2xl bg-[#5F7C65]/10 dark:bg-[#5F7C65]/20 text-[#5F7C65] flex items-center justify-center mx-auto transition-transform group-hover:scale-105">
+                    {isProcessing ? <Loader2 className="size-6 animate-spin" /> : <Upload className="size-6" />}
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-sm font-semibold text-stone-800 dark:text-stone-200">
+                      {isProcessing ? "Processing recipient records..." : "Click or drag CSV contact file here"}
+                    </p>
+                    <p className="text-xs text-stone-500 dark:text-stone-400">
+                      Supports comma, semicolon, or tab-delimited CSV with <code className="font-mono text-stone-700 dark:text-stone-300">name</code> and <code className="font-mono text-stone-700 dark:text-stone-300">phone_number</code> columns.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between p-3.5 rounded-2xl bg-white dark:bg-stone-900 border border-stone-200/80 dark:border-stone-800/80">
+                  <div className="flex items-center gap-3">
+                    <div className="size-9 rounded-xl bg-[#5F7C65]/12 text-[#5F7C65] flex items-center justify-center">
+                      <FileText className="size-5" />
+                    </div>
+                    <div>
+                      <p className="text-xs sm:text-sm font-semibold text-stone-900 dark:text-stone-100 truncate">
+                        {selectedFile.name}
+                      </p>
+                      <p className="text-[11px] text-stone-500 font-mono">
+                        {(selectedFile.size / 1024).toFixed(1)} KB • {contacts.length} rows detected
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="h-8 px-3 rounded-xl text-xs border-stone-300 dark:border-stone-700"
+                    >
+                      Replace CSV
+                    </Button>
                     <Button
                       variant="ghost"
                       size="sm"
                       onClick={() => {
                         setSelectedFile(null);
                         setContacts([]);
-                        setSelectedTemplate(null);
-                        setSendResults([]);
-                        if (fileInputRef.current) {
-                          fileInputRef.current.value = '';
-                        }
+                        if (fileInputRef.current) fileInputRef.current.value = "";
                       }}
-                      className="h-6 w-6 p-0 hover:bg-destructive/10"
+                      className="size-8 p-0 rounded-xl text-stone-400 hover:text-red-600"
                     >
-                      <XCircle className="h-4 w-4 text-muted-foreground hover:text-destructive" />
+                      <Trash2 className="size-4" />
                     </Button>
-                  </div>
-                )}
-              </div>
-
-              {contacts.length > 0 && (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4 text-sm">
-                      <div className="flex items-center gap-2 text-green-600">
-                        <CheckCircle2 className="h-4 w-4" />
-                        <span className="font-medium">{validContactsCount} valid contacts</span>
-                      </div>
-                      {invalidContactsCount > 0 && (
-                        <div className="flex items-center gap-2 text-red-600">
-                          <AlertCircle className="h-4 w-4" />
-                          <span className="font-medium">{invalidContactsCount} invalid contacts</span>
-                        </div>
-                      )}
-                    </div>
-                    <Button
-                      onClick={() => setShowAddContact(true)}
-                      size="sm"
-                      variant="outline"
-                      className="gap-2"
-                    >
-                      <Plus className="h-4 w-4" />
-                      Add Contact
-                    </Button>
-                  </div>
-
-                  {/* Add Contact Form */}
-                  {showAddContact && (
-                    <div className="border border-blue-200 dark:border-blue-800 rounded-lg p-4 bg-blue-50 dark:bg-blue-950/20 space-y-3">
-                      <div className="flex items-center justify-between">
-                        <h4 className="font-medium text-sm">Add New Contact</h4>
-                        <Button
-                          onClick={() => {
-                            setShowAddContact(false);
-                            setNewContactName("");
-                            setNewContactPhone("");
-                          }}
-                          variant="ghost"
-                          size="sm"
-                          className="h-6 w-6 p-0"
-                        >
-                          <XCircle className="h-4 w-4" />
-                        </Button>
-                      </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        <div>
-                          <Label htmlFor="new-contact-name" className="text-xs">Name *</Label>
-                          <Input
-                            id="new-contact-name"
-                            value={newContactName}
-                            onChange={(e) => setNewContactName(e.target.value)}
-                            placeholder="Contact name"
-                            className="mt-1"
-                            onKeyDown={(e) => e.key === 'Enter' && handleAddContact()}
-                          />
-                        </div>
-                        <div>
-                          <Label htmlFor="new-contact-phone" className="text-xs">Phone Number *</Label>
-                          <Input
-                            id="new-contact-phone"
-                            value={newContactPhone}
-                            onChange={(e) => setNewContactPhone(e.target.value)}
-                            placeholder="919876543210"
-                            className="mt-1 font-mono"
-                            onKeyDown={(e) => e.key === 'Enter' && handleAddContact()}
-                          />
-                        </div>
-                      </div>
-                      <div className="flex justify-end gap-2">
-                        <Button
-                          onClick={() => {
-                            setShowAddContact(false);
-                            setNewContactName("");
-                            setNewContactPhone("");
-                          }}
-                          variant="outline"
-                          size="sm"
-                        >
-                          Cancel
-                        </Button>
-                        <Button
-                          onClick={handleAddContact}
-                          size="sm"
-                          className="gap-2"
-                        >
-                          <Plus className="h-4 w-4" />
-                          Add Contact
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="max-h-64 overflow-y-auto border rounded-md">
-                    <table className="w-full text-sm">
-                      <thead className="bg-muted sticky top-0 z-10">
-                        <tr>
-                          <th className="text-left p-2">Name</th>
-                          <th className="text-left p-2">Phone Number</th>
-                          <th className="text-left p-2">Status</th>
-                          <th className="text-left p-2 w-20">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {contacts.map((contact, index) => (
-                          <tr key={index} className="border-t hover:bg-muted/50">
-                            <td className="p-2">{contact.name}</td>
-                            <td className="p-2 font-mono text-xs">{contact.phone_number}</td>
-                            <td className="p-2">
-                              {contact.isValid ? (
-                                <span className="flex items-center gap-1 text-green-600">
-                                  <CheckCircle2 className="h-3 w-3" />
-                                  Valid
-                                </span>
-                              ) : (
-                                <span className="flex items-center gap-1 text-red-600" title={contact.error}>
-                                  <XCircle className="h-3 w-3" />
-                                  Invalid
-                                </span>
-                              )}
-                            </td>
-                            <td className="p-2">
-                              <Button
-                                onClick={() => handleDeleteContact(index)}
-                                variant="ghost"
-                                size="sm"
-                                className="h-7 w-7 p-0 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20"
-                                title="Remove contact"
-                              >
-                                <Trash2 className="h-3 w-3" />
-                              </Button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
                   </div>
                 </div>
               )}
-            </div>
-          </CardContent>
-        </Card>
 
-        {/* Step 2: Select Template */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
-                <span className="text-green-700 dark:text-green-300 font-semibold">2</span>
-              </div>
-              Select Message Template
-            </CardTitle>
-            <CardDescription>
-              Choose a WhatsApp approved template to send
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <div>
-                <Button
-                  onClick={handleSelectTemplate}
-                  disabled={contacts.length === 0 || validContactsCount === 0}
-                  className="gap-2"
-                >
-                  <MessageSquareText className="h-4 w-4" />
-                  {selectedTemplate ? 'Change Template' : 'Select Template'}
-                </Button>
-                {contacts.length === 0 && (
-                  <p className="text-xs text-muted-foreground mt-2">
-                    Please upload a CSV file with contacts first
-                  </p>
-                )}
-                {contacts.length > 0 && validContactsCount === 0 && (
-                  <p className="text-xs text-red-600 mt-2">
-                    No valid contacts found. Please check phone number format.
-                  </p>
-                )}
-              </div>
+              {!selectedFile && !showAddContact && (
+                <div className="flex items-center justify-center pt-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddContact(true)}
+                    className="inline-flex items-center gap-1.5 text-xs font-medium text-stone-600 dark:text-stone-400 hover:text-[#2D583F] dark:hover:text-[#8EAE95] transition-colors cursor-pointer"
+                  >
+                    <UserPlus className="size-3.5 text-[#5F7C65]" />
+                    <span>Or manually enter individual recipients</span>
+                  </button>
+                </div>
+              )}
 
-              {selectedTemplate && (
-                <div className="border rounded-lg p-4 space-y-4">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <h3 className="font-semibold text-lg">{selectedTemplate.name}</h3>
-                      <p className="text-sm text-muted-foreground">{selectedTemplate.category}</p>
-                    </div>
-                    <span className="text-2xl">{selectedTemplate.category_icon}</span>
-                  </div>
-
-                  {/* Template Preview */}
-                  <div className="bg-muted/50 rounded-lg p-3 space-y-2">
-                    {/* Header Preview */}
-                    {selectedTemplate.formatted_components.header && (
-                      <div className="space-y-1">
-                        {selectedTemplate.formatted_components.header.format === 'IMAGE' && (
-                          <div className="flex items-center gap-2 text-xs text-blue-600">
-                            <span>📷</span>
-                            <span className="font-medium">Header: Image</span>
-                          </div>
-                        )}
-                        {selectedTemplate.formatted_components.header.format === 'VIDEO' && (
-                          <div className="flex items-center gap-2 text-xs text-blue-600">
-                            <span>🎥</span>
-                            <span className="font-medium">Header: Video</span>
-                          </div>
-                        )}
-                        {selectedTemplate.formatted_components.header.format === 'DOCUMENT' && (
-                          <div className="flex items-center gap-2 text-xs text-blue-600">
-                            <span>📄</span>
-                            <span className="font-medium">Header: Document</span>
-                          </div>
-                        )}
-                        {selectedTemplate.formatted_components.header.text && (
-                          <p className="text-sm font-semibold">
-                            {selectedTemplate.formatted_components.header.text}
-                          </p>
-                        )}
+              {/* Add Single Contact Inline Form */}
+              {showAddContact && (
+                <div className="rounded-2xl border border-[#5F7C65]/30 dark:border-[#5F7C65]/25 bg-white/95 dark:bg-stone-900/90 shadow-[0_4px_20px_-4px_rgba(30,45,35,0.06)] p-5 sm:p-6 space-y-5 my-3.5 animate-in fade-in duration-200">
+                  {/* Form Header */}
+                  <div className="flex items-center justify-between pb-3.5 border-b border-stone-200/70 dark:border-stone-800/70">
+                    <div className="flex items-center gap-3">
+                      <div className="size-9 rounded-xl bg-[#5F7C65]/12 dark:bg-[#5F7C65]/20 text-[#5F7C65] dark:text-[#8EAE95] flex items-center justify-center shrink-0">
+                        <UserPlus className="size-4.5" />
                       </div>
-                    )}
-
-                    {/* Body Preview */}
-                    {selectedTemplate.formatted_components.body && (
-                      <p className="text-sm whitespace-pre-line">
-                        {selectedTemplate.formatted_components.body.text}
-                      </p>
-                    )}
-
-                    {/* Footer Preview */}
-                    {selectedTemplate.formatted_components.footer && (
-                      <p className="text-xs text-muted-foreground">
-                        {selectedTemplate.formatted_components.footer.text}
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Media selection for templates with media headers */}
-                  {hasMediaHeader(selectedTemplate).hasMedia && (
-                    <div className="space-y-3 border-l-4 border-blue-500 pl-4">
-                      <div className="flex items-center gap-2">
-                        <div className="w-3 h-3 rounded-full bg-blue-500"></div>
-                        <h4 className="font-medium text-sm text-blue-700 dark:text-blue-300">
-                          {hasMediaHeader(selectedTemplate).format} Required *
+                      <div>
+                        <h4 className="text-sm font-semibold text-stone-900 dark:text-stone-100 tracking-tight">
+                          Add Individual Recipient
                         </h4>
-                      </div>
-
-                      {/* Method Selector */}
-                      <div className="flex gap-2">
-                        <Button
-                          size="sm"
-                          variant={mediaInputType === "url" ? "default" : "outline"}
-                          onClick={() => setMediaInputType("url")}
-                          className="flex-1"
-                        >
-                          Choose from Media
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant={mediaInputType === "id" ? "default" : "outline"}
-                          onClick={() => setMediaInputType("id")}
-                          className="flex-1"
-                        >
-                          Use Media ID
-                        </Button>
-                      </div>
-
-                      {mediaInputType === "url" ? (
-                        <div className="space-y-2">
-                          {mediaUrl ? (
-                            <div className="flex items-center gap-3 bg-muted/50 rounded-lg p-3 border">
-                              <ImageIcon className="h-5 w-5 text-green-600 shrink-0" />
-                              <span className="text-sm truncate flex-1">{mediaUrl.split('/').pop()?.split('?')[0] || 'Selected media'}</span>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setMediaUrl("")}
-                                className="p-1 h-auto"
-                              >
-                                <XCircle className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          ) : (
-                            <Button
-                              variant="outline"
-                              onClick={() => setMediaPickerOpen(true)}
-                              className="w-full gap-2"
-                            >
-                              <ImageIcon className="h-4 w-4" />
-                              Choose {hasMediaHeader(selectedTemplate).format?.toLowerCase()} from Media Library
-                            </Button>
-                          )}
-                          <p className="text-xs text-muted-foreground">
-                            Select a file from your media library or upload a new one
-                          </p>
-                          <MediaPickerDialog
-                            isOpen={mediaPickerOpen}
-                            onClose={() => setMediaPickerOpen(false)}
-                            onSelect={(media) => {
-                              setMediaUrl(media.url);
-                              setMediaId("");
-                              setMediaPickerOpen(false);
-                            }}
-                            mediaTypeFilter={
-                              hasMediaHeader(selectedTemplate).format === 'IMAGE' ? 'image' :
-                                hasMediaHeader(selectedTemplate).format === 'VIDEO' ? 'video' :
-                                  hasMediaHeader(selectedTemplate).format === 'DOCUMENT' ? 'document' : undefined
-                            }
-                            title={`Select ${hasMediaHeader(selectedTemplate).format?.toLowerCase()} for header`}
-                          />
-                        </div>
-                      ) : (
-                        <div className="space-y-2">
-                          <Label htmlFor="media-id" className="text-xs">
-                            Facebook Media ID
-                          </Label>
-                          <Input
-                            id="media-id"
-                            type="text"
-                            value={mediaId}
-                            onChange={(e) => {
-                              setMediaId(e.target.value);
-                              setMediaUrl(""); // Clear URL when media ID is used
-                            }}
-                            placeholder="123456789012345"
-                            className="mt-1"
-                          />
-                          <p className="text-xs text-muted-foreground">
-                            💡 Upload media to Facebook first to get a Media ID (more reliable)
-                          </p>
-                          <a
-                            href="https://developers.facebook.com/docs/graph-api/guides/upload"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-xs text-blue-600 hover:underline inline-flex items-center gap-1"
-                          >
-                            📚 How to upload media
-                            <span>↗</span>
-                          </a>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Template Variables */}
-                  {extractVariables(selectedTemplate).all.length > 0 && (
-                    <div className="space-y-3">
-                      <h4 className="font-medium text-sm">Template Variables</h4>
-
-                      {extractVariables(selectedTemplate).header.length > 0 && (
-                        <div className="space-y-2">
-                          <p className="text-xs text-blue-600 font-medium">Header Variables</p>
-                          {extractVariables(selectedTemplate).header.map((variable) => (
-                            <div key={`header-${variable}`}>
-                              <Label htmlFor={`bulk-header-var-${variable}`} className="text-xs">
-                                {`{{${variable}}}`} *
-                              </Label>
-                              <Input
-                                id={`bulk-header-var-${variable}`}
-                                value={variables.header[variable] || ''}
-                                onChange={(e) => setVariables(prev => ({
-                                  ...prev,
-                                  header: { ...prev.header, [variable]: e.target.value }
-                                }))}
-                                placeholder={`Enter value for {{${variable}}}`}
-                                className="mt-1"
-                              />
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      {extractVariables(selectedTemplate).body.length > 0 && (
-                        <div className="space-y-2">
-                          <p className="text-xs text-green-600 font-medium">Body Variables</p>
-                          {extractVariables(selectedTemplate).body.map((variable) => (
-                            <div key={`body-${variable}`}>
-                              <Label htmlFor={`bulk-body-var-${variable}`} className="text-xs">
-                                {`{{${variable}}}`} *
-                              </Label>
-                              <Input
-                                id={`bulk-body-var-${variable}`}
-                                value={variables.body[variable] || ''}
-                                onChange={(e) => setVariables(prev => ({
-                                  ...prev,
-                                  body: { ...prev.body, [variable]: e.target.value }
-                                }))}
-                                placeholder={`Enter value for {{${variable}}}`}
-                                className="mt-1"
-                              />
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      {extractVariables(selectedTemplate).footer.length > 0 && (
-                        <div className="space-y-2">
-                          <p className="text-xs text-purple-600 font-medium">Footer Variables</p>
-                          {extractVariables(selectedTemplate).footer.map((variable) => (
-                            <div key={`footer-${variable}`}>
-                              <Label htmlFor={`bulk-footer-var-${variable}`} className="text-xs">
-                                {`{{${variable}}}`} *
-                              </Label>
-                              <Input
-                                id={`bulk-footer-var-${variable}`}
-                                value={variables.footer[variable] || ''}
-                                onChange={(e) => setVariables(prev => ({
-                                  ...prev,
-                                  footer: { ...prev.footer, [variable]: e.target.value }
-                                }))}
-                                placeholder={`Enter value for {{${variable}}}`}
-                                className="mt-1"
-                              />
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Template Quality & Message Limit Info */}
-                  {templateQuality && (
-                    <div className="border-t pt-4 mt-4">
-                      <div className="bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-950/30 dark:to-blue-950/30 rounded-lg p-4 space-y-3">
-                        <h4 className="font-semibold text-sm flex items-center gap-2">
-                          <span>📊</span>
-                          Template Health & Messaging Limits
-                        </h4>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                          <div className="bg-white dark:bg-gray-800 rounded-md p-3">
-                            <p className="text-xs text-muted-foreground mb-1">Quality Rating</p>
-                            <p className={`text-lg font-bold ${getQualityInfo(selectedTemplate).color}`}>
-                              {templateQuality.rating}
-                            </p>
-                          </div>
-
-                          <div className="bg-white dark:bg-gray-800 rounded-md p-3">
-                            <p className="text-xs text-muted-foreground mb-1">Recommended Daily Limit</p>
-                            <p className="text-lg font-bold text-green-600">
-                              {templateQuality.limit.toLocaleString()} messages/day
-                            </p>
-                          </div>
-                        </div>
-
-                        {validContactsCount > templateQuality.limit && (
-                          <div className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded-md p-3">
-                            <p className="text-sm text-red-700 dark:text-red-300 flex items-start gap-2">
-                              <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
-                              <span>
-                                <strong>Warning:</strong> You have {validContactsCount} contacts, which exceeds the recommended limit of {templateQuality.limit.toLocaleString()} messages/day for {templateQuality.rating} quality templates. Consider using batch sending to spread messages over multiple days or reduce your contact list.
-                              </span>
-                            </p>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Batch Configuration */}
-                  {selectedTemplate && validContactsCount > 0 && (
-                    <div className="border-t pt-4 mt-4 space-y-4">
-                      <div className="flex items-center gap-2">
-                        <div className="w-3 h-3 rounded-full bg-purple-500"></div>
-                        <h4 className="font-semibold text-sm">Batch Configuration</h4>
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                          <Label htmlFor="batch-size" className="text-xs">
-                            Contacts per Batch *
-                          </Label>
-                          <Input
-                            id="batch-size"
-                            type="number"
-                            min="1"
-                            max={validContactsCount}
-                            value={batchSize}
-                            onChange={(e) => setBatchSize(Math.max(1, parseInt(e.target.value) || 10))}
-                            className="mt-1"
-                          />
-                          <p className="text-xs text-muted-foreground">
-                            Split sending into batches of this size
-                          </p>
-                        </div>
-
-                        <div className="space-y-2">
-                          <Label htmlFor="batch-delay" className="text-xs">
-                            Delay Between Batches (seconds) *
-                          </Label>
-                          <Input
-                            id="batch-delay"
-                            type="number"
-                            min="0"
-                            max="3600"
-                            value={batchDelay}
-                            onChange={(e) => setBatchDelay(Math.max(0, parseInt(e.target.value) || 5))}
-                            className="mt-1"
-                          />
-                          <p className="text-xs text-muted-foreground">
-                            Wait time after each batch completes
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="bg-muted/50 rounded-md p-3">
-                        <p className="text-sm">
-                          <strong>Batch Preview:</strong> {Math.ceil(validContactsCount / batchSize)} batch{Math.ceil(validContactsCount / batchSize) !== 1 ? 'es' : ''} will be created
-                          {Math.ceil(validContactsCount / batchSize) > 1 && ` with ~${batchDelay}s delay between each`}
+                        <p className="text-xs text-stone-500 dark:text-stone-400 mt-0.5">
+                          Manually append a contact to the broadcast dispatch staging list.
                         </p>
                       </div>
                     </div>
-                  )}
 
-                  {/* Self-Testing Feature */}
-                  {selectedTemplate && validContactsCount > 0 && (
-                    <div className="border-t pt-4 mt-4 space-y-4">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="checkbox"
-                            id="include-self-test"
-                            checked={includeSelfTest}
-                            onChange={(e) => setIncludeSelfTest(e.target.checked)}
-                            className="w-4 h-4 rounded border-gray-300 text-green-600 focus:ring-green-500"
-                          />
-                          <Label htmlFor="include-self-test" className="text-sm font-medium cursor-pointer">
-                            🧪 Include me in every batch (for testing)
-                          </Label>
-                        </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setShowAddContact(false);
+                        setNewContactName("");
+                        setNewContactPhone("");
+                      }}
+                      className="size-8 p-0 rounded-xl text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-800 transition-colors cursor-pointer"
+                      title="Close form"
+                    >
+                      <X className="size-4" />
+                    </Button>
+                  </div>
+
+                  {/* Form Input Fields */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="contact_name" className="text-xs font-semibold text-stone-700 dark:text-stone-300 flex items-center gap-1">
+                        <span>Recipient Name</span>
+                        <span className="text-[#5F7C65] font-bold">*</span>
+                      </Label>
+                      <div className="relative">
+                        <User className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-stone-400 pointer-events-none" />
+                        <Input
+                          id="contact_name"
+                          value={newContactName}
+                          onChange={(e) => setNewContactName(e.target.value)}
+                          placeholder="e.g. Sarah Jenkins"
+                          className="h-10 pl-10 pr-3.5 text-xs sm:text-sm rounded-xl border-stone-300 dark:border-stone-700 bg-[#FAF8F5]/60 dark:bg-stone-950/60 text-stone-900 dark:text-stone-100 placeholder:text-stone-400 focus-visible:ring-1 focus-visible:ring-[#5F7C65] focus-visible:border-[#5F7C65] transition-all"
+                          onKeyDown={(e) => e.key === "Enter" && handleAddContact()}
+                        />
                       </div>
-
-                      {includeSelfTest && (
-                        <div className="space-y-2 pl-6">
-                          <Label htmlFor="test-phone" className="text-xs">
-                            Your Phone Number *
-                          </Label>
-                          <Input
-                            id="test-phone"
-                            type="tel"
-                            value={testPhoneNumber}
-                            onChange={(e) => setTestPhoneNumber(e.target.value)}
-                            placeholder="91XXXXXXXXXX"
-                            className="mt-1 font-mono"
-                          />
-                          <p className="text-xs text-muted-foreground">
-                            Format: Country code + 10-digit number (e.g., 919876543210)
-                          </p>
-                          <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-md p-3">
-                            <p className="text-xs text-blue-700 dark:text-blue-300">
-                              💡 <strong>Tip:</strong> You'll receive a test message with every batch to verify delivery success. This helps catch issues where the API returns success but messages aren't actually delivered.
-                            </p>
-                          </div>
-                        </div>
-                      )}
+                      <p className="text-[11px] text-stone-500 dark:text-stone-400">
+                        Full customer or organization name.
+                      </p>
                     </div>
-                  )}
+
+                    <div className="space-y-1.5">
+                      <Label htmlFor="contact_phone" className="text-xs font-semibold text-stone-700 dark:text-stone-300 flex items-center gap-1">
+                        <span>Phone Number</span>
+                        <span className="text-[#5F7C65] font-bold">*</span>
+                      </Label>
+                      <div className="relative">
+                        <Phone className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-stone-400 pointer-events-none" />
+                        <Input
+                          id="contact_phone"
+                          value={newContactPhone}
+                          onChange={(e) => setNewContactPhone(e.target.value)}
+                          placeholder="e.g. 919876543210"
+                          className="h-10 pl-10 pr-3.5 text-xs sm:text-sm font-mono rounded-xl border-stone-300 dark:border-stone-700 bg-[#FAF8F5]/60 dark:bg-stone-950/60 text-stone-900 dark:text-stone-100 placeholder:text-stone-400 focus-visible:ring-1 focus-visible:ring-[#5F7C65] focus-visible:border-[#5F7C65] transition-all"
+                          onKeyDown={(e) => e.key === "Enter" && handleAddContact()}
+                        />
+                      </div>
+                      <p className="text-[11px] text-stone-500 dark:text-stone-400 font-mono">
+                        Include country code without &apos;+&apos; or spaces (e.g. 919876543210).
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Form Action Buttons */}
+                  <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-stone-200/70 dark:border-stone-800/70">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setShowAddContact(false);
+                        setNewContactName("");
+                        setNewContactPhone("");
+                      }}
+                      className="h-9 px-4 rounded-xl text-xs font-medium border-stone-300 dark:border-stone-700 text-stone-700 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-800 transition-colors cursor-pointer"
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={handleAddContact}
+                      className="h-9 px-4 rounded-xl text-xs font-medium bg-[#5F7C65] hover:bg-[#526D57] text-white shadow-[inset_0_1px_2px_0_rgba(255,255,255,0.2),inset_0_-1px_2px_0_rgba(0,0,0,0.18)] transition-all active:scale-[0.98] gap-1.5 cursor-pointer"
+                    >
+                      <Plus className="size-3.5" />
+                      <span>Add Recipient</span>
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {/* Contacts Table */}
+              {contacts.length > 0 && (
+                <div className="space-y-3 pt-2">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                    <div className="relative max-w-xs w-full">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-stone-400 pointer-events-none" />
+                      <Input
+                        value={contactSearch}
+                        onChange={(e) => setContactSearch(e.target.value)}
+                        placeholder="Filter contacts..."
+                        className="h-9 pl-9 text-xs rounded-xl border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-900"
+                      />
+                    </div>
+
+                    {!showAddContact && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setShowAddContact(true)}
+                        className="h-9 px-3.5 rounded-xl text-xs font-medium border-stone-300 dark:border-stone-700 hover:border-[#5F7C65]/50 bg-white/80 dark:bg-stone-900/80 hover:bg-[#5F7C65]/10 text-stone-800 dark:text-stone-200 gap-1.5 self-start sm:self-auto shadow-2xs transition-all cursor-pointer"
+                      >
+                        <UserPlus className="size-3.5 text-[#5F7C65]" />
+                        <span>Add Single Contact</span>
+                      </Button>
+                    )}
+                  </div>
+
+                  <div className="rounded-2xl border border-stone-200/80 dark:border-stone-800/80 bg-white dark:bg-stone-900 overflow-hidden shadow-2xs">
+                    <div className="max-h-60 overflow-y-auto">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-stone-100/80 dark:bg-stone-950/80 text-stone-600 dark:text-stone-400 font-mono uppercase text-[10px] tracking-wider sticky top-0 z-10 border-b border-stone-200/80 dark:border-stone-800/80">
+                          <tr>
+                            <th className="py-2.5 px-4">Recipient Name</th>
+                            <th className="py-2.5 px-4">Phone Number</th>
+                            <th className="py-2.5 px-4">Verification</th>
+                            <th className="py-2.5 px-4 text-right">Remove</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-stone-200/60 dark:divide-stone-800/60 font-sans">
+                          {displayedContacts.map((contact, index) => {
+                            const validation = validatePhoneNumber(contact.phone_number);
+                            const isContactValid = contact.isValid || validation.isValid;
+                            const countryName = contact.country || validation.country;
+                            const displayError = contact.error || validation.error;
+
+                            return (
+                              <tr key={index} className="hover:bg-stone-50/80 dark:hover:bg-stone-800/40 transition-colors">
+                                <td className="py-2.5 px-4 font-medium text-stone-900 dark:text-stone-100">
+                                  {contact.name}
+                                </td>
+                                <td className="py-2.5 px-4 font-mono text-stone-700 dark:text-stone-300">
+                                  +{validation.formatted || contact.phone_number}
+                                </td>
+                                <td className="py-2.5 px-4">
+                                  {isContactValid ? (
+                                    <span className="inline-flex items-center gap-1.5 text-[11px] font-mono text-emerald-700 dark:text-emerald-400 font-medium">
+                                      <CheckCircle2 className="size-3 text-emerald-600 shrink-0" />
+                                      <span>Valid</span>
+                                      {countryName && countryName !== "International" && (
+                                        <span className="text-stone-500 dark:text-stone-400 font-sans text-[10px] font-normal">
+                                          ({countryName})
+                                        </span>
+                                      )}
+                                    </span>
+                                  ) : (
+                                    <span
+                                      className="inline-flex items-center gap-1 text-[11px] font-mono text-red-600 dark:text-red-400 font-medium cursor-help"
+                                      title={displayError}
+                                    >
+                                      <XCircle className="size-3 text-red-500 shrink-0" />
+                                      <span>Invalid format</span>
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="py-2.5 px-4 text-right">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleDeleteContact(index)}
+                                    className="size-7 p-0 rounded-lg text-stone-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20"
+                                  >
+                                    <Trash2 className="size-3.5" />
+                                  </Button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
-        {/* Step 3: Send */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
-                <span className="text-green-700 dark:text-green-300 font-semibold">3</span>
+        {/* Step 2: Select WhatsApp Template */}
+        <div className="rounded-3xl border border-stone-200/80 dark:border-stone-800/80 bg-white/80 dark:bg-stone-900/70 backdrop-blur-md p-1.5 shadow-[0_4px_20px_-4px_rgba(30,45,35,0.06)]">
+          <div className="rounded-[calc(1.5rem-0.125rem)] bg-[#FAF8F5]/60 dark:bg-stone-950/40 p-5 sm:p-7 space-y-6">
+            {/* Step Header */}
+            <div className="flex items-center justify-between pb-4 border-b border-stone-200/60 dark:border-stone-800/60">
+              <div className="flex items-center gap-3">
+                <div className="size-8 rounded-xl bg-[#2D583F] text-white font-mono font-bold text-xs flex items-center justify-center shadow-2xs">
+                  02
+                </div>
+                <div>
+                  <h2 className="text-sm sm:text-base font-semibold text-stone-900 dark:text-stone-100 tracking-tight">
+                    Template & Parameter Mapping
+                  </h2>
+                  <p className="text-[11px] sm:text-xs text-stone-500 dark:text-stone-400">
+                    Select an approved WhatsApp template and map dynamic variables or media attachments.
+                  </p>
+                </div>
               </div>
-              Send Messages
-            </CardTitle>
-            <CardDescription>
-              Review and send template messages to all valid contacts
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg">
-                <div className="flex items-center gap-4">
-                  <div className="flex items-center gap-2">
-                    <Users className="h-5 w-5 text-muted-foreground" />
-                    <span className="font-medium">{validContactsCount} recipients</span>
-                  </div>
-                  {selectedTemplate && (
-                    <div className="flex items-center gap-2 text-muted-foreground">
-                      <MessageSquareText className="h-5 w-5" />
-                      <span className="text-sm">{selectedTemplate.name}</span>
+
+              {selectedTemplate && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleSelectTemplate}
+                  className="h-8 px-3 rounded-xl text-xs border-stone-300 dark:border-stone-700 gap-1.5 text-stone-700 dark:text-stone-300 cursor-pointer"
+                >
+                  <MessageSquareText className="size-3.5 text-[#5F7C65]" />
+                  <span>Change Template</span>
+                </Button>
+              )}
+            </div>
+
+            {/* Template Selection Trigger or Card */}
+            {!selectedTemplate ? (
+              <div className="p-8 text-center space-y-4 rounded-2xl border border-stone-200/80 dark:border-stone-800/80 bg-white/50 dark:bg-stone-900/40">
+                <div className="size-12 rounded-2xl bg-[#5F7C65]/10 text-[#5F7C65] flex items-center justify-center mx-auto">
+                  <MessageSquareText className="size-6" />
+                </div>
+                <div className="space-y-1">
+                  <h3 className="text-sm font-semibold text-stone-900 dark:text-stone-100">
+                    No Template Chosen
+                  </h3>
+                  <p className="text-xs text-stone-500 dark:text-stone-400 max-w-sm mx-auto">
+                    {contacts.length === 0
+                      ? "First add contacts in Step 1 to unlock template selection."
+                      : "Choose one of your approved Meta WhatsApp Cloud API templates to dispatch."}
+                  </p>
+                </div>
+                <Button
+                  onClick={handleSelectTemplate}
+                  disabled={contacts.length === 0 || validContactsCount === 0}
+                  className="h-9 px-4 rounded-xl text-xs bg-[#2D583F] hover:bg-[#244732] text-white font-medium gap-1.5 shadow-2xs cursor-pointer disabled:opacity-50"
+                >
+                  <MessageSquareText className="size-3.5" />
+                  <span>Browse Approved Templates</span>
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-5">
+                {/* Selected Template Header Card */}
+                <div className="p-4 rounded-2xl bg-white dark:bg-stone-900 border border-stone-200/80 dark:border-stone-800/80 flex items-start justify-between gap-4 shadow-2xs">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="size-10 rounded-2xl bg-[#5F7C65]/12 dark:bg-[#5F7C65]/20 text-xl flex items-center justify-center shrink-0">
+                      {selectedTemplate.category_icon || "💬"}
                     </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="font-semibold text-sm sm:text-base text-stone-900 dark:text-stone-100 font-mono truncate">
+                          {selectedTemplate.name}
+                        </h3>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-emerald-50 text-[#2D583F] border border-emerald-200/80">
+                          APPROVED
+                        </span>
+                      </div>
+                      <p className="text-xs text-stone-500 font-mono mt-0.5">
+                        {selectedTemplate.category} • {selectedTemplate.language}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="text-right shrink-0">
+                    <span className="text-[11px] font-mono text-stone-500">
+                      {extractVariables(selectedTemplate).all.length} Variable{extractVariables(selectedTemplate).all.length !== 1 ? "s" : ""}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Message Bubble Preview */}
+                <div className="p-4 rounded-2xl bg-[#FAF8F5] dark:bg-stone-950/80 border border-stone-200/70 dark:border-stone-800/70 space-y-2 font-sans">
+                  {selectedTemplate.formatted_components?.header?.text && (
+                    <p className="font-bold text-xs text-stone-900 dark:text-stone-100">
+                      {selectedTemplate.formatted_components.header.text}
+                    </p>
+                  )}
+                  {selectedTemplate.formatted_components?.body?.text && (
+                    <p className="text-xs text-stone-700 dark:text-stone-300 leading-relaxed whitespace-pre-wrap">
+                      {selectedTemplate.formatted_components.body.text}
+                    </p>
+                  )}
+                  {selectedTemplate.formatted_components?.footer?.text && (
+                    <p className="text-[10px] text-stone-500 italic pt-1 border-t border-stone-200/60 dark:border-stone-800/60">
+                      {selectedTemplate.formatted_components.footer.text}
+                    </p>
                   )}
                 </div>
-                <div className="flex items-center gap-2">
-                  {isSending && currentBatchIndex >= 0 && (
-                    <span className="text-sm text-muted-foreground animate-pulse">
-                      Batch {currentBatchIndex + 1}/{batches.length} • Sending {currentContactInBatch}/{totalContactsInCurrentBatch} • {sendResults.length} total sent
-                    </span>
-                  )}
-                  {!isSending && batches.length > 0 && batches.every(b => b.status === 'completed') && (
-                    <span className="text-sm text-green-600 font-medium">
-                      ✓ All batches completed
-                    </span>
-                  )}
-                  <Button
-                    onClick={handleConfirmSend}
-                    disabled={
-                      !selectedTemplate ||
-                      validContactsCount === 0 ||
-                      isSending ||
-                      !!(templateQuality && validContactsCount > templateQuality.limit && batchSize >= validContactsCount)
-                    }
-                    className="bg-green-600 hover:bg-green-700 gap-2"
-                    title={
-                      templateQuality && validContactsCount > templateQuality.limit && batchSize >= validContactsCount
-                        ? 'Configure batch sending to proceed with large contact list'
-                        : ''
-                    }
-                  >
-                    {isSending ? (
-                      <>
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        Sending {currentContactInBatch}/{totalContactsInCurrentBatch} (Batch {currentBatchIndex + 1}/{batches.length})
-                      </>
+
+                {/* Media Header Configuration */}
+                {hasMediaHeader(selectedTemplate).hasMedia && (
+                  <div className="rounded-2xl border border-[#5F7C65]/30 bg-white/90 dark:bg-stone-900/90 p-4.5 space-y-3 shadow-2xs">
+                    <div className="flex items-center gap-2">
+                      <div className="size-7 rounded-lg bg-[#5F7C65]/12 text-[#5F7C65] flex items-center justify-center">
+                        {hasMediaHeader(selectedTemplate).format === "IMAGE" ? (
+                          <ImageIcon className="size-4" />
+                        ) : hasMediaHeader(selectedTemplate).format === "VIDEO" ? (
+                          <Video className="size-4" />
+                        ) : (
+                          <FileText className="size-4" />
+                        )}
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-semibold text-stone-900 dark:text-stone-100 font-mono uppercase tracking-wider">
+                          {hasMediaHeader(selectedTemplate).format} Header Attachment Required *
+                        </h4>
+                        <p className="text-[11px] text-stone-500">
+                          Attach a media file from your workspace library or specify a Meta Media ID.
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Method Switcher */}
+                    <div className="flex gap-2 max-w-xs">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={mediaInputType === "url" ? "default" : "outline"}
+                        onClick={() => setMediaInputType("url")}
+                        className={`flex-1 h-8 rounded-xl text-xs font-mono ${
+                          mediaInputType === "url" ? "bg-[#2D583F] text-white" : "border-stone-300 dark:border-stone-700"
+                        }`}
+                      >
+                        Media Library
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={mediaInputType === "id" ? "default" : "outline"}
+                        onClick={() => setMediaInputType("id")}
+                        className={`flex-1 h-8 rounded-xl text-xs font-mono ${
+                          mediaInputType === "id" ? "bg-[#2D583F] text-white" : "border-stone-300 dark:border-stone-700"
+                        }`}
+                      >
+                        Meta Media ID
+                      </Button>
+                    </div>
+
+                    {mediaInputType === "url" ? (
+                      <div className="space-y-2">
+                        {mediaUrl ? (
+                          <div className="flex items-center gap-3 bg-stone-50 dark:bg-stone-950 p-3 rounded-xl border border-stone-200/80 dark:border-stone-800/80">
+                            <ImageIcon className="size-5 text-[#2D583F] shrink-0" />
+                            <span className="text-xs font-mono truncate flex-1 text-stone-800 dark:text-stone-200">
+                              {mediaUrl.split("/").pop()?.split("?")[0] || "Selected attachment"}
+                            </span>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setMediaUrl("")}
+                              className="size-7 p-0 rounded-lg text-stone-400 hover:text-red-600"
+                            >
+                              <XCircle className="size-4" />
+                            </Button>
+                          </div>
+                        ) : (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setMediaPickerOpen(true)}
+                            className="w-full h-9 rounded-xl border-dashed border-stone-300 dark:border-stone-700 text-xs font-medium text-stone-700 dark:text-stone-300 hover:border-[#5F7C65] gap-2"
+                          >
+                            <ImageIcon className="size-3.5 text-[#5F7C65]" />
+                            <span>Select {hasMediaHeader(selectedTemplate).format?.toLowerCase()} from Media Library</span>
+                          </Button>
+                        )}
+                        <MediaPickerDialog
+                          isOpen={mediaPickerOpen}
+                          onClose={() => setMediaPickerOpen(false)}
+                          onSelect={(media) => {
+                            setMediaUrl(media.url);
+                            setMediaId("");
+                            setMediaPickerOpen(false);
+                          }}
+                          mediaTypeFilter={
+                            hasMediaHeader(selectedTemplate).format === "IMAGE"
+                              ? "image"
+                              : hasMediaHeader(selectedTemplate).format === "VIDEO"
+                              ? "video"
+                              : hasMediaHeader(selectedTemplate).format === "DOCUMENT"
+                              ? "document"
+                              : undefined
+                          }
+                          title={`Select ${hasMediaHeader(selectedTemplate).format?.toLowerCase()} header`}
+                        />
+                      </div>
                     ) : (
-                      <>
-                        <Send className="h-4 w-4" />
-                        Send {batches.length > 0 ? `${batches.length} Batch${batches.length !== 1 ? 'es' : ''}` : 'to All'}
-                      </>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="media_id" className="text-xs font-mono text-stone-700 dark:text-stone-300">
+                          Meta Graph Media ID *
+                        </Label>
+                        <Input
+                          id="media_id"
+                          value={mediaId}
+                          onChange={(e) => {
+                            setMediaId(e.target.value);
+                            setMediaUrl("");
+                          }}
+                          placeholder="e.g. 123456789012345"
+                          className="h-9 text-xs font-mono rounded-xl border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-950"
+                        />
+                      </div>
                     )}
-                  </Button>
+                  </div>
+                )}
+
+                {/* Variable Inputs Mapper */}
+                {extractVariables(selectedTemplate).all.length > 0 && (
+                  <div className="rounded-2xl border border-stone-200/80 dark:border-stone-800/80 bg-white/90 dark:bg-stone-900/90 p-4.5 space-y-4 shadow-2xs">
+                    <div className="flex items-center gap-2">
+                      <div className="size-7 rounded-lg bg-amber-500/15 text-amber-700 dark:text-amber-400 flex items-center justify-center">
+                        <Hash className="size-4" />
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-semibold text-stone-900 dark:text-stone-100 font-mono uppercase tracking-wider">
+                          Dynamic Variable Values *
+                        </h4>
+                        <p className="text-[11px] text-stone-500">
+                          Provide fallback or batch values for each parameter tag in the message.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                      {extractVariables(selectedTemplate).body.map((v) => (
+                        <div key={`body-${v}`} className="space-y-1">
+                          <Label htmlFor={`var-${v}`} className="text-xs font-mono text-stone-700 dark:text-stone-300">
+                            Parameter &#123;&#123;{v}&#125;&#125; *
+                          </Label>
+                          <Input
+                            id={`var-${v}`}
+                            value={variables.body[v] || ""}
+                            onChange={(e) =>
+                              setVariables((prev) => ({
+                                ...prev,
+                                body: { ...prev.body, [v]: e.target.value },
+                              }))
+                            }
+                            placeholder={`Value for {{${v}}}`}
+                            className="h-9 text-xs rounded-xl border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-950 font-mono"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Template Health & Limits Bento */}
+                {templateQuality && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="p-3.5 rounded-2xl border border-stone-200/80 dark:border-stone-800/80 bg-white/80 dark:bg-stone-900/60 flex items-center justify-between">
+                      <div>
+                        <span className="text-[11px] font-mono uppercase tracking-wider text-stone-400">Quality Rating</span>
+                        <p className={`text-sm font-bold font-mono mt-0.5 ${getQualityInfo(selectedTemplate).color}`}>
+                          {templateQuality.rating} QUALITY
+                        </p>
+                      </div>
+                      <ShieldCheck className="size-5 text-stone-400" />
+                    </div>
+
+                    <div className="p-3.5 rounded-2xl border border-stone-200/80 dark:border-stone-800/80 bg-white/80 dark:bg-stone-900/60 flex items-center justify-between">
+                      <div>
+                        <span className="text-[11px] font-mono uppercase tracking-wider text-stone-400">Daily Recipient Quota</span>
+                        <p className="text-sm font-bold font-mono mt-0.5 text-[#2D583F] dark:text-emerald-300">
+                          {templateQuality.limit.toLocaleString()} / day
+                        </p>
+                      </div>
+                      <Calendar className="size-5 text-stone-400" />
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Step 3: Batch Configuration & Self Testing */}
+        {selectedTemplate && validContactsCount > 0 && (
+          <div className="rounded-3xl border border-stone-200/80 dark:border-stone-800/80 bg-white/80 dark:bg-stone-900/70 backdrop-blur-md p-1.5 shadow-[0_4px_20px_-4px_rgba(30,45,35,0.06)]">
+            <div className="rounded-[calc(1.5rem-0.125rem)] bg-[#FAF8F5]/60 dark:bg-stone-950/40 p-5 sm:p-7 space-y-6">
+              {/* Step Header */}
+              <div className="flex items-center justify-between pb-4 border-b border-stone-200/60 dark:border-stone-800/60">
+                <div className="flex items-center gap-3">
+                  <div className="size-8 rounded-xl bg-[#2D583F] text-white font-mono font-bold text-xs flex items-center justify-center shadow-2xs">
+                    03
+                  </div>
+                  <div>
+                    <h2 className="text-sm sm:text-base font-semibold text-stone-900 dark:text-stone-100 tracking-tight">
+                      Batch Rate-Limiting & Quality Controls
+                    </h2>
+                    <p className="text-[11px] sm:text-xs text-stone-500 dark:text-stone-400">
+                      Configure throughput chunking to maintain Meta sender reputation and avoid rate blocks.
+                    </p>
+                  </div>
                 </div>
               </div>
 
-              {/* Batch Progress Visualization */}
-              {batches.length > 0 && (
-                <div className="space-y-4 mt-6">
-                  <div className="flex items-center justify-between">
-                    <h4 className="font-semibold text-sm flex items-center gap-2">
-                      <span>📦</span>
-                      Batch Progress
-                    </h4>
-                    <span className="text-xs text-muted-foreground">
-                      {batches.filter(b => b.status === 'completed').length} / {batches.length} batches completed
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label htmlFor="batch_size" className="text-xs font-mono text-stone-700 dark:text-stone-300">
+                    Contacts Per Batch *
+                  </Label>
+                  <Input
+                    id="batch_size"
+                    type="number"
+                    min="1"
+                    max={validContactsCount}
+                    value={batchSize}
+                    onChange={(e) => setBatchSize(Math.max(1, parseInt(e.target.value, 10) || 10))}
+                    className="h-9 text-xs rounded-xl border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-950 font-mono"
+                  />
+                  <p className="text-[11px] text-stone-400">Recommended: 10–25 contacts per burst</p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="batch_delay" className="text-xs font-mono text-stone-700 dark:text-stone-300">
+                    Pause Duration Between Batches (seconds) *
+                  </Label>
+                  <Input
+                    id="batch_delay"
+                    type="number"
+                    min="0"
+                    max="3600"
+                    value={batchDelay}
+                    onChange={(e) => setBatchDelay(Math.max(0, parseInt(e.target.value, 10) || 5))}
+                    className="h-9 text-xs rounded-xl border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-950 font-mono"
+                  />
+                  <p className="text-[11px] text-stone-400">Pause window allows handsets to receive without spam flags</p>
+                </div>
+              </div>
+
+              {/* Batch Forecast Pill */}
+              <div className="p-3.5 rounded-2xl bg-white dark:bg-stone-900 border border-stone-200/80 dark:border-stone-800/80 text-xs font-mono text-stone-600 dark:text-stone-300 flex items-center justify-between">
+                <span>Calculated Plan:</span>
+                <strong className="text-stone-900 dark:text-stone-100">
+                  {Math.ceil(validContactsCount / batchSize)} Batch{Math.ceil(validContactsCount / batchSize) !== 1 ? "es" : ""} • ~{batchDelay}s delay (Est. ~{Math.ceil(((Math.ceil(validContactsCount / batchSize) * batchSize) + (Math.ceil(validContactsCount / batchSize) - 1) * batchDelay) / 60)} mins)
+                </strong>
+              </div>
+
+              {/* Self-Testing Option */}
+              <div className="p-4 rounded-2xl border border-stone-200/80 dark:border-stone-800/80 bg-white dark:bg-stone-900 space-y-3">
+                <div className="flex items-center gap-2.5">
+                  <input
+                    type="checkbox"
+                    id="self_test_toggle"
+                    checked={includeSelfTest}
+                    onChange={(e) => setIncludeSelfTest(e.target.checked)}
+                    className="size-4 rounded border-stone-300 text-[#2D583F] focus:ring-[#2D583F]"
+                  />
+                  <Label htmlFor="self_test_toggle" className="text-xs font-semibold text-stone-900 dark:text-stone-100 cursor-pointer">
+                    🧪 Include testing handset in each batch (Delivery Verification)
+                  </Label>
+                </div>
+
+                {includeSelfTest && (
+                  <div className="pl-6 space-y-2 pt-1 animate-in fade-in duration-200">
+                    <Label htmlFor="test_number" className="text-xs font-mono text-stone-600 dark:text-stone-400">
+                      Your Verification Phone Number (e.g. 919876543210) *
+                    </Label>
+                    <Input
+                      id="test_number"
+                      type="tel"
+                      value={testPhoneNumber}
+                      onChange={(e) => setTestPhoneNumber(e.target.value)}
+                      placeholder="919876543210"
+                      className="h-9 text-xs font-mono rounded-xl border-stone-300 dark:border-stone-700 bg-stone-50 dark:bg-stone-950 max-w-sm"
+                    />
+                    <p className="text-[11px] text-stone-500">
+                      Your number will receive the exact template payload alongside each batch to verify real-time handset delivery.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Step 4: Dispatch Execution & Telemetry */}
+        <div className="rounded-3xl border border-stone-200/80 dark:border-stone-800/80 bg-white/80 dark:bg-stone-900/70 backdrop-blur-md p-1.5 shadow-[0_4px_20px_-4px_rgba(30,45,35,0.06)]">
+          <div className="rounded-[calc(1.5rem-0.125rem)] bg-[#FAF8F5]/60 dark:bg-stone-950/40 p-5 sm:p-7 space-y-6">
+            {/* Step Header */}
+            <div className="flex items-center justify-between pb-4 border-b border-stone-200/60 dark:border-stone-800/60">
+              <div className="flex items-center gap-3">
+                <div className="size-8 rounded-xl bg-[#2D583F] text-white font-mono font-bold text-xs flex items-center justify-center shadow-2xs">
+                  04
+                </div>
+                <div>
+                  <h2 className="text-sm sm:text-base font-semibold text-stone-900 dark:text-stone-100 tracking-tight">
+                    Campaign Dispatch & Telemetry
+                  </h2>
+                  <p className="text-[11px] sm:text-xs text-stone-500 dark:text-stone-400">
+                    Review pre-flight conditions, start broadcast, and monitor live delivery progression.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Pre-Flight Summary Bar */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 rounded-2xl bg-white dark:bg-stone-900 border border-stone-200/80 dark:border-stone-800/80 shadow-2xs">
+              <div className="flex items-center gap-4 text-xs font-mono flex-wrap">
+                <div className="flex items-center gap-1.5">
+                  <Users className="size-4 text-[#5F7C65]" />
+                  <span>{validContactsCount} Recipients Ready</span>
+                </div>
+                {selectedTemplate && (
+                  <div className="flex items-center gap-1.5">
+                    <MessageSquareText className="size-4 text-stone-400" />
+                    <span className="font-semibold text-stone-900 dark:text-stone-100">{selectedTemplate.name}</span>
+                  </div>
+                )}
+              </div>
+
+              <Button
+                onClick={handleConfirmSend}
+                disabled={!selectedTemplate || validContactsCount === 0 || isSending}
+                className="h-10 px-5 rounded-xl text-xs font-semibold bg-[#2D583F] hover:bg-[#244732] text-white shadow-2xs gap-2 transition-colors cursor-pointer disabled:opacity-50 self-end sm:self-auto shrink-0"
+              >
+                {isSending ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" />
+                    <span>
+                      Sending {currentContactInBatch}/{totalContactsInCurrentBatch} (Batch {currentBatchIndex + 1}/{batches.length})
                     </span>
-                  </div>
+                  </>
+                ) : (
+                  <>
+                    <Send className="size-4" />
+                    <span>
+                      Dispatch {batches.length > 0 ? `${batches.length} Batches` : `to ${validContactsCount} Recipients`}
+                    </span>
+                  </>
+                )}
+              </Button>
+            </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                    {batches.map((batch, index) => (
-                      <div
-                        key={batch.id}
-                        className={`border rounded-lg p-4 transition-all duration-300 ${batch.status === 'completed'
-                          ? 'bg-green-50 dark:bg-green-950/30 border-green-500'
-                          : batch.status === 'sending'
-                            ? 'bg-blue-50 dark:bg-blue-950/30 border-blue-500 animate-pulse'
-                            : batch.status === 'failed'
-                              ? 'bg-red-50 dark:bg-red-950/30 border-red-500'
-                              : 'bg-muted/50 border-border'
-                          }`}
-                      >
-                        <div className="flex items-center justify-between mb-2">
-                          <h5 className="font-semibold text-sm">Batch {batch.id}</h5>
-                          {batch.status === 'completed' && (
-                            <CheckCircle2 className="h-5 w-5 text-green-600 animate-in fade-in zoom-in duration-300" />
-                          )}
-                          {batch.status === 'sending' && (
-                            <Loader2 className="h-5 w-5 text-blue-600 animate-spin" />
-                          )}
-                          {batch.status === 'pending' && (
-                            <div className="h-5 w-5 rounded-full border-2 border-muted-foreground" />
-                          )}
-                        </div>
-
-                        <div className="space-y-1 text-xs text-muted-foreground">
-                          <p>
-                            {batch.contacts.length} contact{batch.contacts.length !== 1 ? 's' : ''}
-                            {batch.contacts.some(c => c.name.includes('🧪 Test')) && ' (incl. test)'}
-                          </p>
-                          {batch.status === 'completed' && batch.results.length > 0 && (
-                            <p className="text-green-600 font-medium">
-                              ✓ {batch.results.filter(r => r.success).length} sent,
-                              ✗ {batch.results.filter(r => !r.success).length} failed
-                            </p>
-                          )}
-                          {batch.status === 'sending' && (
-                            <div className="space-y-2">
-                              <p className="text-blue-600 font-medium animate-pulse">
-                                Sending {currentContactInBatch}/{totalContactsInCurrentBatch}
-                              </p>
-                              {/* Mini progress bar for current batch */}
-                              <div className="w-full bg-blue-200 dark:bg-blue-900/30 rounded-full h-1.5">
-                                <div
-                                  className="bg-blue-600 h-1.5 rounded-full transition-all duration-300"
-                                  style={{
-                                    width: `${totalContactsInCurrentBatch > 0 ? (currentContactInBatch / totalContactsInCurrentBatch) * 100 : 0}%`
-                                  }}
-                                />
-                              </div>
-                              {batch.results.length > 0 && (
-                                <p className="text-xs">
-                                  ✓ {batch.results.filter(r => r.success).length} sent so far
-                                </p>
-                              )}
-                            </div>
-                          )}
-                          {batch.status === 'pending' && index === currentBatchIndex + 1 && batchDelay > 0 && (
-                            <p className="text-yellow-600 font-medium">
-                              Waiting {batchDelay}s before start...
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Overall Progress Bar */}
-                  <div className="bg-muted/50 rounded-lg p-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm font-medium">Overall Progress</span>
-                      <span className="text-sm text-muted-foreground">
-                        {(() => {
-                          const completedBatches = batches.filter(b => b.status === 'completed').length;
-                          const totalBatches = batches.length;
-                          const currentBatchProgress = isSending && currentBatchIndex >= 0 && totalContactsInCurrentBatch > 0
+            {/* Overall Progress Meter */}
+            {batches.length > 0 && (
+              <div className="space-y-4 pt-2">
+                <div className="p-4 rounded-2xl bg-white dark:bg-stone-900 border border-stone-200/80 dark:border-stone-800/80 space-y-2 shadow-2xs">
+                  <div className="flex items-center justify-between text-xs font-mono">
+                    <span className="font-semibold text-stone-800 dark:text-stone-200">Overall Campaign Progress</span>
+                    <span className="text-stone-500">
+                      {(() => {
+                        const completed = batches.filter((b) => b.status === "completed").length;
+                        const total = batches.length;
+                        const currentProgress =
+                          isSending && currentBatchIndex >= 0 && totalContactsInCurrentBatch > 0
                             ? currentContactInBatch / totalContactsInCurrentBatch
                             : 0;
-                          const overallProgress = ((completedBatches + currentBatchProgress) / totalBatches) * 100;
-                          return Math.round(overallProgress);
-                        })()}%
-                      </span>
-                    </div>
-                    <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
-                      <div
-                        className="bg-gradient-to-r from-green-500 to-emerald-600 h-3 rounded-full transition-all duration-500 ease-out"
-                        style={{
-                          width: `${(() => {
-                            const completedBatches = batches.filter(b => b.status === 'completed').length;
-                            const totalBatches = batches.length;
-                            const currentBatchProgress = isSending && currentBatchIndex >= 0 && totalContactsInCurrentBatch > 0
+                        return Math.round(((completed + currentProgress) / total) * 100);
+                      })()}% Complete
+                    </span>
+                  </div>
+
+                  <div className="w-full bg-stone-100 dark:bg-stone-800 rounded-full h-2.5 overflow-hidden">
+                    <div
+                      className="bg-[#2D583F] h-full transition-all duration-500 rounded-full"
+                      style={{
+                        width: `${(() => {
+                          const completed = batches.filter((b) => b.status === "completed").length;
+                          const total = batches.length;
+                          const currentProgress =
+                            isSending && currentBatchIndex >= 0 && totalContactsInCurrentBatch > 0
                               ? currentContactInBatch / totalContactsInCurrentBatch
                               : 0;
-                            const overallProgress = ((completedBatches + currentBatchProgress) / totalBatches) * 100;
-                            return overallProgress;
-                          })()}%`
-                        }}
-                      />
-                    </div>
-                    {isSending && currentBatchIndex >= 0 && (
-                      <p className="text-xs text-muted-foreground mt-2">
-                        Processing batch {currentBatchIndex + 1} of {batches.length} • {sendResults.length} messages sent total
-                      </p>
-                    )}
+                          return ((completed + currentProgress) / total) * 100;
+                        })()}%`,
+                      }}
+                    />
                   </div>
-                </div>
-              )}
 
-              {/* Send Results */}
-              {sendResults.length > 0 && (
-                <div className="space-y-3">
-                  <h4 className="font-medium">Sending Progress</h4>
-                  <div className="max-h-64 overflow-y-auto border rounded-md">
-                    <table className="w-full text-sm">
-                      <thead className="bg-muted sticky top-0 z-10">
+                  {isSending && currentBatchIndex >= 0 && (
+                    <p className="text-[11px] font-mono text-stone-500">
+                      Processing batch {currentBatchIndex + 1} of {batches.length} • {sendResults.length} messages dispatched total
+                    </p>
+                  )}
+                </div>
+
+                {/* Batches Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                  {batches.map((batch, index) => (
+                    <div
+                      key={batch.id}
+                      className={`p-3.5 rounded-2xl border transition-all text-xs ${
+                        batch.status === "completed"
+                          ? "bg-emerald-50/60 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800/60"
+                          : batch.status === "sending"
+                          ? "bg-amber-50/60 dark:bg-amber-950/20 border-amber-300 dark:border-amber-800"
+                          : "bg-white dark:bg-stone-900 border-stone-200/80 dark:border-stone-800/80"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="font-mono font-bold text-stone-800 dark:text-stone-200">
+                          Batch {batch.id}
+                        </span>
+                        {batch.status === "completed" && <Check className="size-4 text-[#2D583F]" />}
+                        {batch.status === "sending" && <Loader2 className="size-4 text-amber-600 animate-spin" />}
+                        {batch.status === "pending" && <Clock className="size-4 text-stone-400" />}
+                      </div>
+
+                      <p className="text-[11px] text-stone-500 font-mono">
+                        {batch.contacts.length} recipients
+                      </p>
+
+                      {batch.status === "completed" && (
+                        <p className="text-[11px] font-mono font-semibold text-[#2D583F] mt-1">
+                          ✓ {batch.results.filter((r) => r.success).length} sent, {batch.results.filter((r) => !r.success).length} failed
+                        </p>
+                      )}
+
+                      {batch.status === "pending" && index === currentBatchIndex + 1 && batchDelay > 0 && (
+                        <p className="text-[11px] font-mono text-amber-700 dark:text-amber-400 mt-1">
+                          Pausing {batchDelay}s before start...
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Results Table & Export */}
+            {sendResults.length > 0 && (
+              <div className="space-y-3 pt-4 border-t border-stone-200/60 dark:border-stone-800/60">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-semibold text-stone-900 dark:text-stone-100 font-mono uppercase tracking-wider">
+                      Live Delivery Feed ({sendResults.length})
+                    </span>
+
+                    {/* Filter Pills */}
+                    <div className="flex items-center gap-1 bg-stone-100 dark:bg-stone-800 p-0.5 rounded-lg text-[10px] font-mono">
+                      {(["ALL", "SUCCESS", "FAILED"] as const).map((tab) => (
+                        <button
+                          key={tab}
+                          onClick={() => setResultsFilter(tab)}
+                          className={`px-2 py-0.5 rounded cursor-pointer ${
+                            resultsFilter === tab
+                              ? "bg-white dark:bg-stone-900 font-bold text-stone-900 dark:text-stone-100 shadow-2xs"
+                              : "text-stone-500"
+                          }`}
+                        >
+                          {tab}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleExportResults}
+                    className="h-8 px-3 rounded-xl text-xs border-stone-300 dark:border-stone-700 gap-1.5 self-start sm:self-auto cursor-pointer"
+                  >
+                    <Download className="size-3.5 text-[#5F7C65]" />
+                    <span>Export Telemetry (CSV)</span>
+                  </Button>
+                </div>
+
+                <div className="rounded-2xl border border-stone-200/80 dark:border-stone-800/80 bg-white dark:bg-stone-900 overflow-hidden shadow-2xs">
+                  <div className="max-h-64 overflow-y-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-stone-100/80 dark:bg-stone-950/80 text-stone-600 dark:text-stone-400 font-mono uppercase text-[10px] tracking-wider sticky top-0 z-10 border-b border-stone-200/80 dark:border-stone-800/80">
                         <tr>
-                          <th className="text-left p-2">Name</th>
-                          <th className="text-left p-2">Phone</th>
-                          <th className="text-left p-2">Status</th>
+                          <th className="py-2.5 px-4">Recipient</th>
+                          <th className="py-2.5 px-4">Phone Number</th>
+                          <th className="py-2.5 px-4">Result</th>
+                          <th className="py-2.5 px-4">Reference / Diagnostic</th>
                         </tr>
                       </thead>
-                      <tbody>
-                        {sendResults.map((result, index) => (
-                          <tr key={index} className="border-t">
-                            <td className="p-2">{result.contact.name}</td>
-                            <td className="p-2 font-mono text-xs">{result.contact.phone_number}</td>
-                            <td className="p-2">
-                              {result.success ? (
-                                <span className="flex items-center gap-1 text-green-600">
-                                  <CheckCircle2 className="h-3 w-3" />
-                                  Sent
+                      <tbody className="divide-y divide-stone-200/60 dark:divide-stone-800/60 font-sans">
+                        {displayedResults.map((res, index) => (
+                          <tr key={index} className="hover:bg-stone-50/80 dark:hover:bg-stone-800/40 transition-colors">
+                            <td className="py-2 px-4 font-medium text-stone-900 dark:text-stone-100">
+                              {res.contact.name}
+                            </td>
+                            <td className="py-2 px-4 font-mono text-stone-700 dark:text-stone-300">
+                              +{res.contact.phone_number}
+                            </td>
+                            <td className="py-2 px-4">
+                              {res.success ? (
+                                <span className="inline-flex items-center gap-1 text-[11px] font-mono text-emerald-700 dark:text-emerald-400 font-semibold">
+                                  <CheckCircle2 className="size-3 text-emerald-600" />
+                                  Delivered
                                 </span>
                               ) : (
-                                <span className="flex items-center gap-1 text-red-600" title={result.error}>
-                                  <XCircle className="h-3 w-3" />
+                                <span className="inline-flex items-center gap-1 text-[11px] font-mono text-red-600 dark:text-red-400 font-semibold">
+                                  <XCircle className="size-3 text-red-500" />
                                   Failed
                                 </span>
                               )}
                             </td>
+                            <td className="py-2 px-4 font-mono text-[11px] text-stone-500 truncate max-w-xs">
+                              {res.messageId ? `ID: ${res.messageId}` : res.error || "—"}
+                            </td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
                   </div>
-                  <div className="flex flex-wrap items-center gap-4 text-sm p-3 bg-muted/30 rounded">
-                    <span className="text-green-600 font-medium">
-                      ✓ {sendResults.filter(r => r.success).length} sent
-                    </span>
-                    <span className="text-red-600 font-medium">
-                      ✗ {sendResults.filter(r => !r.success).length} failed
-                    </span>
-                    {isSending && (
-                      <span className="text-muted-foreground">
-                        {sendResults.length} / {validContactsCount}
-                      </span>
-                    )}
-                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Modal: Template Selector */}
+      {showTemplateSelector && (
+        <div
+          className="fixed inset-0 bg-stone-900/60 dark:bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200"
+          onClick={() => setShowTemplateSelector(false)}
+        >
+          <div
+            className="bg-stone-50 dark:bg-[#121714] border border-stone-200 dark:border-stone-800 rounded-3xl shadow-2xl max-w-3xl w-full max-h-[85vh] flex flex-col overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-6 py-4.5 border-b border-stone-200/80 dark:border-stone-800/80 bg-white/80 dark:bg-stone-900/60">
+              <div className="flex items-center gap-2.5">
+                <div className="size-8 rounded-xl bg-[#5F7C65]/12 dark:bg-[#5F7C65]/20 text-[#5F7C65] flex items-center justify-center">
+                  <MessageSquareText className="size-4" />
+                </div>
+                <h3 className="text-sm font-semibold text-stone-900 dark:text-stone-100">
+                  Select Approved WhatsApp Template
+                </h3>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowTemplateSelector(false)}
+                className="size-7 p-0 rounded-lg text-stone-400 hover:text-stone-700"
+              >
+                <X className="size-4" />
+              </Button>
+            </div>
+
+            <div className="p-4 border-b border-stone-200/60 dark:border-stone-800/60 bg-white/60 dark:bg-stone-900/40">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-stone-400 pointer-events-none" />
+                <Input
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="Search templates by name or category..."
+                  className="h-9 pl-9 text-xs rounded-xl border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-900"
+                  autoFocus
+                />
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-5">
+              {isLoadingTemplates ? (
+                <div className="py-16 text-center space-y-3">
+                  <Loader2 className="size-7 animate-spin mx-auto text-[#5F7C65]" />
+                  <p className="text-xs text-stone-500 font-mono">Querying approved templates...</p>
+                </div>
+              ) : filteredTemplates.length === 0 ? (
+                <div className="py-16 text-center text-xs text-stone-500 font-mono">
+                  No approved templates matched your query.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                  {filteredTemplates.map((template) => (
+                    <div
+                      key={template.id}
+                      onClick={() => handleTemplateSelect(template)}
+                      className="p-4 rounded-2xl border border-stone-200/80 dark:border-stone-800/80 bg-white dark:bg-stone-900 hover:border-[#5F7C65] transition-all cursor-pointer shadow-2xs space-y-2 group"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <h4 className="font-semibold text-xs text-stone-900 dark:text-stone-100 truncate group-hover:text-[#2D583F] transition-colors">
+                            {template.name}
+                          </h4>
+                          <p className="text-[10px] font-mono text-stone-400 mt-0.5">
+                            {template.category} • {template.language}
+                          </p>
+                        </div>
+                        <span className="text-base">{template.category_icon || "💬"}</span>
+                      </div>
+
+                      {hasMediaHeader(template).hasMedia && (
+                        <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-500/10 text-blue-700 dark:text-blue-300 font-mono text-[10px]">
+                          {hasMediaHeader(template).format} Header
+                        </div>
+                      )}
+
+                      <p className="text-[11px] text-stone-600 dark:text-stone-300 line-clamp-2 leading-relaxed">
+                        {template.formatted_components?.body?.text || "No preview"}
+                      </p>
+
+                      <div className="flex items-center justify-between pt-1 border-t border-stone-100 dark:border-stone-800 text-[10px] font-mono text-stone-400">
+                        <span className="text-[#2D583F] font-semibold uppercase">{template.status}</span>
+                        <span>{extractVariables(template).all.length} variables</span>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
-          </CardContent>
-        </Card>
-
-        {/* Template Selector Modal */}
-        {showTemplateSelector && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center mt-0" style={{ marginTop: "0px" }}>
-            <div className="bg-background rounded-lg shadow-2xl max-w-4xl w-full my-8 max-h-[90vh] overflow-hidden flex flex-col">
-              <div className="flex items-center justify-between p-6 border-b flex-shrink-0">
-                <div>
-                  <h2 className="text-xl font-semibold">Select Template</h2>
-                  <p className="text-sm text-muted-foreground">Choose an approved template</p>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setShowTemplateSelector(false)}
-                  className="p-2"
-                >
-                  <XCircle className="h-5 w-5" />
-                </Button>
-              </div>
-
-              <div className="p-6 border-b flex-shrink-0">
-                <Input
-                  placeholder="Search templates..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                />
-              </div>
-
-              <div className="flex-1 overflow-y-auto p-6">
-                {isLoadingTemplates ? (
-                  <div className="flex items-center justify-center py-12">
-                    <Loader2 className="h-8 w-8 animate-spin text-green-600" />
-                    <span className="ml-3 text-muted-foreground">Loading templates...</span>
-                  </div>
-                ) : filteredTemplates.length === 0 ? (
-                  <div className="text-center py-12 text-muted-foreground">
-                    No templates found
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {filteredTemplates.map((template) => (
-                      <div
-                        key={template.id}
-                        className="bg-card border rounded-lg p-4 hover:shadow-md transition-shadow cursor-pointer"
-                        onClick={() => handleTemplateSelect(template)}
-                      >
-                        <div className="flex items-start justify-between mb-3">
-                          <div>
-                            <h3 className="font-medium text-sm">{template.name}</h3>
-                            <p className="text-xs text-muted-foreground">{template.category}</p>
-                          </div>
-                          <span className="text-lg">{template.category_icon}</span>
-                        </div>
-
-                        {/* Show media header indicator */}
-                        {hasMediaHeader(template).hasMedia && (
-                          <div className="mb-2 px-2 py-1 bg-blue-50 dark:bg-blue-900/30 rounded text-xs text-blue-700 dark:text-blue-300 flex items-center gap-1">
-                            {hasMediaHeader(template).format === 'IMAGE' && '📷'}
-                            {hasMediaHeader(template).format === 'VIDEO' && '🎥'}
-                            {hasMediaHeader(template).format === 'DOCUMENT' && '📄'}
-                            <span>Requires {hasMediaHeader(template).format?.toLowerCase()} URL</span>
-                          </div>
-                        )}
-
-                        <div className="text-xs text-muted-foreground mb-2">
-                          {template.formatted_components.body?.text?.substring(0, 100)}
-                          {template.formatted_components.body?.text &&
-                            template.formatted_components.body.text.length > 100 ? '...' : ''}
-                        </div>
-
-                        <div className="flex items-center justify-between">
-                          <span className={`text-xs px-2 py-1 rounded ${template.status_color}`}>
-                            {template.status}
-                          </span>
-                          <span className="text-xs text-muted-foreground">
-                            {extractVariables(template).all.length} variables
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
           </div>
-        )}
+        </div>
+      )}
 
-        {/* Confirmation Modal */}
-        {showConfirmation && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center" style={{ marginTop: "0px" }}>
-            <div className="bg-background rounded-lg shadow-2xl max-w-md w-full p-6 space-y-4 my-8">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center flex-shrink-0">
-                  <AlertCircle className="h-6 w-6 text-amber-600" />
-                </div>
-                <div>
-                  <h3 className="font-semibold text-lg">Confirm Bulk Send</h3>
-                  <p className="text-sm text-muted-foreground">
-                    This action cannot be undone
-                  </p>
-                </div>
+      {/* Modal: Pre-Flight Dispatch Confirmation */}
+      {showConfirmation && (
+        <div
+          className="fixed inset-0 bg-stone-900/60 dark:bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200"
+          onClick={() => setShowConfirmation(false)}
+        >
+          <div
+            className="bg-stone-50 dark:bg-[#121714] border border-stone-200 dark:border-stone-800 rounded-3xl shadow-2xl max-w-md w-full overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-6 space-y-4">
+              <div className="size-11 rounded-2xl bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 flex items-center justify-center">
+                <AlertTriangle className="size-5" />
               </div>
 
-              <div className="space-y-2 text-sm max-h-96 overflow-y-auto">
-                <p className="font-medium">You are about to send template messages:</p>
-                <ul className="list-disc list-inside space-y-1 text-muted-foreground pl-2">
-                  <li><strong className="text-foreground">{validContactsCount}</strong> contacts</li>
-                  <li>Template: <strong className="text-foreground">{selectedTemplate?.name}</strong></li>
-                  {(mediaUrl || mediaId) && selectedTemplate && (
-                    <li>
-                      Media: <strong className="text-foreground">{hasMediaHeader(selectedTemplate).format}</strong>
-                      <span className="text-xs ml-2">
-                        ({mediaInputType === "url" ? "via URL" : "via Media ID"})
-                      </span>
-                    </li>
-                  )}
-                  {batches.length > 0 && (
-                    <>
-                      <li><strong className="text-foreground">{batches.length}</strong> batch{batches.length !== 1 ? 'es' : ''} of <strong>{batchSize}</strong> contacts each</li>
-                      {batchDelay > 0 && (
-                        <li><strong className="text-foreground">{batchDelay}</strong> second{batchDelay !== 1 ? 's' : ''} delay between batches</li>
-                      )}
-                      {includeSelfTest && testPhoneNumber && (
-                        <li className="text-blue-600">
-                          🧪 Test message included in each batch: <strong className="font-mono">{testPhoneNumber}</strong>
-                        </li>
-                      )}
-                    </>
-                  )}
-                </ul>
-
-                {batches.length > 1 && (
-                  <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-md p-3 mt-3">
-                    <p className="text-xs text-blue-700 dark:text-blue-300">
-                      <strong>Estimated Duration:</strong> ~{Math.ceil((batches.length * batchSize) + (batches.length - 1) * batchDelay)} seconds
-                      ({Math.ceil(((batches.length * batchSize) + (batches.length - 1) * batchDelay) / 60)} minutes)
-                    </p>
-                  </div>
-                )}
-
-                <p className="text-muted-foreground pt-2 text-xs">
-                  Messages will be sent with proper delays to maintain deliverability and avoid rate limits.
+              <div className="space-y-1">
+                <h3 className="text-base font-bold text-stone-900 dark:text-stone-100">
+                  Confirm Campaign Dispatch
+                </h3>
+                <p className="text-xs text-stone-600 dark:text-stone-400 leading-relaxed">
+                  You are about to broadcast messages to <strong className="text-stone-900 dark:text-stone-100">{validContactsCount}</strong> verified recipients via WhatsApp Cloud API.
                 </p>
               </div>
 
-              <div className="flex gap-3 pt-2">
-                <Button
-                  variant="outline"
-                  onClick={() => setShowConfirmation(false)}
-                  className="flex-1"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={handleBulkSend}
-                  className="flex-1 bg-green-600 hover:bg-green-700"
-                >
-                  Confirm & Send
-                </Button>
+              <div className="p-3.5 rounded-2xl bg-white dark:bg-stone-900 border border-stone-200/80 dark:border-stone-800/80 text-xs font-mono space-y-1.5 text-stone-700 dark:text-stone-300">
+                <div className="flex justify-between">
+                  <span>Template:</span>
+                  <strong className="text-stone-900 dark:text-stone-100">{selectedTemplate?.name}</strong>
+                </div>
+                <div className="flex justify-between">
+                  <span>Batch Chunks:</span>
+                  <span>{batches.length} batches of {batchSize}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Rate Pause:</span>
+                  <span>{batchDelay}s between bursts</span>
+                </div>
+                {includeSelfTest && testPhoneNumber && (
+                  <div className="flex justify-between text-blue-600">
+                    <span>Self-Test:</span>
+                    <span>+{testPhoneNumber}</span>
+                  </div>
+                )}
               </div>
             </div>
+
+            <div className="flex items-center justify-end gap-2.5 px-6 py-4 border-t border-stone-200/80 dark:border-stone-800/80 bg-white/80 dark:bg-stone-900/60">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowConfirmation(false)}
+                className="h-9 px-4 rounded-xl text-xs border-stone-300 dark:border-stone-700"
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                onClick={handleBulkSend}
+                className="h-9 px-4 rounded-xl text-xs bg-[#2D583F] hover:bg-[#244732] text-white font-semibold gap-1.5 shadow-2xs cursor-pointer"
+              >
+                <Send className="size-3.5" />
+                <span>Confirm & Dispatch</span>
+              </Button>
+            </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

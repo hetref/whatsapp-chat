@@ -3,8 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { ThemeSwitcher } from "@/components/theme-switcher";
+import { toast, Toaster } from "@/components/ui/toast";
 import {
   Search,
   Plus,
@@ -12,16 +11,20 @@ import {
   Eye,
   Calendar,
   MessageSquare,
-  ArrowLeft,
   Loader2,
-  Image,
+  Image as ImageIcon,
   Video,
   FileText,
-  Hash
+  Hash,
+  X,
+  Sparkles,
+  Layers,
+  ChevronDown,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { TemplateDetailsDialog } from "@/components/templates/template-details-dialog";
+import LogoIcon from "@/components/logo-icon";
+import { cn } from "@/lib/utils";
 
 // Type definitions
 interface TemplateComponent {
@@ -63,14 +66,6 @@ interface WhatsAppTemplate {
   formatted_components: FormattedComponents;
 }
 
-interface TemplatesResponse {
-  success: boolean;
-  data: WhatsAppTemplate[];
-  pagination?: Record<string, unknown>;
-  total_count: number;
-  timestamp: string;
-}
-
 export default function TemplatesPage() {
   const [templates, setTemplates] = useState<WhatsAppTemplate[]>([]);
   const [filteredTemplates, setFilteredTemplates] = useState<WhatsAppTemplate[]>([]);
@@ -79,8 +74,6 @@ export default function TemplatesPage() {
   const [categoryFilter, setCategoryFilter] = useState("ALL");
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [selectedTemplate, setSelectedTemplate] = useState<WhatsAppTemplate | null>(null);
-  const [showDetailsDialog, setShowDetailsDialog] = useState(false);
   const router = useRouter();
 
   // Fetch templates from API
@@ -89,12 +82,10 @@ export default function TemplatesPage() {
     setIsRefreshing(true);
 
     try {
-      console.log('Fetching templates...');
-
-      const response = await fetch('/api/templates', {
-        method: 'GET',
+      const response = await fetch("/api/templates", {
+        method: "GET",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
       });
 
@@ -104,17 +95,18 @@ export default function TemplatesPage() {
       }
 
       if (data.success) {
-        console.log(`Fetched ${data.data.length} templates`);
-        setTemplates(data.data);
-        setFilteredTemplates(data.data);
+        setTemplates(data.data || []);
+        setFilteredTemplates(data.data || []);
       } else {
-        throw new Error('Failed to fetch templates');
+        throw new Error("Failed to fetch templates");
       }
-
     } catch (error) {
-      console.error('Error fetching templates:', error);
-      // You might want to show a toast notification here
-      alert(`Failed to fetch templates: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error("Error fetching templates:", error);
+      toast(
+        error instanceof Error ? error.message : "Failed to load WhatsApp templates",
+        "error",
+        5000
+      );
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
@@ -126,84 +118,118 @@ export default function TemplatesPage() {
     fetchTemplates();
   }, [fetchTemplates]);
 
-  // Filter templates based on search and filters
+  // Filter templates based on search and dropdown filters
   useEffect(() => {
     let filtered = templates;
 
     // Apply search filter
-    if (searchTerm) {
-      filtered = filtered.filter(template =>
-        template.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        template.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        template.status.toLowerCase().includes(searchTerm.toLowerCase())
-      );
+    if (searchTerm.trim()) {
+      const q = searchTerm.toLowerCase().trim();
+      filtered = filtered.filter((template) => {
+        const bodyText = template.formatted_components?.body?.text?.toLowerCase() || "";
+        return (
+          template.name.toLowerCase().includes(q) ||
+          template.category.toLowerCase().includes(q) ||
+          template.status.toLowerCase().includes(q) ||
+          bodyText.includes(q)
+        );
+      });
     }
 
     // Apply status filter
     if (statusFilter !== "ALL") {
-      filtered = filtered.filter(template => template.status === statusFilter);
+      filtered = filtered.filter((template) => template.status === statusFilter);
     }
 
     // Apply category filter
     if (categoryFilter !== "ALL") {
-      filtered = filtered.filter(template => template.category === categoryFilter);
+      filtered = filtered.filter((template) => template.category === categoryFilter);
     }
 
     setFilteredTemplates(filtered);
   }, [templates, searchTerm, statusFilter, categoryFilter]);
 
   const handleTemplateClick = (template: WhatsAppTemplate) => {
-    setSelectedTemplate(template);
-    setShowDetailsDialog(true);
+    router.push(`/protected/templates/${template.id}`);
   };
 
   const handleRefresh = () => {
     fetchTemplates(false);
+    toast("Syncing templates with Meta WhatsApp Cloud API...", "info", 2500);
   };
 
-  const getStatusBadge = (status: string, statusColor: string) => {
+  const getStatusBadge = (status: string) => {
+    const s = (status || "").toUpperCase();
+    if (s === "APPROVED") {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold tracking-wide uppercase bg-[#2D583F]/10 text-[#2D583F] dark:bg-[#5F7C65]/20 dark:text-[#8EAE95] border border-[#2D583F]/20 font-mono shadow-2xs">
+          <span className="size-1.5 rounded-full bg-[#2D583F] dark:bg-[#8EAE95]" />
+          Approved
+        </span>
+      );
+    }
+    if (s === "PENDING") {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold tracking-wide uppercase bg-amber-500/10 text-amber-800 dark:text-amber-400 border border-amber-500/20 font-mono shadow-2xs">
+          <span className="size-1.5 rounded-full bg-amber-600 animate-pulse" />
+          Pending
+        </span>
+      );
+    }
+    if (s === "REJECTED") {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold tracking-wide uppercase bg-red-500/10 text-red-700 dark:text-red-400 border border-red-500/20 font-mono shadow-2xs">
+          <span className="size-1.5 rounded-full bg-red-600" />
+          Rejected
+        </span>
+      );
+    }
+    if (s === "PAUSED") {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold tracking-wide uppercase bg-orange-500/10 text-orange-700 dark:text-orange-400 border border-orange-500/20 font-mono shadow-2xs">
+          <span className="size-1.5 rounded-full bg-orange-600" />
+          Paused
+        </span>
+      );
+    }
     return (
-      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${statusColor}`}>
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold tracking-wide uppercase bg-stone-200/70 text-stone-600 dark:bg-stone-800 dark:text-stone-400 border border-stone-300/60 font-mono shadow-2xs">
         {status}
       </span>
     );
   };
 
   const getPreviewText = (components: FormattedComponents) => {
-    const bodyText = components.body?.text || '';
-    const maxLength = 100;
-
-    if (bodyText.length <= maxLength) {
-      return bodyText;
-    }
-
-    return bodyText.substring(0, maxLength) + '...';
+    const bodyText = components.body?.text || "";
+    const maxLength = 120;
+    if (bodyText.length <= maxLength) return bodyText;
+    return bodyText.substring(0, maxLength) + "...";
   };
 
   const getVariableCount = (template: WhatsAppTemplate): number => {
     let count = 0;
-    template.components.forEach(component => {
+    template.components?.forEach((component) => {
       if (component.text) {
         const matches = component.text.match(/\{\{\d+\}\}/g);
-        if (matches) {
-          count += matches.length;
-        }
+        if (matches) count += matches.length;
       }
     });
     return count;
   };
 
   const getMediaHeaderInfo = (template: WhatsAppTemplate): { hasMedia: boolean; type?: string; icon?: React.ReactNode } => {
-    const header = template.components.find(c => c.type === 'HEADER');
+    const header = template.components?.find((c) => c.type === "HEADER");
     if (!header?.format) return { hasMedia: false };
 
     const format = header.format.toUpperCase();
-    if (format === 'IMAGE') {
-      return { hasMedia: true, type: 'Image', icon: <Image className="h-3.5 w-3.5" /> };
-    } else if (format === 'VIDEO') {
-      return { hasMedia: true, type: 'Video', icon: <Video className="h-3.5 w-3.5" /> };
-    } else if (format === 'DOCUMENT') {
-      return { hasMedia: true, type: 'Document', icon: <FileText className="h-3.5 w-3.5" /> };
+    if (format === "IMAGE") {
+      return { hasMedia: true, type: "Image", icon: <ImageIcon className="size-3.5" /> };
+    }
+    if (format === "VIDEO") {
+      return { hasMedia: true, type: "Video", icon: <Video className="size-3.5" /> };
+    }
+    if (format === "DOCUMENT") {
+      return { hasMedia: true, type: "Document", icon: <FileText className="size-3.5" /> };
     }
 
     return { hasMedia: false };
@@ -212,295 +238,288 @@ export default function TemplatesPage() {
   const formatDate = (dateString: string) => {
     try {
       return new Date(dateString).toLocaleDateString([], {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
       });
     } catch {
-      return 'Unknown';
+      return "Unknown";
     }
   };
 
-  if (isLoading) {
-    return (
-      <div className="h-full flex items-center justify-center bg-background">
-        <div className="text-center">
-          <Loader2 className="h-12 w-12 animate-spin text-green-600 mx-auto mb-4" />
-          <p className="text-muted-foreground">Loading templates...</p>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="h-full flex flex-col bg-background">
-      {/* Header */}
-      <div className="border-b border-border bg-gradient-to-r from-muted/50 to-muted/30">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-6 gap-4">
-          <div className="flex items-center gap-4">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => router.push('/protected')}
-              className="p-2 hover:bg-muted rounded-full transition-colors"
-            >
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl flex items-center justify-center shadow-lg">
-                <MessageSquare className="h-6 w-6 text-white" />
-              </div>
-              <div>
-                <h1 className="text-2xl font-bold bg-gradient-to-r from-green-600 to-emerald-600 dark:from-green-400 dark:to-emerald-400 bg-clip-text text-transparent">
-                  Message Templates
-                </h1>
-                <p className="text-sm text-muted-foreground">
-                  Manage your WhatsApp Business templates
-                </p>
-              </div>
+    <div className="h-full w-full overflow-y-auto bg-[#FAF8F5]/50 dark:bg-[#0C0F0D] text-stone-900 dark:text-stone-100">
+      <Toaster />
+
+      {/* Main Full-Width Responsive Canvas */}
+      <div className="w-full px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6 pb-20">
+        {/* ======================================================================= */}
+        {/* HEADER SECTION - Editorial Botanical Typography & Action                */}
+        {/* ======================================================================= */}
+        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 pb-1">
+          <div>
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold tracking-wide uppercase bg-[#5F7C65]/10 text-[#2D583F] dark:text-[#8EAE95] border border-[#5F7C65]/20 mb-2.5">
+              <LogoIcon className="size-3.5 text-[#5F7C65]" />
+              <span>WhatsApp Message Templates</span>
             </div>
+            <h1 className="text-2xl sm:text-3xl font-semibold tracking-[-0.035em] text-stone-900 dark:text-stone-100">
+              Message{" "}
+              <span className="font-[Georgia,serif] italic font-normal text-[#2D583F] dark:text-[#8EAE95]">
+                Templates
+              </span>
+            </h1>
+            <p className="text-stone-600 dark:text-stone-400 text-xs sm:text-sm mt-1 max-w-2xl leading-relaxed">
+              Create, sync, and inspect Meta-approved message templates for outbound broadcasts and interactive WhatsApp automations.
+            </p>
           </div>
 
-          <div className="flex items-center gap-3 w-full sm:w-auto">
+          <div className="flex items-center gap-2 shrink-0 sm:pt-1">
             <Button
               onClick={handleRefresh}
               disabled={isRefreshing}
               variant="outline"
               size="sm"
-              className="gap-2 hover:bg-muted"
+              className="h-9 sm:h-10 px-3.5 rounded-xl border border-stone-300/80 dark:border-stone-700/80 bg-white/80 dark:bg-stone-900/80 hover:bg-stone-100 dark:hover:bg-stone-800 text-stone-700 dark:text-stone-300 text-xs font-medium gap-2 shadow-2xs transition-all cursor-pointer"
             >
-              <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
-              <span className="hidden sm:inline">Refresh</span>
+              <RefreshCw className={cn("size-3.5 text-[#5F7C65]", isRefreshing && "animate-spin")} />
+              <span className="hidden sm:inline">{isRefreshing ? "Syncing..." : "Sync with Meta"}</span>
             </Button>
 
-            <Link href="/protected/templates/new" className="flex-1 sm:flex-initial">
-              <Button className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white gap-2 shadow-md hover:shadow-lg transition-all w-full sm:w-auto">
-                <Plus className="h-4 w-4" />
-                Create Template
+            <Link href="/protected/templates/new">
+              <Button className="h-9 sm:h-10 px-4 rounded-xl bg-[#2D583F] hover:bg-[#234531] text-white text-xs sm:text-sm font-medium shadow-[inset_0_1px_2px_0_rgba(255,255,255,0.25),0_1px_3px_0_rgba(0,0,0,0.12)] border border-[#2D583F]/30 hover:shadow-md flex items-center gap-2 cursor-pointer active:scale-[0.98] transition-all">
+                <Plus className="size-4 text-emerald-100" />
+                <span>Create Template</span>
               </Button>
             </Link>
-
-            <ThemeSwitcher />
           </div>
         </div>
 
-        {/* Filters and Search */}
-        <div className="px-6 pb-6">
-          <div className="flex flex-col sm:flex-row gap-3">
-            {/* Search */}
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
-              <Input
-                placeholder="Search templates by name, category, or status..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10 bg-background"
-              />
-            </div>
-
-            {/* Status Filter */}
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="px-3 py-2 border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-green-500 transition-all w-full sm:w-auto"
-            >
-              <option value="ALL">All Status</option>
-              <option value="APPROVED">Approved</option>
-              <option value="PENDING">Pending</option>
-              <option value="REJECTED">Rejected</option>
-              <option value="PAUSED">Paused</option>
-              <option value="DISABLED">Disabled</option>
-            </select>
-
-            {/* Category Filter */}
-            <select
-              value={categoryFilter}
-              onChange={(e) => setCategoryFilter(e.target.value)}
-              className="px-3 py-2 border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-green-500 transition-all w-full sm:w-auto"
-            >
-              <option value="ALL">All Categories</option>
-              <option value="MARKETING">Marketing</option>
-              <option value="UTILITY">Utility</option>
-              <option value="AUTHENTICATION">Authentication</option>
-            </select>
-          </div>
-        </div>
-      </div>
-
-      {/* Templates List */}
-      <div className="flex-1 overflow-y-auto p-6">
-        {filteredTemplates.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-center py-16">
-            <div className="w-20 h-20 bg-gradient-to-br from-green-100 to-emerald-100 dark:from-green-900/40 dark:to-emerald-900/40 rounded-2xl flex items-center justify-center mb-6">
-              <MessageSquare className="h-10 w-10 text-green-600 dark:text-green-400" />
-            </div>
-            <h3 className="text-2xl font-semibold mb-3">
-              {templates.length === 0 ? 'No templates yet' : 'No matching templates'}
-            </h3>
-            <p className="text-muted-foreground mb-8 max-w-md leading-relaxed">
-              {templates.length === 0
-                ? 'Create your first WhatsApp message template to start sending personalized notifications to your customers.'
-                : 'Try adjusting your search terms or filters to find the templates you\'re looking for.'
-              }
-            </p>
-            {templates.length === 0 && (
-              <Link href="/protected/templates/new">
-                <Button size="lg" className="bg-green-600 hover:bg-green-700 text-white gap-2 shadow-lg hover:shadow-xl transition-all">
-                  <Plus className="h-5 w-5" />
-                  Create Your First Template
-                </Button>
-              </Link>
+        {/* ======================================================================= */}
+        {/* CONTROLS BAR: SEARCH, FILTERS & TEMPLATE COUNT COUNTER                   */}
+        {/* ======================================================================= */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-1">
+          {/* Search Input */}
+          <div className="relative flex-1 max-w-md">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-stone-400 pointer-events-none" />
+            <Input
+              type="text"
+              placeholder="Search templates by name, category, or body..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-10 pr-9 h-10 text-xs rounded-xl border-stone-300/80 dark:border-stone-700/80 bg-white/90 dark:bg-stone-900/90 shadow-2xs focus-visible:ring-[#5F7C65] focus-visible:border-[#5F7C65] w-full text-stone-900 dark:text-stone-100 placeholder:text-stone-400 font-medium"
+            />
+            {searchTerm && (
+              <button
+                type="button"
+                onClick={() => setSearchTerm("")}
+                className="absolute right-3 top-1/2 -translate-y-1/2 size-5 rounded-md flex items-center justify-center text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 hover:bg-stone-200/50 dark:hover:bg-stone-800 transition-colors cursor-pointer"
+                title="Clear search"
+              >
+                <X className="size-3.5" />
+              </button>
             )}
           </div>
-        ) : (
-          <>
-            {/* Results count */}
-            <div className="mb-6">
-              <p className="text-sm text-muted-foreground">
-                Showing <span className="font-semibold text-foreground">{filteredTemplates.length}</span> of <span className="font-semibold text-foreground">{templates.length}</span> templates
-              </p>
+
+          {/* Filter Dropdowns & Stats */}
+          <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
+            {/* Status Select */}
+            <div className="relative min-w-[130px]">
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="appearance-none w-full h-10 pl-3 pr-8 rounded-xl border border-stone-300/80 dark:border-stone-700/80 bg-white/90 dark:bg-stone-900/90 text-xs font-medium text-stone-700 dark:text-stone-300 shadow-2xs focus:outline-none focus:ring-2 focus:ring-[#5F7C65]/30 focus:border-[#5F7C65] transition-all cursor-pointer"
+              >
+                <option value="ALL">All Status</option>
+                <option value="APPROVED">Approved</option>
+                <option value="PENDING">Pending</option>
+                <option value="REJECTED">Rejected</option>
+                <option value="PAUSED">Paused</option>
+                <option value="DISABLED">Disabled</option>
+              </select>
+              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 size-3.5 text-stone-400 pointer-events-none" />
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filteredTemplates.map((template) => {
-                const variableCount = getVariableCount(template);
-                const mediaInfo = getMediaHeaderInfo(template);
+            {/* Category Select */}
+            <div className="relative min-w-[145px]">
+              <select
+                value={categoryFilter}
+                onChange={(e) => setCategoryFilter(e.target.value)}
+                className="appearance-none w-full h-10 pl-3 pr-8 rounded-xl border border-stone-300/80 dark:border-stone-700/80 bg-white/90 dark:bg-stone-900/90 text-xs font-medium text-stone-700 dark:text-stone-300 shadow-2xs focus:outline-none focus:ring-2 focus:ring-[#5F7C65]/30 focus:border-[#5F7C65] transition-all cursor-pointer"
+              >
+                <option value="ALL">All Categories</option>
+                <option value="MARKETING">Marketing</option>
+                <option value="UTILITY">Utility</option>
+                <option value="AUTHENTICATION">Authentication</option>
+              </select>
+              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 size-3.5 text-stone-400 pointer-events-none" />
+            </div>
 
-                return (
-                  <div
-                    key={template.id}
-                    className="group bg-card border border-border rounded-xl p-5 hover:shadow-lg hover:border-green-500/50 transition-all duration-200 cursor-pointer"
-                    onClick={() => handleTemplateClick(template)}
+            {/* Total Templates Pill */}
+            <div className="hidden lg:flex items-center gap-1.5 px-3 py-2 rounded-xl border border-stone-200/80 dark:border-stone-800/80 bg-white/70 dark:bg-stone-900/70 text-xs text-stone-500 shrink-0 shadow-2xs font-mono h-10">
+              <Layers className="size-3.5 text-[#5F7C65]" />
+              <span>{filteredTemplates.length} of {templates.length} templates</span>
+            </div>
+          </div>
+        </div>
+
+        {/* ======================================================================= */}
+        {/* TEMPLATES GRID LISTING                                                  */}
+        {/* ======================================================================= */}
+        {isLoading ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div
+                key={i}
+                className="rounded-2xl border border-stone-200/80 dark:border-stone-800/80 bg-white/80 dark:bg-stone-900/70 p-1.5 shadow-2xs animate-pulse"
+              >
+                <div className="rounded-[calc(1rem-0.125rem)] bg-[#FAF8F5]/60 dark:bg-stone-950/40 p-5 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="h-5 w-28 bg-stone-200 dark:bg-stone-800 rounded-md" />
+                    <div className="h-5 w-16 bg-stone-200 dark:bg-stone-800 rounded-full" />
+                  </div>
+                  <div className="space-y-2">
+                    <div className="h-4 w-full bg-stone-200 dark:bg-stone-800 rounded" />
+                    <div className="h-4 w-3/4 bg-stone-200 dark:bg-stone-800 rounded" />
+                  </div>
+                  <div className="h-4 w-24 bg-stone-200 dark:bg-stone-800 rounded" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : filteredTemplates.length === 0 ? (
+          <div className="rounded-2xl border border-stone-200/80 dark:border-stone-800/80 bg-white/80 dark:bg-stone-900/70 backdrop-blur-md p-1.5 shadow-[0_4px_20px_-4px_rgba(30,45,35,0.06)]">
+            <div className="rounded-[calc(1rem-0.125rem)] bg-[#FAF8F5]/80 dark:bg-stone-900/90 py-16 px-6 text-center">
+              <div className="mx-auto size-14 rounded-2xl bg-[#5F7C65]/10 dark:bg-[#5F7C65]/20 border border-[#5F7C65]/25 flex items-center justify-center text-[#5F7C65] mb-3">
+                <MessageSquare className="size-6 text-[#5F7C65]" />
+              </div>
+              <h3 className="text-lg font-semibold text-stone-900 dark:text-stone-100 tracking-tight">
+                {templates.length === 0 ? "No templates created yet" : "No matching message templates"}
+              </h3>
+              <p className="text-xs sm:text-sm text-stone-500 dark:text-stone-400 mt-1 max-w-sm mx-auto leading-relaxed">
+                {templates.length === 0
+                  ? "Build personalized WhatsApp message templates to send campaign notifications and transactional alerts to your customers."
+                  : "Try clearing your search terms or changing status/category filters to find the templates you need."}
+              </p>
+              <div className="mt-5">
+                {templates.length === 0 ? (
+                  <Link href="/protected/templates/new">
+                    <Button className="rounded-xl bg-[#2D583F] hover:bg-[#234531] text-white text-xs font-medium h-9 px-4 gap-2 shadow-xs cursor-pointer">
+                      <Plus className="size-4" />
+                      <span>Create Your First Template</span>
+                    </Button>
+                  </Link>
+                ) : (
+                  <Button
+                    onClick={() => {
+                      setSearchTerm("");
+                      setStatusFilter("ALL");
+                      setCategoryFilter("ALL");
+                    }}
+                    variant="outline"
+                    size="sm"
+                    className="rounded-xl border-stone-300 dark:border-stone-700 text-xs font-medium gap-2 cursor-pointer"
                   >
-                    {/* Template Header */}
-                    <div className="flex items-start justify-between mb-4">
-                      <div className="flex items-start gap-3 min-w-0 flex-1">
-                        <Avatar className="h-11 w-11 flex-shrink-0">
-                          <AvatarFallback className="bg-gradient-to-br from-green-100 to-emerald-100 dark:from-green-900/40 dark:to-emerald-900/40 text-green-700 dark:text-green-300 font-semibold text-lg">
-                            {template.category_icon}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div className="min-w-0 flex-1">
-                          <h3
-                            className="font-semibold text-base truncate group-hover:text-green-600 dark:group-hover:text-green-400 transition-colors"
-                            title={template.name}
-                          >
-                            {template.name}
-                          </h3>
-                          <div className="flex items-center gap-2 mt-1">
-                            <p className="text-xs text-muted-foreground truncate">
-                              {template.category}
-                            </p>
-                            <span className="text-xs text-muted-foreground">•</span>
-                            <p className="text-xs text-muted-foreground uppercase">
-                              {template.language}
-                            </p>
+                    <X className="size-3.5 text-stone-500" />
+                    <span>Reset All Filters</span>
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            {filteredTemplates.map((template) => {
+              const variableCount = getVariableCount(template);
+              const mediaInfo = getMediaHeaderInfo(template);
+
+              return (
+                <div
+                  key={template.id}
+                  className="group rounded-2xl border border-stone-200/80 dark:border-stone-800/80 bg-white/80 dark:bg-stone-900/70 backdrop-blur-md p-1.5 shadow-[0_4px_20px_-4px_rgba(30,45,35,0.06)] hover:shadow-lg hover:border-stone-300 dark:hover:border-stone-700 transition-all duration-200 flex flex-col cursor-pointer active:scale-[0.995]"
+                  onClick={() => handleTemplateClick(template)}
+                >
+                  <div className="rounded-[calc(1rem-0.125rem)] overflow-hidden flex flex-col flex-1 bg-[#FAF8F5]/60 dark:bg-stone-950/40 p-4 sm:p-5 justify-between">
+                    <div>
+                      {/* Top Header Row: Category Badge + Status Badge */}
+                      <div className="flex items-start justify-between gap-3 mb-3.5">
+                        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                          <div className="size-9 rounded-xl bg-[#5F7C65]/10 dark:bg-[#5F7C65]/20 border border-[#5F7C65]/20 flex items-center justify-center text-sm font-semibold shrink-0">
+                            {template.category_icon || "📝"}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <h3
+                              className="font-semibold text-sm sm:text-base text-stone-900 dark:text-stone-100 truncate group-hover:text-[#2D583F] dark:group-hover:text-[#8EAE95] transition-colors"
+                              title={template.name}
+                            >
+                              {template.name}
+                            </h3>
+                            <div className="flex items-center gap-2 mt-0.5 text-[11px] text-stone-500 dark:text-stone-400 font-mono">
+                              <span className="uppercase">{template.category}</span>
+                              <span>•</span>
+                              <span className="uppercase">{template.language}</span>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                      <div className="ml-2 flex-shrink-0">
-                        {getStatusBadge(template.status, template.status_color)}
-                      </div>
-                    </div>
 
-                    {/* Media Header Indicator */}
-                    {mediaInfo.hasMedia && (
-                      <div className="mb-3 inline-flex items-center gap-1.5 px-2.5 py-1 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-md text-blue-700 dark:text-blue-300">
-                        {mediaInfo.icon}
-                        <span className="text-xs font-medium">{mediaInfo.type} Header</span>
+                        <div className="shrink-0 pt-0.5">
+                          {getStatusBadge(template.status)}
+                        </div>
                       </div>
-                    )}
 
-                    {/* Template Preview */}
-                    <div className="mb-4">
-                      <p className="text-sm text-muted-foreground line-clamp-3 leading-relaxed">
-                        {getPreviewText(template.formatted_components)}
+                      {/* Optional Media Header Indicator */}
+                      {mediaInfo.hasMedia && (
+                        <div className="mb-3 inline-flex items-center gap-1.5 px-2.5 py-0.5 bg-blue-500/10 border border-blue-500/20 rounded-md text-blue-700 dark:text-blue-300 text-[11px] font-medium font-mono">
+                          {mediaInfo.icon}
+                          <span>{mediaInfo.type} Header</span>
+                        </div>
+                      )}
+
+                      {/* Content Preview */}
+                      <p className="text-xs text-stone-700 dark:text-stone-300 line-clamp-3 leading-relaxed mb-4 bg-white/70 dark:bg-stone-900/60 p-2.5 rounded-xl border border-stone-200/60 dark:border-stone-800/60 font-sans">
+                        {getPreviewText(template.formatted_components) || "No message body provided."}
                       </p>
-                    </div>
 
-                    {/* Template Metadata */}
-                    <div className="flex items-center gap-3 mb-4 flex-wrap">
-                      {/* Variable Count */}
-                      {variableCount > 0 && (
-                        <div className="inline-flex items-center gap-1.5 px-2 py-1 bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800 rounded-md">
-                          <Hash className="h-3 w-3 text-purple-600 dark:text-purple-400" />
-                          <span className="text-xs font-medium text-purple-700 dark:text-purple-300">
-                            {variableCount} Variable{variableCount !== 1 ? 's' : ''}
-                          </span>
-                        </div>
-                      )}
+                      {/* Feature Tags: Variables & Buttons */}
+                      <div className="flex items-center gap-2 mb-3.5 flex-wrap">
+                        {variableCount > 0 && (
+                          <div className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-purple-500/10 border border-purple-500/20 rounded-lg text-purple-800 dark:text-purple-300 text-[11px] font-medium font-mono">
+                            <Hash className="size-3 text-purple-600 dark:text-purple-400" />
+                            <span>{variableCount} Variable{variableCount !== 1 ? "s" : ""}</span>
+                          </div>
+                        )}
 
-                      {/* Button Count */}
-                      {template.formatted_components.buttons.length > 0 && (
-                        <div className="inline-flex items-center gap-1.5 px-2 py-1 bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-800 rounded-md">
-                          <div className="w-2 h-2 bg-orange-500 rounded-full" />
-                          <span className="text-xs font-medium text-orange-700 dark:text-orange-300">
-                            {template.formatted_components.buttons.length} Button{template.formatted_components.buttons.length !== 1 ? 's' : ''}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Template Components Indicators */}
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground mb-4 pb-4 border-b border-border">
-                      {template.formatted_components.header && (
-                        <span className="inline-flex items-center gap-1">
-                          <div className="w-1.5 h-1.5 bg-blue-500 rounded-full" />
-                          Header
-                        </span>
-                      )}
-                      {template.formatted_components.body && (
-                        <span className="inline-flex items-center gap-1">
-                          <div className="w-1.5 h-1.5 bg-green-500 rounded-full" />
-                          Body
-                        </span>
-                      )}
-                      {template.formatted_components.footer && (
-                        <span className="inline-flex items-center gap-1">
-                          <div className="w-1.5 h-1.5 bg-purple-500 rounded-full" />
-                          Footer
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Template Footer */}
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                        <Calendar className="h-3 w-3" />
-                        <span className="truncate">{formatDate(template.updated_at)}</span>
+                        {template.formatted_components?.buttons?.length > 0 && (
+                          <div className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-amber-500/10 border border-amber-500/20 rounded-lg text-amber-800 dark:text-amber-300 text-[11px] font-medium font-mono">
+                            <span className="size-1.5 rounded-full bg-amber-500" />
+                            <span>
+                              {template.formatted_components.buttons.length} Button{template.formatted_components.buttons.length !== 1 ? "s" : ""}
+                            </span>
+                          </div>
+                        )}
                       </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 w-8 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleTemplateClick(template);
-                        }}
-                      >
-                        <Eye className="h-4 w-4" />
-                      </Button>
+                    </div>
+
+                    {/* Footer Row: Timestamp + Eye Inspection Button */}
+                    <div className="pt-3 border-t border-stone-200/70 dark:border-stone-800/70 flex items-center justify-between text-xs text-stone-500 dark:text-stone-400">
+                      <div className="flex items-center gap-1.5 font-mono text-[11px]">
+                        <Calendar className="size-3 text-stone-400" />
+                        <span>{formatDate(template.updated_at || template.created_at)}</span>
+                      </div>
+
+                      <div className="flex items-center gap-1 text-[11px] font-medium text-stone-600 dark:text-stone-300 group-hover:text-[#2D583F] dark:group-hover:text-[#8EAE95] transition-colors">
+                        <span>Inspect</span>
+                        <Eye className="size-3.5" />
+                      </div>
                     </div>
                   </div>
-                );
-              })}
-            </div>
-          </>
+                </div>
+              );
+            })}
+          </div>
         )}
       </div>
-
-      {/* Template Details Dialog */}
-      <TemplateDetailsDialog
-        template={selectedTemplate}
-        isOpen={showDetailsDialog}
-        onClose={() => {
-          setShowDetailsDialog(false);
-          setSelectedTemplate(null);
-        }}
-        onRefresh={handleRefresh}
-      />
     </div>
   );
-} 
+}

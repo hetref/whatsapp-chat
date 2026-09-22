@@ -198,22 +198,35 @@ export function ChatWindow({
   const [showBroadcastInfo, setShowBroadcastInfo] = useState(false);
   const [emojiPickerMessageId, setEmojiPickerMessageId] = useState<string | null>(null);
 
-  const normalizeReactions = useCallback((raw?: ReactionEntry[] | null) => {
-    if (!raw || !Array.isArray(raw)) return [] as ReactionEntry[];
-    return raw.filter((entry) => entry?.from);
+  const normalizeReactions = useCallback((raw?: ReactionEntry[] | null | string) => {
+    if (!raw) return [] as ReactionEntry[];
+    let list: unknown = raw;
+    if (typeof list === 'string') {
+      try {
+        list = JSON.parse(list);
+      } catch {
+        return [];
+      }
+    }
+    if (!Array.isArray(list)) return [] as ReactionEntry[];
+    return (list as ReactionEntry[]).filter((entry) => entry && entry.emoji && entry.from);
   }, []);
 
-  const getReactionSummary = useCallback((raw?: ReactionEntry[] | null) => {
+  const getReactionSummary = useCallback((raw?: ReactionEntry[] | null | string) => {
     const reactions = normalizeReactions(raw);
-    const counts = reactions.reduce((acc: Record<string, number>, reaction) => {
-      acc[reaction.emoji] = (acc[reaction.emoji] || 0) + 1;
+    const counts = reactions.reduce((acc: Record<string, { emoji: string; count: number; senders: string[] }>, reaction) => {
+      if (!acc[reaction.emoji]) {
+        acc[reaction.emoji] = { emoji: reaction.emoji, count: 0, senders: [] };
+      }
+      acc[reaction.emoji].count += 1;
+      acc[reaction.emoji].senders.push(reaction.from);
       return acc;
     }, {});
 
-    return Object.entries(counts).map(([emoji, count]) => ({ emoji, count }));
+    return Object.values(counts);
   }, [normalizeReactions]);
 
-  const getUserReaction = useCallback((raw?: ReactionEntry[] | null) => {
+  const getUserReaction = useCallback((raw?: ReactionEntry[] | null | string) => {
     const reactions = normalizeReactions(raw);
     return reactions.find((reaction) => reaction.from === currentUserId) || null;
   }, [currentUserId, normalizeReactions]);
@@ -1262,15 +1275,17 @@ export function ChatWindow({
     }
   };
 
-  // Group messages by date
-  const groupedMessages = messages.reduce((groups: { [key: string]: Message[] }, message) => {
-    const date = new Date(message.timestamp).toDateString();
-    if (!groups[date]) {
-      groups[date] = [];
-    }
-    groups[date].push(message);
-    return groups;
-  }, {});
+  // Group messages by date (filtering out any phantom reaction messages)
+  const groupedMessages = messages
+    .filter((m) => m.message_type !== 'reaction' && m.content !== '[reaction]')
+    .reduce((groups: { [key: string]: Message[] }, message) => {
+      const date = new Date(message.timestamp).toDateString();
+      if (!groups[date]) {
+        groups[date] = [];
+      }
+      groups[date].push(message);
+      return groups;
+    }, {});
 
   // Show welcome screen only if neither individual user nor broadcast group is selected
   if (!selectedUser && !broadcastGroupName) {
@@ -1456,14 +1471,32 @@ export function ChatWindow({
                             {renderMessageContent(message, isOwn)}
                             {getReactionSummary(message.reactions).length > 0 && (
                               <div className={`mt-1 flex flex-wrap gap-1 ${isOwn ? 'justify-end' : 'justify-start'}`}>
-                                {getReactionSummary(message.reactions).map((reaction) => (
-                                  <span
-                                    key={`${message.id}-${reaction.emoji}`}
-                                    className="px-2 py-0.5 text-xs rounded-full bg-muted text-foreground border border-border"
-                                  >
-                                    {reaction.emoji} {reaction.count}
-                                  </span>
-                                ))}
+                                {getReactionSummary(message.reactions).map((reaction) => {
+                                  const isMyReaction = reaction.senders.some(s => s === currentUserId);
+                                  const senderNames = reaction.senders.map(s => {
+                                    if (s === currentUserId) return 'You';
+                                    return selectedUser?.custom_name || selectedUser?.whatsapp_name || selectedUser?.name || selectedUser?.phone_number || s;
+                                  }).join(', ');
+
+                                  return (
+                                    <button
+                                      key={`${message.id}-${reaction.emoji}`}
+                                      type="button"
+                                      onClick={() => handleReactionClick(message, reaction.emoji)}
+                                      className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full border shadow-2xs transition-all hover:scale-105 active:scale-95 cursor-pointer ${
+                                        isMyReaction
+                                          ? 'bg-green-100 dark:bg-green-950/70 text-green-900 dark:text-green-300 border-green-300 dark:border-green-800 font-medium'
+                                          : 'bg-background text-foreground border-border hover:bg-muted/70'
+                                      }`}
+                                      title={`${senderNames} reacted with ${reaction.emoji}`}
+                                    >
+                                      <span className="text-sm leading-none">{reaction.emoji}</span>
+                                      {reaction.count > 1 && (
+                                        <span className="text-[11px] font-medium text-muted-foreground">{reaction.count}</span>
+                                      )}
+                                    </button>
+                                  );
+                                })}
                               </div>
                             )}
                             {onReactToMessage && !broadcastGroupName && !message.isOptimistic && (

@@ -62,14 +62,22 @@ interface WhatsAppMessage {
 
 function normalizeReactions(raw: unknown): Array<{ emoji: string; from: string; timestamp: string }> {
   if (!raw) return [];
-  if (Array.isArray(raw)) {
-    return raw
+  let list: unknown = raw;
+  if (typeof list === 'string') {
+    try {
+      list = JSON.parse(list);
+    } catch {
+      return [];
+    }
+  }
+  if (Array.isArray(list)) {
+    return (list as any[])
       .map((entry) => ({
         emoji: String(entry?.emoji || ''),
         from: String(entry?.from || ''),
         timestamp: String(entry?.timestamp || ''),
       }))
-      .filter((entry) => entry.emoji || entry.from || entry.timestamp);
+      .filter((entry) => entry.emoji && entry.from);
   }
   return [];
 }
@@ -81,24 +89,37 @@ async function upsertMessageReaction(params: {
   from: string;
   timestamp: string;
 }) {
-  const message = await prisma.message.findUnique({
+  let message = await prisma.message.findUnique({
     where: { id: params.messageId },
     select: { id: true, userId: true, reactions: true },
   });
 
-  if (!message || message.userId !== params.userId) {
+  if (!message) {
+    message = await prisma.message.findFirst({
+      where: { id: params.messageId, userId: params.userId },
+      select: { id: true, userId: true, reactions: true },
+    });
+  }
+
+  if (!message) {
     return { updated: false, reason: 'not_found' as const };
   }
 
   const current = normalizeReactions(message.reactions);
-  const filtered = current.filter((reaction) => reaction.from !== params.from);
+  const cleanSenderPhone = params.from.replace(/\D/g, '');
+  const filtered = current.filter((reaction) => {
+    const rFromClean = String(reaction.from || '').replace(/\D/g, '');
+    if (cleanSenderPhone && rFromClean === cleanSenderPhone) return false;
+    if (reaction.from === params.from) return false;
+    return true;
+  });
 
   if (params.emoji) {
     filtered.push({ emoji: params.emoji, from: params.from, timestamp: params.timestamp });
   }
 
   await prisma.message.update({
-    where: { id: params.messageId },
+    where: { id: message.id },
     data: { reactions: filtered },
   });
 
@@ -535,6 +556,14 @@ export async function POST(
               console.warn('[Webhook POST /:token] Reaction message missing target message_id', message.id);
               continue;
             }
+
+            // Purge dummy reaction message if previously created with this ID
+            await prisma.message.deleteMany({
+              where: {
+                id: message.id,
+                OR: [{ content: '[reaction]' }, { messageType: 'reaction' }],
+              },
+            }).catch(() => {});
 
             const result = await upsertMessageReaction({
               userId: businessOwnerId,

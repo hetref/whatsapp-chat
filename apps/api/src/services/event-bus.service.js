@@ -71,6 +71,35 @@ class ChatEventBus extends EventEmitter {
 
         this.emit('new_message', { ...payload, userId: event.userId });
     }
+
+    /**
+     * Broadcast a reaction update on a message
+     * @param {Object} event
+     * @param {string} event.userId
+     * @param {string} [event.contactId]
+     * @param {string} event.messageId
+     * @param {Array} event.reactions
+     * @param {string} [event.timestamp]
+     */
+    publishReactionUpdate(event) {
+        const payload = {
+            type: 'reaction_update',
+            messageId: event.messageId,
+            reactions: event.reactions || [],
+            contactId: event.contactId || null,
+            timestamp: event.timestamp || new Date().toISOString(),
+        };
+
+        if (event.userId) {
+            this.emit(`user:${event.userId}`, payload);
+        }
+
+        if (event.contactId) {
+            this.emit(`conversation:${event.contactId}`, payload);
+        }
+
+        this.emit('reaction_update', { ...payload, userId: event.userId });
+    }
 }
 
 export const chatEventBus = new ChatEventBus();

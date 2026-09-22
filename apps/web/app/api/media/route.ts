@@ -6,7 +6,7 @@ import { checkStorageLimit, checkSubscriptionActive } from '@/lib/plan-limits';
 
 /**
  * GET /api/media - List user's media files (metadata only, no presigned URLs)
- * Query params: ?type=image|video|audio|document &cursor=<uuid> &limit=50
+ * Query params: ?type=image|video|audio|document &search=<query> &page=1 &limit=20 &cursor=<uuid>
  */
 export async function GET(request: NextRequest) {
   const { userId } = await auth();
@@ -16,19 +16,72 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = new URL(request.url);
   const type = searchParams.get('type');
+  const search = searchParams.get('search')?.trim();
+  const page = parseInt(searchParams.get('page') || '1', 10);
+  const limit = Math.min(Math.max(1, parseInt(searchParams.get('limit') || '20', 10)), 100);
   const cursor = searchParams.get('cursor');
-  const limit = Math.min(parseInt(searchParams.get('limit') || '50'), 100);
 
-  const where: Record<string, unknown> = { userId };
+  const where: any = { userId };
   if (type && ['image', 'video', 'audio', 'document'].includes(type)) {
     where.mediaType = type;
   }
+  if (search) {
+    where.fileName = {
+      contains: search,
+      mode: 'insensitive',
+    };
+  }
 
-  const mediaFiles = await prisma.mediaFile.findMany({
+  // Count total matching items across the entire collection
+  const totalCount = await prisma.mediaFile.count({ where });
+  const totalPages = Math.ceil(totalCount / limit);
+
+  // If cursor is provided, preserve cursor-based pagination
+  if (cursor) {
+    const mediaFiles = await prisma.mediaFile.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      take: limit + 1,
+      cursor: { id: cursor },
+      skip: 1,
+      select: {
+        id: true,
+        s3Key: true,
+        fileName: true,
+        mimeType: true,
+        fileSize: true,
+        mediaType: true,
+        createdAt: true,
+      },
+    });
+
+    const hasMore = mediaFiles.length > limit;
+    const items = hasMore ? mediaFiles.slice(0, limit) : mediaFiles;
+    const nextCursor = hasMore ? items[items.length - 1].id : null;
+
+    return NextResponse.json({
+      items,
+      nextCursor,
+      pagination: {
+        page: 1,
+        limit,
+        totalCount,
+        totalPages,
+        hasNextPage: hasMore,
+        hasPrevPage: false,
+      },
+    });
+  }
+
+  // Standard Page-Based Pagination
+  const validPage = Math.max(1, isNaN(page) ? 1 : page);
+  const skip = (validPage - 1) * limit;
+
+  const items = await prisma.mediaFile.findMany({
     where,
     orderBy: { createdAt: 'desc' },
-    take: limit + 1,
-    ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+    skip,
+    take: limit,
     select: {
       id: true,
       s3Key: true,
@@ -40,11 +93,17 @@ export async function GET(request: NextRequest) {
     },
   });
 
-  const hasMore = mediaFiles.length > limit;
-  const items = hasMore ? mediaFiles.slice(0, limit) : mediaFiles;
-  const nextCursor = hasMore ? items[items.length - 1].id : null;
-
-  return NextResponse.json({ items, nextCursor });
+  return NextResponse.json({
+    items,
+    pagination: {
+      page: validPage,
+      limit,
+      totalCount,
+      totalPages,
+      hasNextPage: validPage < totalPages,
+      hasPrevPage: validPage > 1,
+    },
+  });
 }
 
 /**

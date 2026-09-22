@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { ThemeSwitcher } from "@/components/theme-switcher";
 import {
   ArrowLeft,
   Plus,
@@ -17,11 +16,16 @@ import {
   AlertCircle,
   Info,
   Image as ImageIcon,
-  Video
+  Video,
+  Sparkles,
+  ChevronDown,
+  Check,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { MediaUpload } from "@/components/chat/media-upload";
+import LogoIcon from "@/components/logo-icon";
+import { cn } from "@/lib/utils";
 
 // Type definitions
 interface TemplateComponent {
@@ -83,7 +87,7 @@ export default function NewTemplatePage() {
 
   const [isCreating, setIsCreating] = useState(false);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
-  const [showPreview, setShowPreview] = useState(false);
+  const [showPreview, setShowPreview] = useState(true);
   const router = useRouter();
 
   const [showMediaUpload, setShowMediaUpload] = useState(false);
@@ -109,16 +113,16 @@ export default function NewTemplatePage() {
         const previewUrl = urlData.urls?.[mf.id];
         setSelectedHeaderMedia({
           s3Key: mf.s3Key,
-          fileName: mf.file.name,
-          mimeType: mf.s3MimeType || mf.file.type,
+          fileName: mf.file?.name || mf.fileName,
+          mimeType: mf.s3MimeType || mf.file?.type || mf.mimeType,
           previewUrl: previewUrl || undefined,
         });
       } catch (error) {
         console.error('Error fetching preview URL:', error);
         setSelectedHeaderMedia({
           s3Key: mf.s3Key,
-          fileName: mf.file.name,
-          mimeType: mf.s3MimeType || mf.file.type,
+          fileName: mf.file?.name || mf.fileName,
+          mimeType: mf.s3MimeType || mf.file?.type || mf.mimeType,
         });
       }
     } else {
@@ -174,7 +178,7 @@ export default function NewTemplatePage() {
         });
       } catch (error) {
         console.error('Error uploading new media:', error);
-        alert(`Failed to upload media: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        setValidationErrors([`Failed to upload media: ${error instanceof Error ? error.message : 'Unknown error'}`]);
       }
     }
   };
@@ -368,8 +372,6 @@ export default function NewTemplatePage() {
         components: requestComponents
       };
 
-      console.log('Creating template:', payload);
-
       const response = await fetch('/api/templates/create', {
         method: 'POST',
         headers: {
@@ -379,14 +381,10 @@ export default function NewTemplatePage() {
       });
 
       const result = await response.json();
-      console.log('API Response Result:', result);
 
       if (!response.ok) {
-        // Extract detailed error information from the API response
         let errorMessage = 'Failed to create template';
-
         if (result.error && result.message) {
-          // Use the title and message from our improved API response
           errorMessage = `${result.error}: ${result.message}`;
         } else if (result.message) {
           errorMessage = result.message;
@@ -394,7 +392,6 @@ export default function NewTemplatePage() {
           errorMessage = result.error;
         }
 
-        // Add additional context if available
         if (result.details?.code && result.details?.subcode) {
           errorMessage += `\n\nError Code: ${result.details.code}.${result.details.subcode}`;
         }
@@ -402,11 +399,7 @@ export default function NewTemplatePage() {
         throw new Error(errorMessage);
       }
 
-      console.log('Template created successfully:', result);
-
-      // Redirect to templates page
       router.push('/protected/templates');
-
     } catch (error) {
       console.error('Error creating template:', error);
       setValidationErrors([error instanceof Error ? error.message : 'Unknown error occurred']);
@@ -418,322 +411,382 @@ export default function NewTemplatePage() {
   // Get component type display name
   const getComponentTypeName = (type: string) => {
     switch (type) {
-      case 'HEADER': return 'Header';
-      case 'BODY': return 'Body';
-      case 'FOOTER': return 'Footer';
-      case 'BUTTONS': return 'Buttons';
+      case 'HEADER': return 'Header Component';
+      case 'BODY': return 'Body Message';
+      case 'FOOTER': return 'Footer Note';
+      case 'BUTTONS': return 'Interactive Buttons';
       default: return type;
     }
   };
 
   return (
-    <div className="h-full flex flex-col bg-background">
-      {/* Header */}
-      <div className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-10 shadow-sm">
-        <div className="flex items-center justify-between p-4">
+    <div className="h-full w-full overflow-y-auto bg-[#FAF8F5]/50 dark:bg-[#0C0F0D] text-stone-900 dark:text-stone-100 flex flex-col">
+      {/* Top Header Bar */}
+      <div className="border-b border-stone-200/80 dark:border-stone-800/80 bg-white/80 dark:bg-stone-900/80 backdrop-blur-md sticky top-0 z-20 shadow-xs">
+        <div className="w-full px-4 sm:px-6 lg:px-8 py-3.5 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <Link href="/protected/templates">
               <Button
                 variant="ghost"
-                size="sm"
-                className="p-2 hover:bg-muted rounded-lg transition-colors"
+                size="icon"
+                className="size-9 rounded-xl border border-stone-200/80 dark:border-stone-800/80 hover:bg-stone-100 dark:hover:bg-stone-800 text-stone-600 dark:text-stone-300"
+                title="Back to Templates"
               >
-                <ArrowLeft className="h-5 w-5" />
+                <ArrowLeft className="size-4" />
               </Button>
             </Link>
-            <div className="h-8 w-px bg-border" />
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-green-500/10 rounded-lg">
-                <FileText className="h-6 w-6 text-green-600" />
+
+            <div className="h-5 w-px bg-stone-300/70 dark:bg-stone-700/70 hidden sm:block" />
+
+            <div>
+              <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold tracking-wide uppercase bg-[#5F7C65]/10 text-[#2D583F] dark:text-[#8EAE95] border border-[#5F7C65]/20 font-mono mb-0.5">
+                <LogoIcon className="size-3 text-[#5F7C65]" />
+                <span>Template Studio</span>
               </div>
-              <div>
-                <h1 className="text-xl font-bold">Create New Template</h1>
-                <p className="text-xs text-muted-foreground">
-                  Design a WhatsApp Business message template
-                </p>
-              </div>
+              <h1 className="text-lg sm:text-xl font-semibold tracking-tight text-stone-900 dark:text-stone-100 leading-tight">
+                Create{" "}
+                <span className="font-[Georgia,serif] italic font-normal text-[#2D583F] dark:text-[#8EAE95]">
+                  Template
+                </span>
+              </h1>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
             <Button
+              type="button"
               onClick={() => setShowPreview(!showPreview)}
-              variant={showPreview ? "default" : "outline"}
+              variant="outline"
               size="sm"
-              className="gap-2"
+              className={cn(
+                "h-9 px-3 rounded-xl border text-xs font-medium gap-1.5 transition-all cursor-pointer",
+                showPreview
+                  ? "bg-[#5F7C65]/10 text-[#2D583F] dark:text-[#8EAE95] border-[#5F7C65]/30 shadow-2xs"
+                  : "border-stone-300/80 dark:border-stone-700/80 bg-white/80 dark:bg-stone-900/80 text-stone-600 dark:text-stone-300"
+              )}
             >
-              <Eye className="h-4 w-4" />
-              {showPreview ? 'Preview' : 'Preview'}
+              <Eye className="size-3.5" />
+              <span className="hidden sm:inline">{showPreview ? "Hide Preview" : "Show Preview"}</span>
             </Button>
-
-            <div className="h-6 w-px bg-border" />
 
             <Button
+              type="button"
               onClick={handleCreateTemplate}
               disabled={isCreating}
-              className="bg-green-600 hover:bg-green-700 text-white gap-2"
+              className="h-9 px-4 rounded-xl bg-[#2D583F] hover:bg-[#234531] text-white text-xs font-medium shadow-[inset_0_1px_2px_0_rgba(255,255,255,0.25),0_1px_3px_0_rgba(0,0,0,0.12)] border border-[#2D583F]/30 hover:shadow-md flex items-center gap-1.5 cursor-pointer active:scale-[0.98] transition-all"
             >
               {isCreating ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <>
+                  <Loader2 className="size-3.5 animate-spin" />
+                  <span>Submitting to Meta...</span>
+                </>
               ) : (
-                <Save className="h-4 w-4" />
+                <>
+                  <Save className="size-3.5" />
+                  <span>Submit Template</span>
+                </>
               )}
-              {isCreating ? 'Creating...' : 'Create Template'}
             </Button>
-
-            <ThemeSwitcher />
           </div>
         </div>
       </div>
 
-      {/* Content */}
-      <div className="flex-1 overflow-hidden">
-        <div className="h-full flex">
-          {/* Editor Panel */}
-          <div className={`${showPreview ? 'w-1/2' : 'w-full'} overflow-y-auto p-6 border-r border-border`}>
-            {/* Validation Errors */}
-            {validationErrors.length > 0 && (
-              <div className="mb-6 p-4 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 rounded-lg shadow-sm">
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="p-1 bg-red-100 dark:bg-red-900/30 rounded">
-                    <AlertCircle className="h-4 w-4 text-red-600 dark:text-red-400" />
-                  </div>
-                  <h3 className="font-semibold text-red-900 dark:text-red-100">Validation Errors</h3>
-                </div>
-                <ul className="text-sm text-red-700 dark:text-red-300 space-y-2 ml-7">
-                  {validationErrors.map((error, index) => (
-                    <li key={index} className="flex items-start gap-2">
-                      <span className="text-red-400 mt-0.5">•</span>
-                      <span>{error}</span>
-                    </li>
-                  ))}
-                </ul>
+      {/* Main Studio Body: Editor + Live Preview */}
+      <div className="flex-1 w-full flex flex-col lg:flex-row overflow-hidden">
+        {/* Editor Form Column */}
+        <div className={cn("overflow-y-auto p-4 sm:p-6 lg:p-8 space-y-6 flex-1", showPreview && "lg:w-7/12 xl:w-2/3")}>
+          {/* Validation Errors Box */}
+          {validationErrors.length > 0 && (
+            <div className="rounded-2xl border border-red-200/80 dark:border-red-900/40 bg-red-50/70 dark:bg-red-950/20 p-4 animate-in fade-in duration-200 shadow-2xs">
+              <div className="flex items-center gap-2 mb-2 text-red-700 dark:text-red-400 font-semibold text-xs uppercase tracking-wider font-mono">
+                <AlertCircle className="size-4 shrink-0 text-red-600" />
+                <span>Please fix the following validation errors:</span>
               </div>
-            )}
+              <ul className="text-xs text-red-800 dark:text-red-300 space-y-1 ml-6 list-disc">
+                {validationErrors.map((error, idx) => (
+                  <li key={idx}>{error}</li>
+                ))}
+              </ul>
+            </div>
+          )}
 
-            {/* Template Basic Info */}
-            <div className="space-y-6 mb-8">
-              <div className="bg-card border border-border rounded-lg p-6 shadow-sm">
-                <div className="flex items-center gap-2 mb-4">
-                  <div className="p-1.5 bg-blue-500/10 rounded-md">
-                    <Info className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                  </div>
-                  <h2 className="text-lg font-semibold">Template Information</h2>
+          {/* Section 1: Basic Template Info */}
+          <div className="rounded-2xl border border-stone-200/80 dark:border-stone-800/80 bg-white/80 dark:bg-stone-900/70 backdrop-blur-md p-1.5 shadow-[0_4px_20px_-4px_rgba(30,45,35,0.06)]">
+            <div className="rounded-[calc(1rem-0.125rem)] bg-[#FAF8F5]/60 dark:bg-stone-950/40 p-5 space-y-4">
+              <div className="flex items-center gap-2 pb-2 border-b border-stone-200/60 dark:border-stone-800/60">
+                <div className="size-7 rounded-lg bg-[#5F7C65]/12 dark:bg-[#5F7C65]/20 flex items-center justify-center text-[#5F7C65]">
+                  <Info className="size-4" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-semibold text-stone-900 dark:text-stone-100 tracking-tight">
+                    Basic Configuration
+                  </h2>
+                  <p className="text-[11px] text-stone-500 dark:text-stone-400">
+                    Define the template name, category, and target language for Meta approval.
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="template_name" className="text-xs font-medium text-stone-700 dark:text-stone-300">
+                    Template Name *
+                  </Label>
+                  <Input
+                    id="template_name"
+                    value={templateData.name}
+                    onChange={(e) =>
+                      setTemplateData({
+                        ...templateData,
+                        name: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '_'),
+                      })
+                    }
+                    placeholder="e.g. order_shipped_v1"
+                    className="mt-1 h-9 text-xs rounded-xl border-stone-300/80 dark:border-stone-700/80 bg-white/90 dark:bg-stone-900/90 shadow-2xs font-mono"
+                    maxLength={512}
+                  />
+                  <p className="text-[10px] text-stone-400 mt-1 font-mono">
+                    Only lowercase letters, numbers, and underscores
+                  </p>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="name">Template Name *</Label>
-                    <Input
-                      id="name"
-                      value={templateData.name}
-                      onChange={(e) => setTemplateData({ ...templateData, name: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '_') })}
-                      placeholder="e.g., order_confirmation"
-                      className="mt-1"
-                    />
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Only lowercase letters, numbers, and underscores allowed
-                    </p>
-                  </div>
-
-                  <div>
-                    <Label htmlFor="language">Language *</Label>
+                <div>
+                  <Label htmlFor="template_category" className="text-xs font-medium text-stone-700 dark:text-stone-300">
+                    Category *
+                  </Label>
+                  <div className="relative mt-1">
                     <select
-                      id="language"
+                      id="template_category"
+                      value={templateData.category}
+                      onChange={(e) =>
+                        setTemplateData({
+                          ...templateData,
+                          category: e.target.value as CreateTemplateRequest['category'],
+                        })
+                      }
+                      className="appearance-none w-full h-9 pl-3 pr-8 rounded-xl border border-stone-300/80 dark:border-stone-700/80 bg-white/90 dark:bg-stone-900/90 text-xs font-medium text-stone-700 dark:text-stone-300 shadow-2xs focus:outline-none focus:ring-2 focus:ring-[#5F7C65]/30 focus:border-[#5F7C65] transition-all cursor-pointer"
+                    >
+                      <option value="UTILITY">Utility (Account alerts, order confirmations)</option>
+                      <option value="MARKETING">Marketing (Promotions, welcome offers)</option>
+                      <option value="AUTHENTICATION">Authentication (One-time passwords / OTP)</option>
+                    </select>
+                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 size-3.5 text-stone-400 pointer-events-none" />
+                  </div>
+                </div>
+
+                <div>
+                  <Label htmlFor="template_language" className="text-xs font-medium text-stone-700 dark:text-stone-300">
+                    Language *
+                  </Label>
+                  <div className="relative mt-1">
+                    <select
+                      id="template_language"
                       value={templateData.language}
                       onChange={(e) => setTemplateData({ ...templateData, language: e.target.value })}
-                      className="mt-1 w-full px-3 py-2 border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-green-500"
+                      className="appearance-none w-full h-9 pl-3 pr-8 rounded-xl border border-stone-300/80 dark:border-stone-700/80 bg-white/90 dark:bg-stone-900/90 text-xs font-medium text-stone-700 dark:text-stone-300 shadow-2xs focus:outline-none focus:ring-2 focus:ring-[#5F7C65]/30 focus:border-[#5F7C65] transition-all cursor-pointer"
                     >
                       {SUPPORTED_LANGUAGES.map((lang) => (
                         <option key={lang.code} value={lang.code}>
-                          {lang.name}
+                          {lang.name} ({lang.code})
                         </option>
                       ))}
                     </select>
+                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 size-3.5 text-stone-400 pointer-events-none" />
                   </div>
+                </div>
 
-                  <div>
-                    <Label htmlFor="category">Category *</Label>
-                    <select
-                      id="category"
-                      value={templateData.category}
-                      onChange={(e) => setTemplateData({ ...templateData, category: e.target.value as CreateTemplateRequest['category'] })}
-                      className="mt-1 w-full px-3 py-2 border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-green-500"
-                    >
-                      <option value="UTILITY">Utility</option>
-                      <option value="MARKETING">Marketing</option>
-                      <option value="AUTHENTICATION">Authentication</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <Label htmlFor="ttl">TTL (seconds)</Label>
-                    <Input
-                      id="ttl"
-                      type="number"
-                      value={templateData.message_send_ttl_seconds || ''}
-                      onChange={(e) => setTemplateData({
+                <div>
+                  <Label htmlFor="template_ttl" className="text-xs font-medium text-stone-700 dark:text-stone-300">
+                    TTL / Expiry Duration (seconds)
+                  </Label>
+                  <Input
+                    id="template_ttl"
+                    type="number"
+                    value={templateData.message_send_ttl_seconds || ''}
+                    onChange={(e) =>
+                      setTemplateData({
                         ...templateData,
-                        message_send_ttl_seconds: e.target.value ? parseInt(e.target.value) : undefined
-                      })}
-                      placeholder="Optional"
-                      className="mt-1"
-                    />
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Message validity period (optional)
-                    </p>
-                  </div>
+                        message_send_ttl_seconds: e.target.value ? parseInt(e.target.value, 10) : undefined,
+                      })
+                    }
+                    placeholder="e.g. 600 (Optional)"
+                    className="mt-1 h-9 text-xs rounded-xl border-stone-300/80 dark:border-stone-700/80 bg-white/90 dark:bg-stone-900/90 shadow-2xs font-mono"
+                  />
+                  <p className="text-[10px] text-stone-400 mt-1">Leave empty for standard Meta default</p>
                 </div>
               </div>
             </div>
+          </div>
 
-            {/* Template Components */}
-            <div className="space-y-6">
-              <div className="flex items-center justify-between bg-card border border-border rounded-lg p-4 shadow-sm">
-                <div className="flex items-center gap-2">
-                  <div className="p-1.5 bg-green-500/10 rounded-md">
-                    <FileText className="h-4 w-4 text-green-600 dark:text-green-400" />
-                  </div>
-                  <h2 className="text-lg font-semibold">Template Components</h2>
-                </div>
-                <div className="flex gap-2">
-                  {!templateData.components.some(c => c.type === 'HEADER') && (
-                    <Button
-                      onClick={() => addComponent('HEADER')}
-                      variant="outline"
-                      size="sm"
-                      className="gap-2 border-dashed hover:border-solid hover:bg-blue-50 dark:hover:bg-blue-950/20"
-                    >
-                      <Plus className="h-4 w-4" />
-                      Add Header
-                    </Button>
-                  )}
-                  {!templateData.components.some(c => c.type === 'FOOTER') && (
-                    <Button
-                      onClick={() => addComponent('FOOTER')}
-                      variant="outline"
-                      size="sm"
-                      className="gap-2 border-dashed hover:border-solid hover:bg-purple-50 dark:hover:bg-purple-950/20"
-                    >
-                      <Plus className="h-4 w-4" />
-                      Add Footer
-                    </Button>
-                  )}
-                  {!templateData.components.some(c => c.type === 'BUTTONS') && (
-                    <Button
-                      onClick={() => addComponent('BUTTONS')}
-                      variant="outline"
-                      size="sm"
-                      className="gap-2 border-dashed hover:border-solid hover:bg-orange-50 dark:hover:bg-orange-950/20"
-                    >
-                      <Plus className="h-4 w-4" />
-                      Add Buttons
-                    </Button>
-                  )}
-                </div>
+          {/* Section 2: Template Components Builder */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-semibold text-stone-900 dark:text-stone-100 tracking-tight">
+                  Template Content Components
+                </h3>
+                <p className="text-xs text-stone-500 dark:text-stone-400">
+                  Compose the message layout with headers, text variables, and interactive buttons.
+                </p>
               </div>
 
-              {/* Render Components */}
-              <div className="space-y-4">
-                {templateData.components.map((component, index) => (
-                  <div key={index} className="bg-card border border-border rounded-lg p-6 shadow-sm hover:shadow-md transition-shadow">
-                    <div className="flex items-center justify-between mb-4">
-                      <h3 className="font-semibold flex items-center gap-2">
-                        <div className={`w-2 h-2 rounded-full ${component.type === 'HEADER' ? 'bg-blue-500' :
-                            component.type === 'BODY' ? 'bg-green-500' :
-                              component.type === 'FOOTER' ? 'bg-purple-500' :
-                                'bg-orange-500'
-                          }`} />
-                        {getComponentTypeName(component.type)}
-                        {component.type === 'BODY' && <span className="text-red-500 text-sm">*</span>}
-                      </h3>
+              {/* Add optional component triggers */}
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {!templateData.components.some((c) => c.type === 'HEADER') && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => addComponent('HEADER')}
+                    className="h-8 rounded-xl border-dashed border-stone-300 dark:border-stone-700 text-xs font-medium text-stone-700 dark:text-stone-300 hover:border-[#5F7C65] gap-1 cursor-pointer"
+                  >
+                    <Plus className="size-3.5 text-[#5F7C65]" />
+                    <span>+ Header</span>
+                  </Button>
+                )}
+                {!templateData.components.some((c) => c.type === 'FOOTER') && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => addComponent('FOOTER')}
+                    className="h-8 rounded-xl border-dashed border-stone-300 dark:border-stone-700 text-xs font-medium text-stone-700 dark:text-stone-300 hover:border-[#5F7C65] gap-1 cursor-pointer"
+                  >
+                    <Plus className="size-3.5 text-[#5F7C65]" />
+                    <span>+ Footer</span>
+                  </Button>
+                )}
+                {!templateData.components.some((c) => c.type === 'BUTTONS') && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => addComponent('BUTTONS')}
+                    className="h-8 rounded-xl border-dashed border-stone-300 dark:border-stone-700 text-xs font-medium text-stone-700 dark:text-stone-300 hover:border-[#5F7C65] gap-1 cursor-pointer"
+                  >
+                    <Plus className="size-3.5 text-[#5F7C65]" />
+                    <span>+ Buttons</span>
+                  </Button>
+                )}
+              </div>
+            </div>
+
+            {/* List of active components */}
+            <div className="space-y-4">
+              {templateData.components.map((component, index) => (
+                <div
+                  key={index}
+                  className="rounded-2xl border border-stone-200/80 dark:border-stone-800/80 bg-white/80 dark:bg-stone-900/70 backdrop-blur-md p-1.5 shadow-[0_4px_20px_-4px_rgba(30,45,35,0.06)]"
+                >
+                  <div className="rounded-[calc(1rem-0.125rem)] bg-[#FAF8F5]/60 dark:bg-stone-950/40 p-5 space-y-4">
+                    {/* Component Card Header */}
+                    <div className="flex items-center justify-between pb-3 border-b border-stone-200/60 dark:border-stone-800/60">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={cn(
+                            "size-2 rounded-full",
+                            component.type === 'HEADER' && "bg-blue-500",
+                            component.type === 'BODY' && "bg-[#2D583F]",
+                            component.type === 'FOOTER' && "bg-purple-500",
+                            component.type === 'BUTTONS' && "bg-amber-500"
+                          )}
+                        />
+                        <h4 className="text-xs font-semibold text-stone-900 dark:text-stone-100 uppercase tracking-wider font-mono">
+                          {getComponentTypeName(component.type)}
+                          {component.type === 'BODY' && <span className="text-red-500 ml-1">*</span>}
+                        </h4>
+                      </div>
 
                       {component.type !== 'BODY' && (
                         <Button
-                          onClick={() => removeComponent(index)}
+                          type="button"
                           variant="ghost"
                           size="sm"
-                          className="h-8 w-8 p-0 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20"
+                          onClick={() => removeComponent(index)}
+                          className="size-7 rounded-lg text-stone-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20"
+                          title="Remove component"
                         >
-                          <Minus className="h-4 w-4" />
+                          <Minus className="size-3.5" />
                         </Button>
                       )}
                     </div>
 
-                    {/* Header Component */}
+                    {/* HEADER COMPONENT */}
                     {component.type === 'HEADER' && (
-                      <div className="space-y-4">
-                        <div>
-                          <Label>Format</Label>
-                          <select
-                            value={component.format || 'TEXT'}
-                            onChange={(e) => updateComponent(index, {
-                              format: e.target.value as TemplateComponent['format'],
-                              text: e.target.value === 'TEXT' ? component.text : undefined
-                            })}
-                            className="mt-1 w-full px-3 py-2 border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-green-500"
-                          >
-                            <option value="TEXT">Text</option>
-                            <option value="IMAGE">Image</option>
-                            <option value="VIDEO">Video</option>
-                            <option value="DOCUMENT">Document</option>
-                          </select>
+                      <div className="space-y-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <Label className="text-xs font-medium text-stone-700 dark:text-stone-300">
+                              Header Format
+                            </Label>
+                            <div className="relative mt-1">
+                              <select
+                                value={component.format || 'TEXT'}
+                                onChange={(e) =>
+                                  updateComponent(index, {
+                                    format: e.target.value as TemplateComponent['format'],
+                                    text: e.target.value === 'TEXT' ? component.text : undefined,
+                                  })
+                                }
+                                className="appearance-none w-full h-9 pl-3 pr-8 rounded-xl border border-stone-300/80 dark:border-stone-700/80 bg-white/90 dark:bg-stone-900/90 text-xs font-medium text-stone-700 dark:text-stone-300 shadow-2xs focus:outline-none focus:ring-2 focus:ring-[#5F7C65]/30 focus:border-[#5F7C65] transition-all cursor-pointer"
+                              >
+                                <option value="TEXT">Text Headline</option>
+                                <option value="IMAGE">Image File</option>
+                                <option value="VIDEO">Video File</option>
+                                <option value="DOCUMENT">Document (PDF/Doc)</option>
+                              </select>
+                              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 size-3.5 text-stone-400 pointer-events-none" />
+                            </div>
+                          </div>
                         </div>
 
                         {component.format === 'TEXT' && (
-                          <div className="space-y-3">
+                          <div className="space-y-3 pt-1">
                             <div>
-                              <Label>Header Text</Label>
+                              <Label className="text-xs font-medium text-stone-700 dark:text-stone-300">
+                                Header Text (Max 60 chars)
+                              </Label>
                               <Input
                                 value={component.text || ''}
                                 onChange={(e) => updateComponent(index, { text: e.target.value })}
-                                placeholder="Enter header text... Use {{1}} for variables"
-                                className="mt-1"
+                                placeholder="e.g. Order Update: {{1}}"
+                                className="mt-1 h-9 text-xs rounded-xl border-stone-300/80 dark:border-stone-700/80 bg-white/90 dark:bg-stone-900/90 shadow-2xs"
                                 maxLength={60}
                               />
-                              <p className="text-xs text-muted-foreground mt-1">
-                                Maximum 60 characters. Use {`{{1}}, {{2}}`} for variables
-                              </p>
                             </div>
 
-                            {/* Show example inputs if variables detected */}
+                            {/* Variable example inputs for Header */}
                             {(() => {
                               const vars = extractVariables(component.text || '');
                               if (vars.length > 0) {
                                 return (
-                                  <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 space-y-3">
-                                    <div className="flex items-start gap-2">
-                                      <Info className="h-4 w-4 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
-                                      <div className="flex-1">
-                                        <p className="text-sm font-medium text-blue-900 dark:text-blue-100 mb-2">
-                                          Example Values Required
-                                        </p>
-                                        <p className="text-xs text-blue-700 dark:text-blue-300 mb-3">
-                                          WhatsApp requires example values for variables. Provide examples for: {vars.map(v => `{{${v}}}`).join(', ')}
-                                        </p>
-                                        <div className="space-y-2">
-                                          {vars.map((varNum, varIndex) => (
-                                            <div key={varNum}>
-                                              <Label className="text-xs">Example for {`{{${varNum}}}`}</Label>
-                                              <Input
-                                                value={component.example?.header_text?.[varIndex] || ''}
-                                                onChange={(e) => {
-                                                  const newExamples = [...(component.example?.header_text || [])];
-                                                  newExamples[varIndex] = e.target.value;
-                                                  updateComponent(index, {
-                                                    example: {
-                                                      ...component.example,
-                                                      header_text: newExamples
-                                                    }
-                                                  });
-                                                }}
-                                                placeholder={`e.g., John`}
-                                                className="mt-1"
-                                              />
-                                            </div>
-                                          ))}
+                                  <div className="p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 space-y-2">
+                                    <p className="text-[11px] font-semibold text-blue-800 dark:text-blue-300 font-mono">
+                                      Sample Values for Header Variables (Required by Meta):
+                                    </p>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                      {vars.map((varNum, varIndex) => (
+                                        <div key={varNum}>
+                                          <Label className="text-[10px] text-blue-700 dark:text-blue-300 font-mono">
+                                            Value for {`{{${varNum}}}`}
+                                          </Label>
+                                          <Input
+                                            value={component.example?.header_text?.[varIndex] || ''}
+                                            onChange={(e) => {
+                                              const newExamples = [...(component.example?.header_text || [])];
+                                              newExamples[varIndex] = e.target.value;
+                                              updateComponent(index, {
+                                                example: {
+                                                  ...component.example,
+                                                  header_text: newExamples,
+                                                },
+                                              });
+                                            }}
+                                            placeholder="e.g. #ORD-9902"
+                                            className="mt-0.5 h-8 text-xs bg-white dark:bg-stone-900 border-blue-300 dark:border-blue-800"
+                                          />
                                         </div>
-                                      </div>
+                                      ))}
                                     </div>
                                   </div>
                                 );
@@ -743,157 +796,144 @@ export default function NewTemplatePage() {
                           </div>
                         )}
 
-                        {/* Choose Media for Template Header */}
+                        {/* Media Header Example File Selector */}
                         {component.format && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(component.format.toUpperCase()) && (
-                          <div className="space-y-4">
-                            <div className="border border-border bg-card rounded-lg p-4 shadow-sm">
-                              <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                                <FileText className="h-4 w-4 text-blue-500" />
-                                Header {component.format.toLowerCase()} example
-                              </h4>
-
+                          <div className="pt-1">
+                            <div className="p-4 rounded-xl border border-stone-200/80 dark:border-stone-800/80 bg-white/80 dark:bg-stone-900/80 shadow-2xs">
                               {selectedHeaderMedia ? (
-                                <div className="flex items-start gap-4 p-3 bg-muted/30 border border-border rounded-lg">
-                                  {/* Preview */}
-                                  {component.format === 'IMAGE' && selectedHeaderMedia.previewUrl ? (
-                                    <div className="relative w-24 h-24 rounded-lg overflow-hidden border border-border bg-background shrink-0">
-                                      <img
-                                        src={selectedHeaderMedia.previewUrl}
-                                        alt={selectedHeaderMedia.fileName}
-                                        className="w-full h-full object-cover"
-                                      />
-                                    </div>
-                                  ) : (
-                                    <div className="w-16 h-16 rounded-lg bg-muted flex items-center justify-center shrink-0 border border-border">
-                                      {component.format === 'IMAGE' ? (
-                                        <ImageIcon className="h-8 w-8 text-muted-foreground/50" />
-                                      ) : component.format === 'VIDEO' ? (
-                                        <Video className="h-8 w-8 text-muted-foreground/50" />
-                                      ) : (
-                                        <FileText className="h-8 w-8 text-muted-foreground/50" />
-                                      )}
-                                    </div>
-                                  )}
+                                <div className="flex items-center justify-between gap-3">
+                                  <div className="flex items-center gap-3 min-w-0">
+                                    {component.format === 'IMAGE' && selectedHeaderMedia.previewUrl ? (
+                                      <div className="size-12 rounded-lg overflow-hidden border border-stone-200 dark:border-stone-800 bg-stone-100 shrink-0">
+                                        <img
+                                          src={selectedHeaderMedia.previewUrl}
+                                          alt={selectedHeaderMedia.fileName}
+                                          className="w-full h-full object-cover"
+                                        />
+                                      </div>
+                                    ) : (
+                                      <div className="size-12 rounded-lg bg-[#5F7C65]/10 flex items-center justify-center text-[#5F7C65] shrink-0 border border-[#5F7C65]/20">
+                                        {component.format === 'IMAGE' ? (
+                                          <ImageIcon className="size-5" />
+                                        ) : component.format === 'VIDEO' ? (
+                                          <Video className="size-5" />
+                                        ) : (
+                                          <FileText className="size-5" />
+                                        )}
+                                      </div>
+                                    )}
 
-                                  {/* Info */}
-                                  <div className="flex-1 min-w-0">
-                                    <p className="text-sm font-medium truncate">{selectedHeaderMedia.fileName}</p>
-                                    <p className="text-xs text-muted-foreground uppercase mt-0.5">{selectedHeaderMedia.mimeType}</p>
-                                    <div className="flex gap-2 mt-3">
-                                      <Button
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={() => setShowMediaUpload(true)}
-                                      >
-                                        Change File
-                                      </Button>
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        className="text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20"
-                                        onClick={() => setSelectedHeaderMedia(null)}
-                                      >
-                                        Remove
-                                      </Button>
+                                    <div className="min-w-0">
+                                      <p className="text-xs font-semibold text-stone-900 dark:text-stone-100 truncate">
+                                        {selectedHeaderMedia.fileName}
+                                      </p>
+                                      <p className="text-[10px] text-stone-500 font-mono uppercase mt-0.5">
+                                        {selectedHeaderMedia.mimeType}
+                                      </p>
                                     </div>
+                                  </div>
+
+                                  <div className="flex items-center gap-2 shrink-0">
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => setShowMediaUpload(true)}
+                                      className="h-8 rounded-lg text-xs"
+                                    >
+                                      Change Asset
+                                    </Button>
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => setSelectedHeaderMedia(null)}
+                                      className="h-8 text-xs text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20"
+                                    >
+                                      Remove
+                                    </Button>
                                   </div>
                                 </div>
                               ) : (
-                                <div className="text-center py-6 border border-dashed border-border rounded-lg bg-muted/10">
-                                  <p className="text-sm text-muted-foreground mb-4">
-                                    Please upload or choose a {component.format.toLowerCase()} to use as an example header media.
+                                <div className="text-center py-4">
+                                  <p className="text-xs text-stone-500 dark:text-stone-400 mb-2.5">
+                                    Meta requires an uploaded example {component.format.toLowerCase()} asset to approve this template.
                                   </p>
                                   <Button
+                                    type="button"
                                     variant="outline"
+                                    size="sm"
                                     onClick={() => setShowMediaUpload(true)}
-                                    className="gap-2"
+                                    className="h-8 rounded-xl border-[#5F7C65]/40 text-[#2D583F] dark:text-[#8EAE95] hover:bg-[#5F7C65]/10 text-xs font-medium gap-1.5 cursor-pointer"
                                   >
-                                    <Plus className="h-4 w-4" />
-                                    Choose File from Media
+                                    <Plus className="size-3.5" />
+                                    <span>Choose Example Asset from Vault</span>
                                   </Button>
                                 </div>
                               )}
-                            </div>
-
-                            <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-                              <div className="flex items-start gap-2">
-                                <Info className="h-4 w-4 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
-                                <div>
-                                  <p className="text-sm font-medium text-blue-900 dark:text-blue-100 mb-1">
-                                    Media Header Information
-                                  </p>
-                                  <p className="text-xs text-blue-700 dark:text-blue-300">
-                                    WhatsApp requires an example file to approve message templates with media headers.
-                                    The selected file will be uploaded to Meta as the example.
-                                  </p>
-                                  <ul className="text-xs text-blue-700 dark:text-blue-300 mt-2 space-y-1 list-disc list-inside">
-                                    <li>IMAGE: JPG, PNG (max 5MB)</li>
-                                    <li>VIDEO: MP4, 3GP (max 16MB)</li>
-                                    <li>DOCUMENT: PDF, DOC, DOCX, etc. (max 100MB)</li>
-                                  </ul>
-                                </div>
-                              </div>
                             </div>
                           </div>
                         )}
                       </div>
                     )}
 
-                    {/* Body Component */}
+                    {/* BODY COMPONENT */}
                     {component.type === 'BODY' && (
                       <div className="space-y-3">
                         <div>
-                          <Label>Body Text *</Label>
+                          <div className="flex items-center justify-between mb-1">
+                            <Label className="text-xs font-medium text-stone-700 dark:text-stone-300">
+                              Body Message Content *
+                            </Label>
+                            <span className="text-[10px] font-mono text-stone-400">
+                              {(component.text || '').length} / 1024
+                            </span>
+                          </div>
                           <Textarea
                             value={component.text || ''}
                             onChange={(e) => updateComponent(index, { text: e.target.value })}
-                            placeholder="Enter your message body text here. Use {{1}}, {{2}}, etc. for variables..."
-                            className="mt-1 min-h-[120px]"
+                            placeholder="Hello {{1}}, your order {{2}} has been confirmed and is scheduled for delivery on {{3}}."
+                            className="min-h-[110px] text-xs rounded-xl border-stone-300/80 dark:border-stone-700/80 bg-white/90 dark:bg-stone-900/90 shadow-2xs leading-relaxed"
                             maxLength={1024}
                           />
-                          <p className="text-xs text-muted-foreground mt-1">
-                            Maximum 1024 characters. Use {`{{1}}, {{2}}`} for variables.
+                          <p className="text-[11px] text-stone-500 dark:text-stone-400 mt-1.5">
+                            Use variables like <code className="px-1 py-0.5 rounded bg-stone-200/60 dark:bg-stone-800 text-[10px] font-mono font-bold text-[#2D583F] dark:text-[#8EAE95]">{`{{1}}`}</code>, <code className="px-1 py-0.5 rounded bg-stone-200/60 dark:bg-stone-800 text-[10px] font-mono font-bold text-[#2D583F] dark:text-[#8EAE95]">{`{{2}}`}</code> to inject real customer data dynamically.
                           </p>
                         </div>
 
-                        {/* Show example inputs if variables detected */}
+                        {/* Sample Values for Body Variables */}
                         {(() => {
                           const vars = extractVariables(component.text || '');
                           if (vars.length > 0) {
                             return (
-                              <div className="bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded-lg p-4 space-y-3">
-                                <div className="flex items-start gap-2">
-                                  <Info className="h-4 w-4 text-green-600 dark:text-green-400 mt-0.5 flex-shrink-0" />
-                                  <div className="flex-1">
-                                    <p className="text-sm font-medium text-green-900 dark:text-green-100 mb-2">
-                                      Example Values Required
-                                    </p>
-                                    <p className="text-xs text-green-700 dark:text-green-300 mb-3">
-                                      WhatsApp requires example values for variables. Provide examples for: {vars.map(v => `{{${v}}}`).join(', ')}
-                                    </p>
-                                    <div className="space-y-2">
-                                      {vars.map((varNum, varIndex) => (
-                                        <div key={varNum}>
-                                          <Label className="text-xs">Example for {`{{${varNum}}}`}</Label>
-                                          <Input
-                                            value={component.example?.body_text?.[0]?.[varIndex] || ''}
-                                            onChange={(e) => {
-                                              const newExamples = [...(component.example?.body_text?.[0] || [])];
-                                              newExamples[varIndex] = e.target.value;
-                                              updateComponent(index, {
-                                                example: {
-                                                  ...component.example,
-                                                  body_text: [newExamples]
-                                                }
-                                              });
-                                            }}
-                                            placeholder={`e.g., ${varNum === 1 ? 'John' : varNum === 2 ? 'December 25' : 'example value'}`}
-                                            className="mt-1"
-                                          />
-                                        </div>
-                                      ))}
+                              <div className="p-3.5 rounded-xl bg-[#5F7C65]/10 border border-[#5F7C65]/20 space-y-2.5">
+                                <div className="flex items-center gap-1.5 text-xs font-semibold text-[#2D583F] dark:text-[#8EAE95] font-mono">
+                                  <Sparkles className="size-3.5" />
+                                  <span>Sample Variable Values (Required for Meta Review)</span>
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                                  {vars.map((varNum, varIndex) => (
+                                    <div key={varNum}>
+                                      <Label className="text-[11px] text-stone-700 dark:text-stone-300 font-mono">
+                                        Sample for {`{{${varNum}}}`}
+                                      </Label>
+                                      <Input
+                                        value={component.example?.body_text?.[0]?.[varIndex] || ''}
+                                        onChange={(e) => {
+                                          const newExamples = [...(component.example?.body_text?.[0] || [])];
+                                          newExamples[varIndex] = e.target.value;
+                                          updateComponent(index, {
+                                            example: {
+                                              ...component.example,
+                                              body_text: [newExamples],
+                                            },
+                                          });
+                                        }}
+                                        placeholder={`e.g. ${varNum === 1 ? 'Aryan' : varNum === 2 ? '#4821' : 'Tuesday'}`}
+                                        className="mt-1 h-8 text-xs bg-white dark:bg-stone-900 border-stone-300/80 dark:border-stone-700/80"
+                                      />
                                     </div>
-                                  </div>
+                                  ))}
                                 </div>
                               </div>
                             );
@@ -903,97 +943,108 @@ export default function NewTemplatePage() {
                       </div>
                     )}
 
-                    {/* Footer Component */}
+                    {/* FOOTER COMPONENT */}
                     {component.type === 'FOOTER' && (
                       <div>
-                        <Label>Footer Text</Label>
+                        <Label className="text-xs font-medium text-stone-700 dark:text-stone-300">
+                          Footer Text (Max 60 chars)
+                        </Label>
                         <Input
                           value={component.text || ''}
                           onChange={(e) => updateComponent(index, { text: e.target.value })}
-                          placeholder="Enter footer text..."
-                          className="mt-1"
+                          placeholder="e.g. Reply STOP to unsubscribe."
+                          className="mt-1 h-9 text-xs rounded-xl border-stone-300/80 dark:border-stone-700/80 bg-white/90 dark:bg-stone-900/90 shadow-2xs"
                           maxLength={60}
                         />
-                        <p className="text-xs text-muted-foreground mt-1">
-                          Maximum 60 characters
-                        </p>
                       </div>
                     )}
 
-                    {/* Buttons Component */}
+                    {/* BUTTONS COMPONENT */}
                     {component.type === 'BUTTONS' && (
                       <div className="space-y-3">
                         {component.buttons?.map((button, buttonIndex) => (
-                          <div key={buttonIndex} className="bg-muted/50 border border-border rounded-lg p-4">
-                            <div className="flex items-center justify-between mb-3">
-                              <h4 className="font-medium text-sm flex items-center gap-2">
-                                <span className="w-6 h-6 rounded-full bg-orange-500/10 text-orange-600 dark:text-orange-400 flex items-center justify-center text-xs font-bold">
-                                  {buttonIndex + 1}
-                                </span>
-                                Button {buttonIndex + 1}
-                              </h4>
+                          <div
+                            key={buttonIndex}
+                            className="p-3.5 rounded-xl border border-stone-200/80 dark:border-stone-800/80 bg-white/70 dark:bg-stone-900/60 shadow-2xs space-y-3"
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-semibold text-stone-800 dark:text-stone-200 font-mono">
+                                Button #{buttonIndex + 1}
+                              </span>
                               <Button
-                                onClick={() => removeButton(index, buttonIndex)}
+                                type="button"
                                 variant="ghost"
                                 size="sm"
-                                className="h-7 w-7 p-0 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20"
+                                onClick={() => removeButton(index, buttonIndex)}
+                                className="size-6 rounded-md text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20 p-0"
                               >
-                                <Minus className="h-3 w-3" />
+                                <Minus className="size-3" />
                               </Button>
                             </div>
 
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                               <div>
-                                <Label className="text-xs font-medium">Button Type</Label>
-                                <select
-                                  value={button.type}
-                                  onChange={(e) => updateButton(index, buttonIndex, {
-                                    type: e.target.value as ButtonComponent['type'],
-                                    url: e.target.value === 'URL' ? button.url : undefined,
-                                    phone_number: e.target.value === 'PHONE_NUMBER' ? button.phone_number : undefined
-                                  })}
-                                  className="mt-1 w-full px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-green-500"
-                                >
-                                  <option value="QUICK_REPLY">Quick Reply</option>
-                                  <option value="URL">URL</option>
-                                  <option value="PHONE_NUMBER">Phone Number</option>
-                                  <option value="CATALOG">Catalog</option>
-                                </select>
+                                <Label className="text-[11px] font-medium text-stone-600 dark:text-stone-400">
+                                  Action Type
+                                </Label>
+                                <div className="relative mt-1">
+                                  <select
+                                    value={button.type}
+                                    onChange={(e) =>
+                                      updateButton(index, buttonIndex, {
+                                        type: e.target.value as ButtonComponent['type'],
+                                        url: e.target.value === 'URL' ? button.url : undefined,
+                                        phone_number: e.target.value === 'PHONE_NUMBER' ? button.phone_number : undefined,
+                                      })
+                                    }
+                                    className="appearance-none w-full h-8 pl-3 pr-8 rounded-lg border border-stone-300/80 dark:border-stone-700/80 bg-white dark:bg-stone-900 text-xs font-medium text-stone-700 dark:text-stone-300 focus:outline-none focus:ring-1 focus:ring-[#5F7C65]"
+                                  >
+                                    <option value="QUICK_REPLY">Quick Reply (Preset user text)</option>
+                                    <option value="URL">Website URL</option>
+                                    <option value="PHONE_NUMBER">Phone Call</option>
+                                  </select>
+                                  <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 size-3 text-stone-400 pointer-events-none" />
+                                </div>
                               </div>
 
                               <div>
-                                <Label className="text-xs font-medium">Button Text *</Label>
+                                <Label className="text-[11px] font-medium text-stone-600 dark:text-stone-400">
+                                  Button Label * (Max 25 chars)
+                                </Label>
                                 <Input
                                   value={button.text}
                                   onChange={(e) => updateButton(index, buttonIndex, { text: e.target.value })}
-                                  placeholder="Button text..."
-                                  className="mt-1"
+                                  placeholder="e.g. Track Order"
+                                  className="mt-1 h-8 text-xs rounded-lg border-stone-300/80 dark:border-stone-700/80 bg-white dark:bg-stone-900"
                                   maxLength={25}
                                 />
-                                <p className="text-xs text-muted-foreground mt-1">Max 25 chars</p>
                               </div>
                             </div>
 
                             {button.type === 'URL' && (
-                              <div className="mt-3">
-                                <Label className="text-xs font-medium">URL *</Label>
+                              <div>
+                                <Label className="text-[11px] font-medium text-stone-600 dark:text-stone-400">
+                                  Target Website URL *
+                                </Label>
                                 <Input
                                   value={button.url || ''}
                                   onChange={(e) => updateButton(index, buttonIndex, { url: e.target.value })}
-                                  placeholder="https://example.com"
-                                  className="mt-1"
+                                  placeholder="https://yourstore.com/orders/track"
+                                  className="mt-1 h-8 text-xs font-mono rounded-lg border-stone-300/80 dark:border-stone-700/80 bg-white dark:bg-stone-900"
                                 />
                               </div>
                             )}
 
                             {button.type === 'PHONE_NUMBER' && (
-                              <div className="mt-3">
-                                <Label className="text-xs font-medium">Phone Number *</Label>
+                              <div>
+                                <Label className="text-[11px] font-medium text-stone-600 dark:text-stone-400">
+                                  Phone Number (with Country Code) *
+                                </Label>
                                 <Input
                                   value={button.phone_number || ''}
                                   onChange={(e) => updateButton(index, buttonIndex, { phone_number: e.target.value })}
-                                  placeholder="+1234567890"
-                                  className="mt-1"
+                                  placeholder="+919876543210"
+                                  className="mt-1 h-8 text-xs font-mono rounded-lg border-stone-300/80 dark:border-stone-700/80 bg-white dark:bg-stone-900"
                                 />
                               </div>
                             )}
@@ -1002,193 +1053,167 @@ export default function NewTemplatePage() {
 
                         {(component.buttons?.length || 0) < 10 && (
                           <Button
-                            onClick={() => addButton(index)}
+                            type="button"
                             variant="outline"
                             size="sm"
-                            className="gap-2 w-full border-dashed"
+                            onClick={() => addButton(index)}
+                            className="w-full h-8 rounded-xl border-dashed border-stone-300 dark:border-stone-700 text-xs font-medium text-stone-700 dark:text-stone-300 hover:border-[#5F7C65] gap-1 cursor-pointer"
                           >
-                            <Plus className="h-4 w-4" />
-                            Add Another Button
+                            <Plus className="size-3.5 text-[#5F7C65]" />
+                            <span>Add Another Action Button</span>
                           </Button>
                         )}
                       </div>
                     )}
                   </div>
-                ))}
-              </div>
+                </div>
+              ))}
             </div>
           </div>
+        </div>
 
-          {/* Preview Panel */}
-          {showPreview && (
-            <div className="w-1/2 overflow-y-auto p-6 bg-gradient-to-br from-green-50 to-blue-50 dark:from-green-950/20 dark:to-blue-950/20">
-              <div className="mb-6">
-                <h2 className="text-lg font-semibold mb-4">Template Preview</h2>
+        {/* Live WhatsApp Mockup Preview Column */}
+        {showPreview && (
+          <div className="w-full lg:w-5/12 xl:w-1/3 bg-stone-100/70 dark:bg-stone-950/60 border-t lg:border-t-0 lg:border-l border-stone-200/80 dark:border-stone-800/80 p-6 overflow-y-auto flex flex-col items-center justify-start">
+            <div className="w-full max-w-sm sticky top-6 space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-stone-600 dark:text-stone-400 uppercase tracking-wider font-mono">
+                  Live WhatsApp Preview
+                </span>
+                <span className="text-[10px] text-stone-400 font-mono">Dynamic Sample Render</span>
+              </div>
 
-                <div className="max-w-sm mx-auto bg-[#0a1628] rounded-2xl shadow-2xl overflow-hidden p-4">
-                  {/* Mock WhatsApp header */}
-                  <div className="flex items-center gap-3 mb-4 pb-3 border-b border-gray-700">
-                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-green-400 to-green-600 flex items-center justify-center text-white font-semibold">
-                      W
-                    </div>
-                    <div className="flex-1">
-                      <div className="font-medium text-white text-sm">WhatsApp Business</div>
-                      <div className="text-xs text-gray-400">Message Preview</div>
-                    </div>
+              {/* Phone Mockup Frame */}
+              <div className="rounded-[2.2rem] p-3 bg-stone-900 shadow-2xl border-4 border-stone-800 text-stone-100 relative overflow-hidden">
+                {/* Phone Speaker Notch */}
+                <div className="w-24 h-4 bg-stone-800 rounded-full mx-auto mb-3" />
+
+                {/* WhatsApp Chat Header */}
+                <div className="flex items-center gap-2.5 pb-2.5 mb-3 border-b border-stone-800/80 px-1">
+                  <div className="size-8 rounded-full bg-[#2D583F] flex items-center justify-center text-white font-bold text-xs">
+                    W
                   </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-semibold text-stone-100 truncate">Your Business Name</p>
+                    <p className="text-[10px] text-emerald-400 font-mono">Official WhatsApp Account</p>
+                  </div>
+                </div>
 
-                  {/* WhatsApp-like message bubble */}
-                  <div className="bg-[#005c4b] text-white rounded-lg overflow-hidden shadow-md">
-                    {/* Header */}
-                    {(() => {
-                      const headerComp = templateData.components.find(c => c.type === 'HEADER');
-                      if (headerComp) {
-                        if (headerComp.format === 'TEXT' && headerComp.text) {
-                          const displayText = replaceVariablesWithExamples(
-                            headerComp.text,
-                            headerComp.example?.header_text
-                          );
+                {/* WhatsApp Chat Bubble */}
+                <div className="rounded-2xl rounded-tl-sm bg-[#005C4B] text-white p-3 space-y-2 shadow-md">
+                  {/* Header Preview */}
+                  {(() => {
+                    const headerComp = templateData.components.find((c) => c.type === 'HEADER');
+                    if (headerComp) {
+                      if (headerComp.format === 'TEXT' && headerComp.text) {
+                        const displayText = replaceVariablesWithExamples(
+                          headerComp.text,
+                          headerComp.example?.header_text
+                        );
+                        return (
+                          <div className="font-bold text-xs pb-1 border-b border-white/10">
+                            {displayText}
+                          </div>
+                        );
+                      }
+                      if (headerComp.format && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(headerComp.format)) {
+                        if (headerComp.format === 'IMAGE' && selectedHeaderMedia?.previewUrl) {
                           return (
-                            <div className="px-4 pt-3 pb-2 border-b border-white/10">
-                              <p className="font-semibold text-sm">{displayText}</p>
-                            </div>
-                          );
-                        } else if (headerComp.format && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(headerComp.format)) {
-                          if (headerComp.format === 'IMAGE' && selectedHeaderMedia?.previewUrl) {
-                            return (
-                              <div className="relative h-40 w-full bg-black/10 border-b border-white/10 flex items-center justify-center overflow-hidden">
-                                <img
-                                  src={selectedHeaderMedia.previewUrl}
-                                  alt="Header example"
-                                  className="w-full h-full object-cover"
-                                />
-                              </div>
-                            );
-                          }
-                          return (
-                            <div className="bg-gray-200 h-40 flex items-center justify-center text-gray-600 border-b border-white/10">
-                              <div className="text-center">
-                                <div className="text-4xl mb-2">
-                                  {headerComp.format === 'IMAGE' ? '🖼️' :
-                                    headerComp.format === 'VIDEO' ? '🎥' : '📄'}
-                                </div>
-                                <div className="text-sm font-medium">
-                                  {headerComp.format} Media
-                                </div>
-                                <div className="text-xs mt-1 text-gray-500">
-                                  {selectedHeaderMedia ? selectedHeaderMedia.fileName : 'Preview placeholder'}
-                                </div>
-                              </div>
+                            <div className="h-32 w-full rounded-xl overflow-hidden bg-black/20">
+                              <img
+                                src={selectedHeaderMedia.previewUrl}
+                                alt="Header preview"
+                                className="w-full h-full object-cover"
+                              />
                             </div>
                           );
                         }
-                      }
-                      return null;
-                    })()}
-
-                    {/* Body */}
-                    {(() => {
-                      const bodyComp = templateData.components.find(c => c.type === 'BODY');
-                      if (bodyComp) {
-                        const displayText = bodyComp.text
-                          ? replaceVariablesWithExamples(
-                            bodyComp.text,
-                            bodyComp.example?.body_text?.[0]
-                          )
-                          : 'Enter your message body...';
                         return (
-                          <div className="px-4 py-3">
-                            <p className="text-sm leading-relaxed whitespace-pre-wrap">{displayText}</p>
+                          <div className="h-28 rounded-xl bg-black/20 flex flex-col items-center justify-center text-xs text-emerald-200/80 border border-white/10 p-2 text-center">
+                            <span className="text-xl mb-1">
+                              {headerComp.format === 'IMAGE' ? '🖼️' : headerComp.format === 'VIDEO' ? '🎥' : '📄'}
+                            </span>
+                            <span className="font-semibold">{headerComp.format} Header</span>
+                            <span className="text-[10px] opacity-75 truncate max-w-[200px]">
+                              {selectedHeaderMedia?.fileName || 'Example attachment'}
+                            </span>
                           </div>
                         );
                       }
-                      return null;
-                    })()}
-
-                    {/* Footer */}
-                    {(() => {
-                      const footerComp = templateData.components.find(c => c.type === 'FOOTER');
-                      if (footerComp && footerComp.text) {
-                        return (
-                          <div className="px-4 pb-2 border-t border-white/10 pt-2 mt-1">
-                            <p className="text-xs opacity-60">{footerComp.text}</p>
-                          </div>
-                        );
-                      }
-                      return null;
-                    })()}
-
-                    {/* Timestamp */}
-                    <div className="px-4 pb-2 flex justify-end items-center gap-1">
-                      <span className="text-xs opacity-60">12:34 PM</span>
-                      <svg className="w-4 h-4 opacity-60" viewBox="0 0 16 15" fill="currentColor">
-                        <path d="M15.01 3.316l-.478-.372a.365.365 0 0 0-.51.063L8.666 9.88a.32.32 0 0 1-.484.033l-.358-.325a.32.32 0 0 0-.484.032l-.378.483a.418.418 0 0 0 .036.54l1.32 1.267a.32.32 0 0 0 .484-.034l6.272-8.048a.366.366 0 0 0-.064-.512zm-4.1 0l-.478-.372a.365.365 0 0 0-.51.063L4.566 9.88a.32.32 0 0 1-.484.033L1.891 7.769a.366.366 0 0 0-.515.006l-.423.433a.364.364 0 0 0 .006.514l3.258 3.185c.143.14.361.125.484-.033l6.272-8.048a.365.365 0 0 0-.063-.51z" />
-                      </svg>
-                    </div>
-                  </div>
-
-                  {/* Buttons */}
-                  {(() => {
-                    const buttonsComp = templateData.components.find(c => c.type === 'BUTTONS');
-                    if (buttonsComp?.buttons && buttonsComp.buttons.length > 0) {
-                      return (
-                        <div className="mt-2 space-y-1">
-                          {buttonsComp.buttons.map((button, index) => (
-                            <div
-                              key={index}
-                              className="bg-[#0a1f35] hover:bg-[#0d2943] rounded-lg py-3 px-4 text-center border border-[#1a3a52] transition-colors cursor-pointer"
-                            >
-                              <span className="text-sm font-medium text-[#00d9ff] flex items-center justify-center gap-2">
-                                {button.type === 'URL' && '🔗'}
-                                {button.type === 'PHONE_NUMBER' && '📞'}
-                                {button.type === 'QUICK_REPLY' && '↩️'}
-                                {button.text || `Button ${index + 1}`}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      );
                     }
                     return null;
                   })()}
+
+                  {/* Body Preview */}
+                  {(() => {
+                    const bodyComp = templateData.components.find((c) => c.type === 'BODY');
+                    const text = bodyComp?.text
+                      ? replaceVariablesWithExamples(bodyComp.text, bodyComp.example?.body_text?.[0])
+                      : 'Type your message body in the editor to see it live...';
+                    return <p className="text-xs leading-relaxed whitespace-pre-wrap">{text}</p>;
+                  })()}
+
+                  {/* Footer Preview */}
+                  {(() => {
+                    const footerComp = templateData.components.find((c) => c.type === 'FOOTER');
+                    if (footerComp?.text) {
+                      return <p className="text-[10px] text-white/60 pt-1 border-t border-white/10">{footerComp.text}</p>;
+                    }
+                    return null;
+                  })()}
+
+                  {/* Bubble Timestamp */}
+                  <div className="flex justify-end items-center gap-1 text-[9px] text-white/50 font-mono">
+                    <span>12:00 PM</span>
+                    <Check className="size-3 text-emerald-300" />
+                  </div>
                 </div>
 
-                {/* Template Info */}
-                <div className="mt-6 bg-card border border-border rounded-lg p-4 max-w-sm mx-auto">
-                  <h3 className="font-medium mb-3 flex items-center gap-2">
-                    <Info className="h-4 w-4 text-blue-500" />
-                    Template Details
-                  </h3>
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between items-center py-1">
-                      <span className="text-muted-foreground">Name:</span>
-                      <span className="font-mono text-xs bg-muted px-2 py-1 rounded">
-                        {templateData.name || 'not_set'}
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center py-1">
-                      <span className="text-muted-foreground">Category:</span>
-                      <span className="capitalize bg-blue-500/10 text-blue-600 dark:text-blue-400 px-2 py-1 rounded text-xs">
-                        {templateData.category.toLowerCase()}
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center py-1">
-                      <span className="text-muted-foreground">Language:</span>
-                      <span className="text-xs">{SUPPORTED_LANGUAGES.find(l => l.code === templateData.language)?.name}</span>
-                    </div>
-                    <div className="flex justify-between items-center py-1">
-                      <span className="text-muted-foreground">Components:</span>
-                      <span className="bg-green-500/10 text-green-600 dark:text-green-400 px-2 py-1 rounded text-xs font-medium">
-                        {templateData.components.length}
-                      </span>
-                    </div>
-                  </div>
+                {/* Buttons Preview */}
+                {(() => {
+                  const buttonsComp = templateData.components.find((c) => c.type === 'BUTTONS');
+                  if (buttonsComp?.buttons && buttonsComp.buttons.length > 0) {
+                    return (
+                      <div className="mt-2 space-y-1.5">
+                        {buttonsComp.buttons.map((b, i) => (
+                          <div
+                            key={i}
+                            className="w-full py-2 px-3 rounded-xl bg-stone-800/90 text-center text-xs font-medium text-emerald-300 border border-stone-700/60 shadow-xs flex items-center justify-center gap-1.5"
+                          >
+                            <span>
+                              {b.type === 'URL' ? '🔗' : b.type === 'PHONE_NUMBER' ? '📞' : '↩️'}
+                            </span>
+                            <span className="truncate">{b.text || `Button ${i + 1}`}</span>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
+              </div>
+
+              {/* Template Summary Card */}
+              <div className="p-3 rounded-xl border border-stone-200/80 dark:border-stone-800/80 bg-white/70 dark:bg-stone-900/60 text-xs text-stone-600 dark:text-stone-400 space-y-1 font-mono">
+                <div className="flex justify-between">
+                  <span>Category:</span>
+                  <strong className="text-stone-800 dark:text-stone-200 uppercase">{templateData.category}</strong>
+                </div>
+                <div className="flex justify-between">
+                  <span>Language:</span>
+                  <strong className="text-stone-800 dark:text-stone-200">{templateData.language}</strong>
+                </div>
+                <div className="flex justify-between">
+                  <span>Components:</span>
+                  <strong className="text-stone-800 dark:text-stone-200">{templateData.components.length}</strong>
                 </div>
               </div>
             </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
+
+      {/* Media Selector Modal */}
       <MediaUpload
         isOpen={showMediaUpload}
         onClose={() => setShowMediaUpload(false)}
@@ -1197,4 +1222,4 @@ export default function NewTemplatePage() {
       />
     </div>
   );
-} 
+}

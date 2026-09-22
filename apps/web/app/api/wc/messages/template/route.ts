@@ -93,6 +93,7 @@ export async function POST(request: NextRequest) {
         // Prepare WhatsApp API request
         const whatsappApiUrl = `https://graph.facebook.com/${settings.apiVersion}/${settings.phoneNumberId}/messages`;
 
+        const templateLocale = template.language === 'en' ? 'en_US' : template.language;
         const messageData = {
             messaging_product: 'whatsapp',
             to: cleanPhoneNumber,
@@ -100,7 +101,7 @@ export async function POST(request: NextRequest) {
             template: {
                 name: template.name,
                 language: {
-                    code: template.language
+                    code: templateLocale
                 },
                 ...(template.components && template.components.length > 0 && {
                     components: template.components

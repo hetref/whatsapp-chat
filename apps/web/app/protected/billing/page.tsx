@@ -1,811 +1,316 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import Script from "next/script";
+import { useState } from "react";
 import {
-  useSubscription,
-  formatSubscriptionStatus,
-  formatAmount,
-  canMakePayment,
-} from "@/hooks/use-subscription";
-import type { PaymentData } from "@/hooks/use-subscription";
-import { useSubscriptionStatus } from "@/components/subscription-guard";
-import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
-import {
-  Loader2,
-  CreditCard,
-  RefreshCw,
-  CheckCircle,
-  AlertCircle,
-  Clock,
+  CheckCircle2,
+  Mail,
+  Phone,
   ArrowRight,
-  ArrowDown,
-  Pause,
-  Play,
-  XCircle,
+  Copy,
   Check,
-  X,
-  Crown,
   Zap,
-  Users,
-  HardDrive,
+  ShieldCheck,
   MessageSquare,
-  Key,
 } from "lucide-react";
-
-declare global {
-  interface Window {
-    Razorpay: any;
-  }
-}
-
-const PLANS = [
-  {
-    tier: "FREE" as const,
-    name: "Free",
-    price: 0,
-    description: "Get started with basic features",
-    features: [
-      { label: "10 Contacts", included: true },
-      { label: "2 Broadcast Groups", included: true },
-      { label: "5 GB Storage", included: true },
-      { label: "Bulk Messaging", included: false },
-      { label: "API Access", included: false },
-    ],
-  },
-  {
-    tier: "SILVER" as const,
-    name: "Silver",
-    price: 499,
-    description: "For growing businesses",
-    popular: true,
-    features: [
-      { label: "15,000 Contacts", included: true },
-      { label: "100 Broadcast Groups", included: true },
-      { label: "40 GB Storage", included: true },
-      { label: "Bulk Messaging (10K)", included: true },
-      { label: "API Access", included: true },
-    ],
-  },
-  {
-    tier: "GOLD" as const,
-    name: "Gold",
-    price: 999,
-    description: "For large-scale operations",
-    features: [
-      { label: "80,000 Contacts", included: true },
-      { label: "500 Broadcast Groups", included: true },
-      { label: "160 GB Storage", included: true },
-      { label: "Bulk Messaging (80K)", included: true },
-      { label: "API Access", included: true },
-    ],
-  },
-];
+import { toast, Toaster } from "@/components/ui/toast";
+import LogoIcon from "@/components/logo-icon";
+import { useSubscriptionStatus } from "@/components/subscription-guard";
 
 export default function BillingPage() {
-  const {
-    data,
-    payments,
-    loading,
-    paymentsLoading,
-    error,
-    refresh,
-    fetchPayments,
-  } = useSubscription();
-
   const { planTier } = useSubscriptionStatus();
+  const [copiedField, setCopiedField] = useState<string | null>(null);
 
-  const [paymentLoading, setPaymentLoading] = useState<string | null>(null);
-  const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
-  const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+  const isPaidUser = Boolean(planTier && planTier.toUpperCase() !== "FREE");
 
-  useEffect(() => {
-    fetchPayments();
-  }, [fetchPayments]);
+  const emailAddress = "support@wachat.tech";
+  const phoneNumber = "+918828316840";
+  const formattedPhone = "+91 88283 16840";
 
-  // Handle subscribe to a specific plan
-  const handleSubscribe = async (tier: "SILVER" | "GOLD") => {
-    try {
-      setPaymentLoading(tier);
-      setActionError(null);
-      setActionSuccess(null);
-
-      const subRes = await fetch("/api/razorpay/create-subscription", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ planTier: tier }),
-      });
-
-      const subData = await subRes.json();
-
-      if (subData.error) {
-        throw new Error(subData.error);
-      }
-
-      const plan = PLANS.find((p) => p.tier === tier);
-
-      const options = {
-        key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
-        subscription_id: subData.subscription_id,
-        name: "WaChat",
-        description: `${plan?.name} Plan - ₹${plan?.price}/month`,
-        handler: async function (response: any) {
-          try {
-            const verifyRes = await fetch("/api/razorpay/verify-subscription", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                razorpay_subscription_id: response.razorpay_subscription_id,
-                razorpay_payment_id: response.razorpay_payment_id,
-                razorpay_signature: response.razorpay_signature,
-              }),
-            });
-
-            const verifyData = await verifyRes.json();
-
-            if (verifyData.success) {
-              setActionSuccess(
-                `${plan?.name} plan activated! Refreshing...`,
-              );
-              refresh();
-              fetchPayments();
-              // Reload to update sidebar
-              setTimeout(() => window.location.reload(), 1500);
-            } else {
-              setActionError(
-                verifyData.error || "Subscription verification failed",
-              );
-            }
-          } catch (err: any) {
-            setActionError(err.message || "Subscription verification failed");
-          }
-        },
-        modal: {
-          ondismiss: function () {
-            setPaymentLoading(null);
-          },
-        },
-        theme: {
-          color: tier === "GOLD" ? "#d97706" : "#64748b",
-        },
-      };
-
-      const razorpay = new window.Razorpay(options);
-      razorpay.open();
-    } catch (err: any) {
-      setActionError(err.message || "Failed to create subscription");
-    } finally {
-      setPaymentLoading(null);
-    }
+  const copyToClipboard = (text: string, field: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedField(field);
+    toast(`${text} copied to clipboard`, "success", 2000);
+    setTimeout(() => setCopiedField(null), 2000);
   };
-
-  // Handle upgrade (Silver → Gold: pay the difference via Razorpay order)
-  const handleUpgrade = async (tier: "SILVER" | "GOLD") => {
-    try {
-      setPaymentLoading(tier);
-      setActionError(null);
-      setActionSuccess(null);
-
-      // Step 1: Create an order for the price difference
-      const res = await fetch("/api/razorpay/upgrade-subscription", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ planTier: tier }),
-      });
-
-      const result = await res.json();
-
-      if (result.error) {
-        if (result.code === "UPI_PLAN_CHANGE_NOT_SUPPORTED") {
-          setActionError(
-            result.error +
-            " You can cancel your subscription below and then re-subscribe directly to the Gold plan."
-          );
-          setPaymentLoading(null);
-          return;
-        }
-        throw new Error(result.error);
-      }
-
-      const plan = PLANS.find((p) => p.tier === tier);
-
-      // Step 2: Open Razorpay checkout for the difference amount
-      const options = {
-        key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
-        amount: result.amount * 100, // in paise
-        currency: result.currency,
-        order_id: result.order_id,
-        name: "WaChat",
-        description: `Upgrade to ${plan?.name} Plan (difference)`,
-        handler: async function (response: any) {
-          try {
-            // Step 3: Verify payment and upgrade
-            const verifyRes = await fetch("/api/razorpay/verify-upgrade", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                razorpay_order_id: response.razorpay_order_id,
-                razorpay_payment_id: response.razorpay_payment_id,
-                razorpay_signature: response.razorpay_signature,
-                newPlanTier: tier,
-              }),
-            });
-
-            const verifyData = await verifyRes.json();
-
-            if (verifyData.success) {
-              setActionSuccess(verifyData.message);
-              refresh();
-              fetchPayments();
-              setTimeout(() => window.location.reload(), 1500);
-            } else {
-              setActionError(
-                verifyData.error || "Upgrade verification failed",
-              );
-            }
-          } catch (err: any) {
-            setActionError(err.message || "Upgrade verification failed");
-          }
-        },
-        modal: {
-          ondismiss: function () {
-            setPaymentLoading(null);
-          },
-        },
-        theme: {
-          color: "#d97706",
-        },
-      };
-
-      const razorpay = new window.Razorpay(options);
-      razorpay.open();
-    } catch (err: any) {
-      setActionError(err.message || "Failed to create upgrade order");
-    } finally {
-      setPaymentLoading(null);
-    }
-  };
-
-  // Handle downgrade (Gold → Silver: no payment needed)
-  const handleDowngrade = async (tier: "SILVER") => {
-    if (
-      !confirm(
-        "Downgrade to Silver? Your plan limits will be updated immediately. Billing will change to ₹499/month from your next cycle.",
-      )
-    ) {
-      return;
-    }
-
-    try {
-      setActionLoading("downgrade");
-      setActionError(null);
-      setActionSuccess(null);
-
-      const res = await fetch("/api/razorpay/downgrade-subscription", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ planTier: tier }),
-      });
-
-      const result = await res.json();
-
-      if (result.error) {
-        throw new Error(result.error);
-      }
-
-      setActionSuccess(result.message);
-      refresh();
-      setTimeout(() => window.location.reload(), 1500);
-    } catch (err: any) {
-      setActionError(err.message || "Failed to downgrade subscription");
-    } finally {
-      setActionLoading(null);
-    }
-  };
-
-  // Handle cancel subscription
-  const handleCancel = async (immediately = false) => {
-    if (
-      !confirm(
-        immediately
-          ? "Are you sure you want to cancel immediately? You will be downgraded to the Free plan."
-          : "Are you sure you want to cancel? Your current plan will remain active until the end of the billing period.",
-      )
-    ) {
-      return;
-    }
-
-    try {
-      setActionLoading("cancel");
-      setActionError(null);
-      setActionSuccess(null);
-
-      const res = await fetch("/api/razorpay/cancel-subscription", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cancelAtCycleEnd: !immediately }),
-      });
-
-      const result = await res.json();
-
-      if (result.error) {
-        throw new Error(result.error);
-      }
-
-      setActionSuccess(result.message);
-      refresh();
-    } catch (err: any) {
-      setActionError(err.message || "Failed to cancel subscription");
-    } finally {
-      setActionLoading(null);
-    }
-  };
-
-  const formatDate = (dateString: string | null) => {
-    if (!dateString) return "N/A";
-    return new Date(dateString).toLocaleDateString("en-IN", {
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-    });
-  };
-
-  const getPaymentStatusBadge = (payment: PaymentData) => {
-    const isEvent = payment.paymentMethod?.startsWith("event_");
-
-    if (isEvent) {
-      const eventType = payment.paymentMethod?.replace("event_", "");
-      const eventLabels: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
-        cancel: { label: "Cancelled", variant: "destructive" },
-        pause: { label: "Paused", variant: "outline" },
-        resume: { label: "Resumed", variant: "default" },
-        downgrade: { label: "Downgraded", variant: "secondary" },
-      };
-      const config = eventLabels[eventType || ""] || { label: eventType || "Event", variant: "secondary" as const };
-      return <Badge variant={config.variant}>{config.label}</Badge>;
-    }
-
-    const variants: Record<
-      string,
-      "default" | "secondary" | "destructive" | "outline"
-    > = {
-      CAPTURED: "default",
-      PENDING: "secondary",
-      FAILED: "destructive",
-      REFUNDED: "outline",
-      AUTHORIZED: "secondary",
-    };
-    const labels: Record<string, string> = {
-      CAPTURED: "Subscribed",
-      PENDING: "Pending",
-      FAILED: "Failed",
-      REFUNDED: "Refunded",
-      AUTHORIZED: "Authorized",
-    };
-    return <Badge variant={variants[payment.status] || "secondary"}>{labels[payment.status] || payment.status}</Badge>;
-  };
-
-  if (loading) {
-    return (
-      <div className="h-full flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    );
-  }
-
-  const subscription = data?.subscription;
-  const status = subscription?.status || "FREE";
-  const currentTier = planTier || "FREE";
-
-  // When subscription is cancelled (but benefits still active until period ends),
-  // show FREE as the billing plan. Features still work via the effective plan tier.
-  const isCancelledWithBenefits = status === "CANCELLED" && subscription?.currentPeriodEnd
-    && new Date(subscription.currentPeriodEnd) > new Date();
-  // Cancellation is scheduled but not yet effective (ACTIVE + autoRenew=false)
-  const isCancellingAtPeriodEnd = status === "ACTIVE" && !subscription?.autoRenew && !!subscription?.razorpaySubscriptionId;
-  const displayTier = status === "CANCELLED" ? "FREE" : currentTier;
-  const hasActiveSubscription = status === "ACTIVE" && subscription?.autoRenew && !!subscription?.razorpaySubscriptionId;
 
   return (
-    <>
-      <Script
-        src="https://checkout.razorpay.com/v1/checkout.js"
-        strategy="lazyOnload"
-      />
+    <div className="h-full w-full overflow-y-auto bg-[#FAF8F5]/50 dark:bg-[#0C0F0D] text-stone-900 dark:text-stone-100">
+      <Toaster />
 
-      <div className="h-full overflow-auto">
-        <div className="max-w-5xl mx-auto p-6 space-y-6">
-          {/* Header */}
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold">Plans & Billing</h1>
-              <p className="text-muted-foreground">
-                Choose the plan that&apos;s right for your business
-              </p>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={refresh}
-              disabled={loading}
-            >
-              <RefreshCw
-                className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`}
-              />
-              Refresh
-            </Button>
-          </div>
-
-          {/* Alerts */}
-          {actionError && (
-            <div className="bg-destructive/10 border border-destructive/20 text-destructive px-4 py-3 rounded-lg flex items-center gap-2">
-              <AlertCircle className="h-5 w-5 flex-shrink-0" />
-              {actionError}
-            </div>
-          )}
-
-          {actionSuccess && (
-            <div className="bg-green-500/10 border border-green-500/20 text-green-600 px-4 py-3 rounded-lg flex items-center gap-2">
-              <CheckCircle className="h-5 w-5 flex-shrink-0" />
-              {actionSuccess}
-            </div>
-          )}
-
-          {/* Plan Cards */}
-          <div className="grid md:grid-cols-3 gap-4">
-            {PLANS.map((plan) => {
-              const isCurrent = displayTier === plan.tier;
-              const isDowngrade =
-                (displayTier === "GOLD" && plan.tier === "SILVER") ||
-                (displayTier !== "FREE" && plan.tier === "FREE");
-              const isUpgrade =
-                (displayTier === "FREE" && plan.tier !== "FREE") ||
-                (displayTier === "SILVER" && plan.tier === "GOLD");
-
-              return (
-                <Card
-                  key={plan.tier}
-                  className={`relative ${plan.popular ? "border-primary shadow-md" : ""} ${isCurrent ? "ring-2 ring-primary" : ""}`}
-                >
-                  {plan.popular && (
-                    <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                      <Badge className="bg-primary text-primary-foreground">
-                        Popular
-                      </Badge>
-                    </div>
-                  )}
-                  {isCurrent && (
-                    <div className="absolute -top-3 right-4">
-                      <Badge variant="outline" className="bg-background">
-                        Current
-                      </Badge>
-                    </div>
-                  )}
-
-                  <CardHeader className="text-center pb-2">
-                    <CardTitle className="text-lg">{plan.name}</CardTitle>
-                    <CardDescription>{plan.description}</CardDescription>
-                    <div className="pt-2">
-                      {plan.price === 0 ? (
-                        <span className="text-3xl font-bold">Free</span>
-                      ) : (
-                        <>
-                          <span className="text-3xl font-bold">
-                            ₹{plan.price}
-                          </span>
-                          <span className="text-muted-foreground">/mo</span>
-                        </>
-                      )}
-                    </div>
-                  </CardHeader>
-
-                  <CardContent className="space-y-4">
-                    <Separator />
-                    <ul className="space-y-2">
-                      {plan.features.map((feature, i) => (
-                        <li key={i} className="flex items-center gap-2 text-sm">
-                          {feature.included ? (
-                            <Check className="h-4 w-4 text-green-500 flex-shrink-0" />
-                          ) : (
-                            <X className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                          )}
-                          <span
-                            className={
-                              feature.included
-                                ? ""
-                                : "text-muted-foreground"
-                            }
-                          >
-                            {feature.label}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-
-                    <div className="pt-2">
-                      {loading ? (
-                        <Button variant="outline" className="w-full" disabled>
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        </Button>
-                      ) : isCurrent && isCancellingAtPeriodEnd && plan.tier !== "FREE" ? (
-                        <Button
-                          className="w-full"
-                          onClick={() => handleSubscribe(plan.tier as "SILVER" | "GOLD")}
-                          disabled={paymentLoading !== null}
-                        >
-                          {paymentLoading === plan.tier ? (
-                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                          ) : (
-                            <CreditCard className="h-4 w-4 mr-2" />
-                          )}
-                          Re-subscribe
-                        </Button>
-                      ) : isCurrent ? (
-                        <Button variant="outline" className="w-full" disabled>
-                          Current Plan
-                        </Button>
-                      ) : plan.tier === "FREE" ? (
-                        isDowngrade &&
-                        subscription?.razorpaySubscriptionId &&
-                        status !== "CANCELLED" &&
-                        subscription.autoRenew && (
-                          <Button
-                            variant="outline"
-                            className="w-full text-destructive hover:text-destructive"
-                            onClick={() => handleCancel(false)}
-                            disabled={actionLoading !== null}
-                          >
-                            {actionLoading === "cancel" ? (
-                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                            ) : (
-                              <XCircle className="h-4 w-4 mr-2" />
-                            )}
-                            Downgrade
-                          </Button>
-                        )
-                      ) : hasActiveSubscription && isDowngrade && plan.tier === "SILVER" ? (
-                        <Button
-                          variant="outline"
-                          className="w-full"
-                          onClick={() => handleDowngrade("SILVER")}
-                          disabled={actionLoading !== null}
-                        >
-                          {actionLoading === "downgrade" ? (
-                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                          ) : (
-                            <ArrowRight className="h-4 w-4 mr-2" />
-                          )}
-                          Downgrade
-                        </Button>
-                      ) : (
-                        <Button
-                          className={`w-full ${plan.tier === "GOLD" ? "bg-amber-500 hover:bg-amber-600" : ""}`}
-                          onClick={() =>
-                            hasActiveSubscription && isUpgrade
-                              ? handleUpgrade(plan.tier)
-                              : handleSubscribe(plan.tier)
-                          }
-                          disabled={paymentLoading !== null}
-                        >
-                          {paymentLoading === plan.tier ? (
-                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                          ) : (
-                            <CreditCard className="h-4 w-4 mr-2" />
-                          )}
-                          {isCancelledWithBenefits
-                            ? "Re-subscribe"
-                            : hasActiveSubscription && isUpgrade
-                              ? "Upgrade"
-                              : "Subscribe"}
-                        </Button>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
-
-          {/* Subscription Management */}
-          {subscription &&
-            status !== "FREE" &&
-            status !== "INACTIVE" &&
-            subscription.razorpaySubscriptionId && (
-              <Card>
-                <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <CardTitle className="text-lg">
-                        Subscription Management
-                      </CardTitle>
-                      <CardDescription>
-                        {(() => {
-                          const planName = subscription.plan
-                            ? subscription.plan.name.charAt(0).toUpperCase() + subscription.plan.name.slice(1).toLowerCase() + " Plan"
-                            : "";
-                          if (status === "ACTIVE" && subscription.autoRenew)
-                            return `${planName} · Renews on ${formatDate(subscription.currentPeriodEnd ?? null)}`;
-                          if (status === "ACTIVE" && !subscription.autoRenew)
-                            return `${planName} · Cancels at end of period · Access until ${formatDate(subscription.currentPeriodEnd ?? null)}`;
-                          if (status === "CANCELLED")
-                            return `${planName} · Access until ${formatDate(subscription.currentPeriodEnd ?? null)}`;
-                          return planName;
-                        })()}
-                      </CardDescription>
-                    </div>
-                    <Badge
-                      variant={
-                        formatSubscriptionStatus(status).variant
-                      }
-                    >
-                      {formatSubscriptionStatus(status).label}
-                    </Badge>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex flex-wrap gap-3">
-                    {status === "ACTIVE" && subscription.autoRenew && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="text-destructive hover:text-destructive"
-                        onClick={() => handleCancel(false)}
-                        disabled={actionLoading !== null}
-                      >
-                        {actionLoading === "cancel" ? (
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        ) : (
-                          <XCircle className="h-4 w-4 mr-2" />
-                        )}
-                        Cancel Subscription
-                      </Button>
-                    )}
-
-                    {status === "ACTIVE" && !subscription.autoRenew && (
-                      <div className="space-y-1">
-                        <p className="text-sm text-muted-foreground">
-                          Cancellation scheduled. Your plan benefits remain active until {formatDate(subscription.currentPeriodEnd ?? null)}.
-                        </p>
-                        <p className="text-sm font-medium">
-                          Changed your mind? Click <strong>Re-subscribe</strong> on your current plan above to continue without interruption.
-                        </p>
-                      </div>
-                    )}
-
-                    {status === "CANCELLED" && (
-                      <div className="space-y-2">
-                        <p className="text-sm text-muted-foreground">
-                          {isCancelledWithBenefits
-                            ? `Your subscription has been cancelled but your plan benefits remain active until ${formatDate(subscription.currentPeriodEnd ?? null)}. After that you will be moved to the Free plan.`
-                            : "Your subscription has been cancelled and you have been moved to the Free plan."}
-                        </p>
-                        {isCancelledWithBenefits && (
-                          <p className="text-sm font-medium">
-                            Want to continue uninterrupted? Choose a plan above to re-subscribe.
-                          </p>
-                        )}
-                      </div>
-                    )}
-
-                    {status === "PAUSED" && (
-                      <>
-                        <p className="text-sm text-muted-foreground">
-                          Your subscription is currently paused by the payment provider. You may cancel it below.
-                        </p>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="text-destructive hover:text-destructive"
-                          onClick={() => handleCancel(true)}
-                          disabled={actionLoading !== null}
-                        >
-                          {actionLoading === "cancel" ? (
-                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                          ) : (
-                            <XCircle className="h-4 w-4 mr-2" />
-                          )}
-                          Cancel Subscription
-                        </Button>
-                      </>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-
-          {/* Subscription Activity */}
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="text-lg">Subscription Activity</CardTitle>
-                  <CardDescription>
-                    View your payments and subscription events
-                  </CardDescription>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={fetchPayments}
-                  disabled={paymentsLoading}
-                >
-                  <RefreshCw
-                    className={`h-4 w-4 ${paymentsLoading ? "animate-spin" : ""}`}
-                  />
-                </Button>
+      <div className="w-full px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-8 pb-20">
+        {/* ======================================================================= */}
+        {/* HEADER SECTION - Editorial Botanical Typography                         */}
+        {/* ======================================================================= */}
+        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 pb-1">
+          <div>
+            <div className="flex items-center gap-2 mb-2.5 flex-wrap">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold tracking-wide uppercase bg-[#5F7C65]/10 text-[#2D583F] dark:text-[#8EAE95] border border-[#5F7C65]/20">
+                <LogoIcon className="size-3.5 text-[#5F7C65]" />
+                <span>Subscription &amp; Capacity Governance</span>
               </div>
-            </CardHeader>
+            </div>
 
-            <CardContent>
-              {paymentsLoading ? (
-                <div className="flex items-center justify-center py-8">
-                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            <h1 className="text-2xl sm:text-3xl font-semibold tracking-[-0.035em] text-stone-900 dark:text-stone-100 flex items-center gap-3 flex-wrap">
+              <span>
+                Plans &amp;{" "}
+                <span className="font-[Georgia,serif] italic font-normal text-[#2D583F] dark:text-[#8EAE95]">
+                  Pricing
+                </span>
+              </span>
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-semibold font-mono uppercase tracking-wider bg-amber-500/12 text-amber-700 dark:text-amber-400 border border-amber-500/25 shadow-2xs">
+                Beta
+              </span>
+            </h1>
+            <p className="text-stone-600 dark:text-stone-400 text-xs sm:text-sm mt-1 max-w-2xl leading-relaxed">
+              Transparent, sovereign pricing designed for sustainable engagement. All billing and tier provisioning are currently in <strong className="font-semibold text-stone-800 dark:text-stone-200">Beta</strong>. Start completely free with full Cloud API integration, or request tailored enterprise access for high-volume broadcast campaigns.
+            </p>
+          </div>
+        </div>
+
+        {/* ======================================================================= */}
+        {/* PRICING CARDS - 2-Tier Architecture matching Landing Page               */}
+        {/* ======================================================================= */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-stretch max-w-5xl mx-auto pt-2">
+          {/* Tier 1: Free Forever */}
+          <div className="p-6 sm:p-8 rounded-2xl bg-white/85 dark:bg-stone-900/70 backdrop-blur-md border border-stone-200/80 dark:border-stone-800/80 shadow-[0_4px_20px_-4px_rgba(30,45,35,0.06)] flex flex-col justify-between transition-all hover:border-stone-300 dark:hover:border-stone-700">
+            <div>
+              <div className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold tracking-wide uppercase bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300 font-mono mb-3">
+                Starter
+              </div>
+              <h3 className="font-semibold text-2xl text-stone-900 dark:text-stone-100">
+                Free Forever
+              </h3>
+              <p className="text-xs sm:text-sm text-stone-600 dark:text-stone-400 mt-1 mb-6 leading-relaxed">
+                Ideal for individuals, test environments, and getting started with WhatsApp Cloud API.
+              </p>
+
+              <div className="text-3xl sm:text-4xl font-semibold tracking-tight text-[#2D583F] dark:text-[#8EAE95] mb-6">
+                &#8377;0
+                <span className="text-xs sm:text-sm font-normal text-stone-500 font-mono">
+                  {" "}/ month
+                </span>
+              </div>
+
+              <ul className="space-y-3.5 text-xs sm:text-sm text-stone-600 dark:text-stone-300 mb-8 border-t border-stone-200/70 dark:border-stone-800/70 pt-6">
+                <li className="flex items-center gap-3">
+                  <CheckCircle2 className="size-4 text-[#5F7C65] shrink-0" />
+                  <span><strong>10</strong> Active Contacts</span>
+                </li>
+                <li className="flex items-center gap-3">
+                  <CheckCircle2 className="size-4 text-[#5F7C65] shrink-0" />
+                  <span><strong>2</strong> Broadcast Groups</span>
+                </li>
+                <li className="flex items-center gap-3">
+                  <CheckCircle2 className="size-4 text-[#5F7C65] shrink-0" />
+                  <span><strong>5 GB</strong> Encrypted S3 Media Storage</span>
+                </li>
+                <li className="flex items-center gap-3">
+                  <CheckCircle2 className="size-4 text-[#5F7C65] shrink-0" />
+                  <span>Full Meta Cloud API integration</span>
+                </li>
+                <li className="flex items-center gap-3">
+                  <CheckCircle2 className="size-4 text-[#5F7C65] shrink-0" />
+                  <span>Standard Community Support</span>
+                </li>
+              </ul>
+            </div>
+
+            {!isPaidUser ? (
+              <div className="inline-flex items-center justify-center w-full py-3 rounded-xl border border-stone-200/80 dark:border-stone-700/80 bg-stone-100/70 dark:bg-stone-800/50 text-stone-700 dark:text-stone-300 font-medium text-xs font-mono gap-1.5 shadow-2xs">
+                <CheckCircle2 className="size-3.5 text-[#5F7C65]" />
+                <span>Current Active Plan</span>
+              </div>
+            ) : (
+              <div className="inline-flex items-center justify-center w-full py-3 rounded-xl border border-stone-200/80 dark:border-stone-700/80 bg-stone-50 dark:bg-stone-800/30 text-stone-500 font-medium text-xs font-mono gap-1.5">
+                <span>Base Tier Included</span>
+              </div>
+            )}
+          </div>
+
+          {/* Tier 2: Growth & Enterprise (Tailored Best Price) */}
+          <div className="rounded-2xl border-2 border-[#5F7C65] bg-white/95 dark:bg-stone-900/90 backdrop-blur-md p-1.5 shadow-[0_8px_30px_-4px_rgba(45,88,63,0.16)] flex flex-col justify-between relative transform lg:-translate-y-1">
+            <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 px-4 py-1 rounded-full text-[11px] font-semibold uppercase tracking-wider bg-[#5F7C65] text-white shadow-xs font-mono">
+              Tailored for Business
+            </div>
+
+            <div className="rounded-[calc(1rem-0.125rem)] p-6 sm:p-8 flex flex-col justify-between flex-1">
+              <div>
+                <div className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold tracking-wide uppercase bg-[#5F7C65]/10 text-[#2D583F] dark:text-[#8EAE95] border border-[#5F7C65]/20 font-mono mb-3">
+                  Custom Volume
                 </div>
-              ) : payments.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  <CreditCard className="h-12 w-12 mx-auto mb-4 opacity-30" />
-                  <p>No activity yet</p>
+                <h3 className="font-semibold text-2xl text-stone-900 dark:text-stone-100">
+                  Growth &amp; Enterprise
+                </h3>
+                <p className="text-xs sm:text-sm text-stone-600 dark:text-stone-400 mt-1 mb-6 leading-relaxed">
+                  Designed for high-impact broadcasts, support teams, and customized enterprise deployments.
+                </p>
+
+                <div className="mb-6">
+                  <div className="text-2xl sm:text-3xl font-semibold tracking-tight text-[#2D583F] dark:text-[#8EAE95]">
+                    Best Price Guarantee
+                  </div>
+                  <div className="text-xs text-stone-500 dark:text-stone-400 mt-1">
+                    Custom rates based on your monthly contact &amp; broadcast scale
+                  </div>
+                </div>
+
+                <ul className="space-y-3.5 text-xs sm:text-sm text-stone-600 dark:text-stone-300 mb-8 border-t border-stone-200/70 dark:border-stone-800/70 pt-6">
+                  <li className="flex items-center gap-3">
+                    <CheckCircle2 className="size-4 text-[#5F7C65] shrink-0" />
+                    <span><strong>Custom / Unlimited</strong> Contacts</span>
+                  </li>
+                  <li className="flex items-center gap-3">
+                    <CheckCircle2 className="size-4 text-[#5F7C65] shrink-0" />
+                    <span><strong>Unlimited</strong> Broadcast Groups</span>
+                  </li>
+                  <li className="flex items-center gap-3">
+                    <CheckCircle2 className="size-4 text-[#5F7C65] shrink-0" />
+                    <span><strong>Scalable S3 Storage</strong> for media &amp; docs</span>
+                  </li>
+                  <li className="flex items-center gap-3">
+                    <CheckCircle2 className="size-4 text-[#5F7C65] shrink-0" />
+                    <span><strong>Priority Support</strong> via WhatsApp &amp; Direct Phone</span>
+                  </li>
+                  <li className="flex items-center gap-3">
+                    <CheckCircle2 className="size-4 text-[#5F7C65] shrink-0" />
+                    <span>Template assistance &amp; Meta verification guidance</span>
+                  </li>
+                  <li className="flex items-center gap-3">
+                    <CheckCircle2 className="size-4 text-[#5F7C65] shrink-0" />
+                    <span>Dedicated onboarding &amp; custom webhooks</span>
+                  </li>
+                </ul>
+              </div>
+
+              {isPaidUser ? (
+                <div className="inline-flex items-center justify-center w-full py-3.5 rounded-xl border border-[#5F7C65]/30 bg-[#5F7C65]/10 text-[#2D583F] dark:text-[#8EAE95] font-semibold text-xs sm:text-sm font-mono gap-2 shadow-2xs">
+                  <CheckCircle2 className="size-4 text-[#5F7C65]" />
+                  <span>Current Active Plan ({planTier})</span>
                 </div>
               ) : (
-                <div className="space-y-3">
-                  {payments.map((payment) => {
-                    const isEvent = payment.paymentMethod?.startsWith("event_");
-                    const eventType = payment.paymentMethod?.replace("event_", "") || "";
-
-                    const eventConfig: Record<string, { icon: typeof CreditCard; label: string; iconClass: string; bgClass: string }> = {
-                      cancel: { icon: XCircle, label: "Subscription Cancelled", iconClass: "text-destructive", bgClass: "bg-destructive/10" },
-                      pause: { icon: Pause, label: "Subscription Paused", iconClass: "text-amber-500", bgClass: "bg-amber-500/10" },
-                      resume: { icon: Play, label: "Subscription Resumed", iconClass: "text-green-500", bgClass: "bg-green-500/10" },
-                      downgrade: { icon: ArrowDown, label: "Downgraded to Silver", iconClass: "text-muted-foreground", bgClass: "bg-muted" },
-                    };
-
-                    const config = isEvent ? eventConfig[eventType] : null;
-                    const EventIcon = config?.icon || CreditCard;
-
-                    return (
-                      <div
-                        key={payment.id}
-                        className="flex items-center justify-between p-3 border rounded-lg"
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className={`h-9 w-9 rounded-full flex items-center justify-center ${isEvent ? (config?.bgClass || "bg-muted") : "bg-primary/10"
-                            }`}>
-                            <EventIcon className={`h-4 w-4 ${isEvent ? (config?.iconClass || "text-muted-foreground") : "text-primary"
-                              }`} />
-                          </div>
-                          <div>
-                            <p className="font-medium text-sm">
-                              {isEvent
-                                ? config?.label || "Subscription Event"
-                                : formatAmount(payment.amount, payment.currency)}
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              {formatDate(payment.createdAt)}
-                              {!isEvent && payment.paymentMethod &&
-                                ` · ${payment.paymentMethod}`}
-                            </p>
-                          </div>
-                        </div>
-                        {getPaymentStatusBadge(payment)}
-                      </div>
-                    );
-                  })}
-                </div>
+                <a
+                  href={`mailto:${emailAddress}?subject=WaChat%20Pricing%20%26%20Access%20Request`}
+                  className="inline-flex items-center justify-center w-full py-3.5 rounded-xl bg-[#5F7C65] hover:bg-[#526D57] text-white font-medium text-xs sm:text-sm shadow-[inset_0_1px_2px_0_rgba(255,255,255,0.2),inset_0_-1px_2px_0_rgba(0,0,0,0.18)] transition-all active:scale-[0.98] gap-2 cursor-pointer"
+                >
+                  <span>Request Access</span>
+                  <ArrowRight className="size-4" />
+                </a>
               )}
-            </CardContent>
-          </Card>
+            </div>
+          </div>
+        </div>
+
+        {/* ======================================================================= */}
+        {/* DIRECT CONTACT SUPPORT BANNER - Matching Landing Page                   */}
+        {/* ======================================================================= */}
+        <div className="max-w-5xl mx-auto rounded-2xl border border-stone-200/80 dark:border-stone-800/80 bg-white/80 dark:bg-stone-900/70 backdrop-blur-md p-1.5 shadow-[0_4px_20px_-4px_rgba(30,45,35,0.06)]">
+          <div className="rounded-[calc(1rem-0.125rem)] bg-[#FAF8F5]/80 dark:bg-stone-900/90 p-6 sm:p-7 border border-stone-200/60 dark:border-stone-800/60">
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+              <div>
+                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-[#2D583F] dark:text-[#8EAE95] font-mono">
+                  <span className="size-2 rounded-full bg-[#5F7C65] animate-pulse" />
+                  Direct Pricing Support
+                </div>
+                <h4 className="text-base sm:text-lg font-semibold text-stone-900 dark:text-stone-100 mt-1">
+                  Have specific volume requirements?
+                </h4>
+                <p className="text-xs sm:text-sm text-stone-600 dark:text-stone-400 mt-0.5">
+                  Talk directly with our team for bulk pricing, agency tiers, or custom self-hosted setups.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3 shrink-0">
+                {/* Email Button */}
+                <div className="flex items-center rounded-xl border border-stone-300/80 dark:border-stone-700 bg-white dark:bg-stone-800 overflow-hidden shadow-2xs">
+                  <a
+                    href={`mailto:${emailAddress}?subject=WaChat%20Pricing%20%26%20Access%20Request`}
+                    className="inline-flex items-center gap-2 px-3.5 py-2 text-xs sm:text-sm font-medium text-stone-800 dark:text-stone-200 hover:text-[#5F7C65] dark:hover:text-[#8EAE95] transition-colors"
+                  >
+                    <Mail className="size-4 text-[#5F7C65]" />
+                    <span>{emailAddress}</span>
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard(emailAddress, "email")}
+                    title="Copy email address"
+                    className="px-2.5 py-2 border-l border-stone-200 dark:border-stone-700 hover:bg-stone-100 dark:hover:bg-stone-700 text-stone-500 hover:text-stone-800 dark:hover:text-stone-200 transition-colors cursor-pointer"
+                  >
+                    {copiedField === "email" ? (
+                      <Check className="size-3.5 text-[#5F7C65]" />
+                    ) : (
+                      <Copy className="size-3.5" />
+                    )}
+                  </button>
+                </div>
+
+                {/* Phone Call Button */}
+                <div className="flex items-center rounded-xl border border-stone-300/80 dark:border-stone-700 bg-white dark:bg-stone-800 overflow-hidden shadow-2xs">
+                  <a
+                    href={`tel:${phoneNumber}`}
+                    className="inline-flex items-center gap-2 px-3.5 py-2 text-xs sm:text-sm font-medium text-stone-800 dark:text-stone-200 hover:text-[#5F7C65] dark:hover:text-[#8EAE95] transition-colors"
+                  >
+                    <Phone className="size-4 text-[#5F7C65]" />
+                    <span>{formattedPhone}</span>
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard(phoneNumber, "phone")}
+                    title="Copy phone number"
+                    className="px-2.5 py-2 border-l border-stone-200 dark:border-stone-700 hover:bg-stone-100 dark:hover:bg-stone-700 text-stone-500 hover:text-stone-800 dark:hover:text-stone-200 transition-colors cursor-pointer"
+                  >
+                    {copiedField === "phone" ? (
+                      <Check className="size-3.5 text-[#5F7C65]" />
+                    ) : (
+                      <Copy className="size-3.5" />
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ======================================================================= */}
+        {/* TRUST & ARCHITECTURE PILLARS (Bento 3 Columns)                         */}
+        {/* ======================================================================= */}
+        <div className="max-w-5xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="p-5 rounded-2xl border border-stone-200/80 dark:border-stone-800/80 bg-white/80 dark:bg-stone-900/60 shadow-2xs space-y-2">
+            <div className="size-8 rounded-xl bg-[#5F7C65]/12 dark:bg-[#5F7C65]/20 text-[#5F7C65] dark:text-[#8EAE95] flex items-center justify-center">
+              <Zap className="size-4" />
+            </div>
+            <h5 className="font-semibold text-xs sm:text-sm text-stone-900 dark:text-stone-100">
+              0% Per-Message Markups
+            </h5>
+            <p className="text-xs text-stone-500 dark:text-stone-400 leading-relaxed">
+              Pay Meta directly for WhatsApp conversations at official wholesale rates with zero middleware surcharge.
+            </p>
+          </div>
+
+          <div className="p-5 rounded-2xl border border-stone-200/80 dark:border-stone-800/80 bg-white/80 dark:bg-stone-900/60 shadow-2xs space-y-2">
+            <div className="size-8 rounded-xl bg-[#5F7C65]/12 dark:bg-[#5F7C65]/20 text-[#5F7C65] dark:text-[#8EAE95] flex items-center justify-center">
+              <ShieldCheck className="size-4" />
+            </div>
+            <h5 className="font-semibold text-xs sm:text-sm text-stone-900 dark:text-stone-100">
+              Complete Data Sovereignty
+            </h5>
+            <p className="text-xs text-stone-500 dark:text-stone-400 leading-relaxed">
+              Encrypted AWS S3 asset storage and tenant isolation ensuring you retain 100% ownership over all records.
+            </p>
+          </div>
+
+          <div className="p-5 rounded-2xl border border-stone-200/80 dark:border-stone-800/80 bg-white/80 dark:bg-stone-900/60 shadow-2xs space-y-2">
+            <div className="size-8 rounded-xl bg-[#5F7C65]/12 dark:bg-[#5F7C65]/20 text-[#5F7C65] dark:text-[#8EAE95] flex items-center justify-center">
+              <MessageSquare className="size-4" />
+            </div>
+            <h5 className="font-semibold text-xs sm:text-sm text-stone-900 dark:text-stone-100">
+              Dedicated Onboarding
+            </h5>
+            <p className="text-xs text-stone-500 dark:text-stone-400 leading-relaxed">
+              Direct assistance with Meta Business Manager verification, phone line registration, and webhook setup.
+            </p>
+          </div>
         </div>
       </div>
-    </>
+    </div>
   );
 }

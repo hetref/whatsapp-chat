@@ -20,6 +20,28 @@ function normalizeStatus(status) {
     return null;
 }
 
+function normalizeReactions(raw) {
+    if (!raw) return [];
+    let list = raw;
+    if (typeof list === 'string') {
+        try {
+            list = JSON.parse(list);
+        } catch {
+            return [];
+        }
+    }
+    if (Array.isArray(list)) {
+        return list
+            .map((entry) => ({
+                emoji: String(entry?.emoji || ''),
+                from: String(entry?.from || ''),
+                timestamp: String(entry?.timestamp || ''),
+            }))
+            .filter((entry) => entry.emoji && entry.from);
+    }
+    return [];
+}
+
 /**
  * Common GET verification logic for Meta webhooks
  */
@@ -316,6 +338,100 @@ async function handleWebhookPost(req, res, pathToken = null) {
                     }
 
                     if (!existingContact) continue;
+
+                    // Update contact lastActive timestamp
+                    prisma.contact.update({
+                        where: { id: existingContact.id },
+                        data: { lastActive: messageTimestamp },
+                    }).catch(() => {});
+
+                    // Process WhatsApp reaction events
+                    if (message.type === 'reaction') {
+                        const reactionTargetId = message.reaction?.message_id;
+                        const emoji = message.reaction?.emoji || '';
+
+                        console.log(`[API Webhook POST] Incoming reaction for target message ${reactionTargetId} from ${cleanPhone}: "${emoji}"`);
+
+                        if (!reactionTargetId) {
+                            console.warn('[API Webhook POST] Reaction missing target message_id', message.id);
+                            continue;
+                        }
+
+                        try {
+                            // Purge any dummy message previously created with this reaction message ID
+                            await prisma.message.deleteMany({
+                                where: {
+                                    id: message.id,
+                                    OR: [
+                                        { content: '[reaction]' },
+                                        { messageType: 'reaction' },
+                                    ],
+                                },
+                            }).catch(() => {});
+
+                            // Find target message (by primary ID or falling back to businessOwnerId)
+                            let targetMessage = await prisma.message.findUnique({
+                                where: { id: reactionTargetId },
+                                select: { id: true, userId: true, contactId: true, reactions: true },
+                            });
+
+                            if (!targetMessage) {
+                                targetMessage = await prisma.message.findFirst({
+                                    where: {
+                                        id: reactionTargetId,
+                                        userId: businessOwnerId,
+                                    },
+                                    select: { id: true, userId: true, contactId: true, reactions: true },
+                                });
+                            }
+
+                            if (!targetMessage) {
+                                console.warn(`[API Webhook POST] Target message not found in DB: ${reactionTargetId}`);
+                                continue;
+                            }
+
+                            const currentReactions = normalizeReactions(targetMessage.reactions);
+                            const cleanSenderPhone = cleanPhone.replace(/\D/g, '');
+
+                            // Remove existing reaction by this sender
+                            const filtered = currentReactions.filter((r) => {
+                                const rFromClean = String(r.from || '').replace(/\D/g, '');
+                                if (cleanSenderPhone && rFromClean === cleanSenderPhone) return false;
+                                if (r.from === cleanPhone || r.from === rawSender) return false;
+                                return true;
+                            });
+
+                            // If emoji is provided, append the new reaction (empty emoji indicates reaction removal)
+                            if (emoji) {
+                                filtered.push({
+                                    emoji,
+                                    from: cleanPhone,
+                                    timestamp: messageTimestamp.toISOString(),
+                                });
+                            }
+
+                            await prisma.message.update({
+                                where: { id: targetMessage.id },
+                                data: { reactions: filtered },
+                            });
+
+                            console.log(`[API Webhook POST] Updated reactions for message ${targetMessage.id}:`, filtered);
+
+                            // Broadcast real-time reaction update to SSE clients
+                            chatEventBus.publishReactionUpdate({
+                                userId: targetMessage.userId || businessOwnerId,
+                                contactId: targetMessage.contactId || existingContact.id,
+                                messageId: targetMessage.id,
+                                reactions: filtered,
+                                timestamp: messageTimestamp.toISOString(),
+                            });
+                        } catch (reactionErr) {
+                            console.error('[API Webhook POST] Error updating message reaction:', reactionErr);
+                        }
+
+                        // MUST continue so reaction message does NOT get created as a chat bubble!
+                        continue;
+                    }
 
                     let content = '';
                     let messageType = message.type || 'text';
