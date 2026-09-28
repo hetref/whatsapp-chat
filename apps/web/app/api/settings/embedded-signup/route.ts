@@ -3,6 +3,10 @@ import { auth } from '@clerk/nextjs/server';
 import { prisma } from '@/lib/prisma';
 import { randomBytes } from 'crypto';
 import { getOrCreateUser } from '@/lib/user-sync';
+import {
+  checkInternalWhatsAppConflict,
+  transferWhatsAppAccount,
+} from '@/lib/whatsapp-conflict';
 
 export const runtime = 'nodejs';
 
@@ -14,9 +18,10 @@ function generateWebhookToken(): string {
  * POST /api/settings/embedded-signup
  * Handles completion of Meta WhatsApp Embedded Signup:
  * 1. Exchanges auth code for permanent System User token via Meta Graph API
- * 2. Subscribes WABA to app's webhooks (/subscribed_apps)
- * 3. Retrieves phone number metadata (display phone number, verified name)
- * 4. Persists everything in UserSettings (compatible with manual method)
+ * 2. Retrieves phone number metadata (display phone number, verified name)
+ * 3. Enforces 1:1 WhatsApp account linking & detects conflicts
+ * 4. Subscribes WABA to app's webhooks (/subscribed_apps)
+ * 5. Persists everything in UserSettings (compatible with manual method)
  */
 export async function POST(request: NextRequest) {
   try {
@@ -26,7 +31,8 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    let { code, waba_id, phone_number_id, access_token } = body;
+    let { code, waba_id, phone_number_id, access_token, force_transfer, forceTransfer } = body;
+    const isForceTransfer = !!(force_transfer || forceTransfer);
 
     let resolvedAccessToken = access_token;
 
@@ -173,30 +179,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 2. Subscribe WABA to webhooks if waba_id is available
-    if (waba_id) {
-      try {
-        console.log(`[Embedded Signup] Subscribing WABA ${waba_id} to app webhooks with subscribed_fields=messages...`);
-        const subUrl = new URL(`https://graph.facebook.com/v23.0/${waba_id}/subscribed_apps`);
-        subUrl.searchParams.set('subscribed_fields', 'messages,message_template_status_update');
-        const subResponse = await fetch(subUrl.toString(), {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${resolvedAccessToken}`,
-            'Content-Type': 'application/x-www-form-urlencoded',
-          },
-          body: new URLSearchParams({
-            subscribed_fields: 'messages,message_template_status_update',
-          }),
-        });
-        const subData = await subResponse.json();
-        console.log('[Embedded Signup] WABA webhook subscription response:', subData);
-      } catch (subErr) {
-        console.warn('[Embedded Signup] Error subscribing WABA to webhooks:', subErr);
-      }
-    }
-
-    // 3. Query phone number details if phone_number_id is provided, or discover via WABA
+    // 2. Query phone number details if phone_number_id is provided, or discover via WABA
     if (phone_number_id) {
       try {
         const phoneRes = await fetch(
@@ -240,6 +223,71 @@ export async function POST(request: NextRequest) {
         }
       } catch (phonesErr) {
         console.warn('[Embedded Signup] Error discovering phone numbers:', phonesErr);
+      }
+    }
+
+    // 3. Enforce 1:1 WhatsApp Account Connection (Conflict Verification)
+    if (waba_id || phone_number_id || displayPhoneNumber) {
+      const conflict = await checkInternalWhatsAppConflict({
+        currentUserId: userId,
+        phoneNumberId: phone_number_id,
+        businessAccountId: waba_id,
+        phoneNumber: displayPhoneNumber,
+      });
+
+      if (conflict.hasConflict && conflict.existingUser) {
+        if (!isForceTransfer) {
+          console.warn(`[Embedded Signup] 409 Conflict: WhatsApp account is already linked to user ${conflict.existingUser.id}`);
+          return NextResponse.json(
+            {
+              conflict: true,
+              code: 'ACCOUNT_ALREADY_CONNECTED',
+              error: conflict.message || 'This WhatsApp account is already connected to another WaChat workspace.',
+              message: conflict.message,
+              conflictDetails: conflict,
+              sessionPayload: {
+                code,
+                waba_id,
+                phone_number_id,
+                display_phone_number: displayPhoneNumber,
+                verified_name: verifiedName,
+                access_token: resolvedAccessToken,
+                redirect_uri: body.redirect_uri,
+              },
+            },
+            { status: 409 }
+          );
+        }
+
+        // If forceTransfer was explicitly confirmed by user, safely unlink from previous user
+        await transferWhatsAppAccount({
+          previousUserId: conflict.existingUser.id,
+          newUserId: userId,
+          reason: 'User confirmed transfer in Embedded Signup',
+        });
+      }
+    }
+
+    // 4. Subscribe WABA to webhooks once conflict check passes
+    if (waba_id) {
+      try {
+        console.log(`[Embedded Signup] Subscribing WABA ${waba_id} to app webhooks with subscribed_fields=messages...`);
+        const subUrl = new URL(`https://graph.facebook.com/v23.0/${waba_id}/subscribed_apps`);
+        subUrl.searchParams.set('subscribed_fields', 'messages,message_template_status_update');
+        const subResponse = await fetch(subUrl.toString(), {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${resolvedAccessToken}`,
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: new URLSearchParams({
+            subscribed_fields: 'messages,message_template_status_update',
+          }),
+        });
+        const subData = await subResponse.json();
+        console.log('[Embedded Signup] WABA webhook subscription response:', subData);
+      } catch (subErr) {
+        console.warn('[Embedded Signup] Error subscribing WABA to webhooks:', subErr);
       }
     }
 

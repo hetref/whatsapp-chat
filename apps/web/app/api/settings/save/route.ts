@@ -3,6 +3,10 @@ import { auth } from '@clerk/nextjs/server';
 import { prisma } from '@/lib/prisma';
 import { randomBytes } from 'crypto';
 import { getOrCreateUser } from '@/lib/user-sync';
+import {
+  checkInternalWhatsAppConflict,
+  transferWhatsAppAccount,
+} from '@/lib/whatsapp-conflict';
 
 export const runtime = 'nodejs';
 
@@ -36,7 +40,11 @@ export async function POST(request: NextRequest) {
       business_account_id,
       api_version,
       verify_token,
+      force_transfer,
+      forceTransfer,
     } = body;
+
+    const isForceTransfer = !!(force_transfer || forceTransfer);
 
     // Validate that at least one field is being updated
     if (!access_token && !phone_number_id && !business_account_id && !api_version && !verify_token) {
@@ -44,6 +52,38 @@ export async function POST(request: NextRequest) {
         { error: 'At least one setting must be provided' },
         { status: 400 }
       );
+    }
+
+    // 0. Account Conflict Verification: ensure 1:1 account connection
+    if (phone_number_id || business_account_id) {
+      const conflict = await checkInternalWhatsAppConflict({
+        currentUserId: userId,
+        phoneNumberId: phone_number_id,
+        businessAccountId: business_account_id,
+      });
+
+      if (conflict.hasConflict && conflict.existingUser) {
+        if (!isForceTransfer) {
+          console.warn(`[Settings Save] 409 Conflict: ${phone_number_id || business_account_id} already linked to user ${conflict.existingUser.id}`);
+          return NextResponse.json(
+            {
+              conflict: true,
+              code: 'ACCOUNT_ALREADY_CONNECTED',
+              error: conflict.message || 'This WhatsApp account is already connected to another WaChat workspace.',
+              message: conflict.message,
+              conflictDetails: conflict,
+            },
+            { status: 409 }
+          );
+        }
+
+        // If force transfer was explicitly confirmed by the user, gracefully unlink previous user
+        await transferWhatsAppAccount({
+          previousUserId: conflict.existingUser.id,
+          newUserId: userId,
+          reason: 'User confirmed transfer in Manual Setup',
+        });
+      }
     }
 
     // Build the update object

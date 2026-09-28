@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { prisma } from '@/lib/prisma';
 import { randomBytes } from 'crypto';
+import { checkInternalWhatsAppConflict } from '@/lib/whatsapp-conflict';
 
 export const runtime = 'nodejs';
 
@@ -41,6 +42,25 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: 'WhatsApp Business Account ID (WABA ID) is not configured.' },
         { status: 400 }
+      );
+    }
+
+    // Verify 1:1 account integrity: ensure no other user currently claims this WABA or phone ID
+    const conflict = await checkInternalWhatsAppConflict({
+      currentUserId: userId,
+      phoneNumberId: settings.phoneNumberId,
+      businessAccountId: settings.businessAccountId,
+    });
+
+    if (conflict.hasConflict && conflict.existingUser) {
+      return NextResponse.json(
+        {
+          error: conflict.message || 'Cannot subscribe webhooks: WhatsApp account is already linked to another WaChat user.',
+          conflict: true,
+          code: 'ACCOUNT_ALREADY_CONNECTED',
+          conflictDetails: conflict,
+        },
+        { status: 409 }
       );
     }
 

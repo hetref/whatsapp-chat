@@ -268,6 +268,7 @@ async function handleWebhookPost(req, res, pathToken = null) {
                 if (!userSettings && phoneNumberIdStr) {
                     userSettings = await prisma.userSettings.findFirst({
                         where: { phoneNumberId: phoneNumberIdStr },
+                        orderBy: { updatedAt: 'desc' },
                         select: { id: true, accessToken: true, apiVersion: true, phoneNumberId: true, businessAccountId: true },
                     });
                 }
@@ -275,6 +276,7 @@ async function handleWebhookPost(req, res, pathToken = null) {
                 if (!userSettings && wabaId) {
                     userSettings = await prisma.userSettings.findFirst({
                         where: { businessAccountId: wabaId },
+                        orderBy: { updatedAt: 'desc' },
                         select: { id: true, accessToken: true, apiVersion: true, phoneNumberId: true, businessAccountId: true },
                     });
                 }
@@ -282,6 +284,7 @@ async function handleWebhookPost(req, res, pathToken = null) {
                 if (!userSettings && displayPhoneNumber) {
                     userSettings = await prisma.userSettings.findFirst({
                         where: { phoneNumber: { contains: displayPhoneNumber } },
+                        orderBy: { updatedAt: 'desc' },
                         select: { id: true, accessToken: true, apiVersion: true, phoneNumberId: true, businessAccountId: true },
                     });
                 }

@@ -448,6 +448,7 @@ export async function POST(request: NextRequest) {
         if (phoneNumberIdStr) {
           userSettings = await prisma.userSettings.findFirst({
             where: { phoneNumberId: phoneNumberIdStr },
+            orderBy: { updatedAt: 'desc' },
             select: { id: true, accessToken: true, apiVersion: true, phoneNumberId: true, businessAccountId: true },
           });
         }
@@ -455,6 +456,7 @@ export async function POST(request: NextRequest) {
         if (!userSettings && wabaId) {
           userSettings = await prisma.userSettings.findFirst({
             where: { businessAccountId: wabaId },
+            orderBy: { updatedAt: 'desc' },
             select: { id: true, accessToken: true, apiVersion: true, phoneNumberId: true, businessAccountId: true },
           });
 
@@ -472,6 +474,7 @@ export async function POST(request: NextRequest) {
         if (!userSettings && displayPhoneNumber) {
           userSettings = await prisma.userSettings.findFirst({
             where: { phoneNumber: { contains: displayPhoneNumber } },
+            orderBy: { updatedAt: 'desc' },
             select: { id: true, accessToken: true, apiVersion: true, phoneNumberId: true, businessAccountId: true },
           });
         }

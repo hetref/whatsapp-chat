@@ -32,6 +32,8 @@ import {
   ArrowRight,
   ShieldCheck,
   RefreshCw,
+  ShieldAlert,
+  ArrowRightLeft,
 } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
@@ -109,6 +111,36 @@ export default function SetupPage() {
   const [disconnectDialogOpen, setDisconnectDialogOpen] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
   const [disconnectError, setDisconnectError] = useState<string | null>(null);
+
+  // Account Conflict & Transfer states (1:1 account integrity)
+  const [conflictDialogOpen, setConflictDialogOpen] = useState(false);
+  const [conflictInfo, setConflictInfo] = useState<{
+    type: "INTERNAL_WACHAT_USER" | "EXTERNAL_PROVIDER";
+    maskedEmail?: string;
+    maskedPhone?: string;
+    phone?: string | null;
+    phoneNumberId?: string | null;
+    wabaId?: string | null;
+    externalAppName?: string | null;
+    source: "embedded" | "manual";
+    sessionPayload?: {
+      code?: string;
+      waba_id?: string;
+      phone_number_id?: string;
+      redirect_uri?: string;
+      access_token?: string;
+      display_phone_number?: string | null;
+      verified_name?: string | null;
+    };
+    manualPayload?: {
+      access_token: string;
+      phone_number_id: string;
+      business_account_id: string;
+      api_version: string;
+    };
+  } | null>(null);
+  const [transferring, setTransferring] = useState(false);
+  const [transferError, setTransferError] = useState<string | null>(null);
 
   // Manual Access Token form
   const [accessToken, setAccessToken] = useState("");
@@ -436,6 +468,25 @@ export default function SetupPage() {
 
       const data = await response.json();
 
+      if (response.status === 409 || data.conflict) {
+        console.warn("[Embedded Signup] WhatsApp account conflict detected:", data);
+        setConflictInfo({
+          type: data.conflictDetails?.type || "INTERNAL_WACHAT_USER",
+          maskedEmail: data.conflictDetails?.existingUser?.maskedEmail,
+          maskedPhone: data.conflictDetails?.existingUser?.maskedPhone,
+          phone: data.conflictDetails?.existingUser?.phone || data.sessionPayload?.display_phone_number || payload.phone_number_id,
+          phoneNumberId: data.conflictDetails?.existingUser?.phoneNumberId || payload.phone_number_id,
+          wabaId: data.conflictDetails?.existingUser?.businessAccountId || payload.waba_id,
+          externalAppName: data.conflictDetails?.externalApp?.name,
+          source: "embedded",
+          sessionPayload: data.sessionPayload || payload,
+        });
+        setConflictDialogOpen(true);
+        setConnectingEmbedded(false);
+        isSubmittingRef.current = false;
+        return;
+      }
+
       if (!response.ok) {
         throw new Error(data.error || "Failed to complete Embedded Signup with Meta");
       }
@@ -702,6 +753,74 @@ export default function SetupPage() {
     }
   };
 
+  // 6.5 WhatsApp Account Conflict & Transfer Handlers
+  const handleConfirmTransfer = async () => {
+    if (!conflictInfo) return;
+    setTransferring(true);
+    setTransferError(null);
+
+    try {
+      if (conflictInfo.source === "embedded" && conflictInfo.sessionPayload) {
+        setEmbeddedStep("Disconnecting previous workspace and transferring WhatsApp...");
+        const response = await fetch("/api/settings/embedded-signup", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...conflictInfo.sessionPayload,
+            forceTransfer: true,
+          }),
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error || "Failed to transfer WhatsApp account");
+        }
+
+        setEmbeddedSuccess(true);
+        setEmbeddedStep("WhatsApp transferred and connected successfully!");
+        setConflictDialogOpen(false);
+        setConflictInfo(null);
+        if (data.settings) {
+          setSettings(data.settings);
+        }
+        await loadSettings();
+      } else if (conflictInfo.source === "manual" && conflictInfo.manualPayload) {
+        const response = await fetch("/api/settings/save", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...conflictInfo.manualPayload,
+            forceTransfer: true,
+          }),
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error || "Failed to transfer WhatsApp account");
+        }
+
+        setAccessTokenSuccess(true);
+        setConflictDialogOpen(false);
+        setConflictInfo(null);
+        await loadSettings();
+        setTimeout(() => setAccessTokenSuccess(false), 3000);
+      }
+    } catch (err: unknown) {
+      console.error("WhatsApp Transfer error:", err);
+      setTransferError(err instanceof Error ? err.message : "Failed to transfer WhatsApp account");
+    } finally {
+      setTransferring(false);
+    }
+  };
+
+  const handleAbortTransfer = () => {
+    setConflictDialogOpen(false);
+    setConflictInfo(null);
+    setTransferError(null);
+    setConnectingEmbedded(false);
+    setSavingAccessToken(false);
+  };
+
   // 7. Manual Access Token Save
   const handleSaveAccessToken = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -740,6 +859,29 @@ export default function SetupPage() {
       });
 
       const data = await response.json();
+
+      if (response.status === 409 || data.conflict) {
+        console.warn("[Manual Setup] WhatsApp account conflict detected:", data);
+        setConflictInfo({
+          type: data.conflictDetails?.type || "INTERNAL_WACHAT_USER",
+          maskedEmail: data.conflictDetails?.existingUser?.maskedEmail,
+          maskedPhone: data.conflictDetails?.existingUser?.maskedPhone,
+          phone: data.conflictDetails?.existingUser?.phone || phoneNumberId,
+          phoneNumberId: data.conflictDetails?.existingUser?.phoneNumberId || phoneNumberId,
+          wabaId: data.conflictDetails?.existingUser?.businessAccountId || businessAccountId,
+          externalAppName: data.conflictDetails?.externalApp?.name,
+          source: "manual",
+          manualPayload: {
+            access_token: accessToken,
+            phone_number_id: phoneNumberId,
+            business_account_id: businessAccountId,
+            api_version: apiVersion,
+          },
+        });
+        setConflictDialogOpen(true);
+        setSavingAccessToken(false);
+        return;
+      }
 
       if (!response.ok) {
         throw new Error(data.error || "Failed to save access token");
@@ -1689,6 +1831,128 @@ export default function SetupPage() {
                   </>
                 ) : (
                   "Confirm Disconnect"
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* WhatsApp Account Conflict & Transfer Confirmation Dialog */}
+        <Dialog
+          open={conflictDialogOpen}
+          onOpenChange={(open) => {
+            if (!open && !transferring) {
+              handleAbortTransfer();
+            }
+          }}
+        >
+          <DialogContent className="sm:max-w-lg rounded-2xl border border-amber-300/80 dark:border-amber-800/80 bg-white/95 dark:bg-stone-900/95 backdrop-blur-md p-6 shadow-2xl">
+            <DialogHeader>
+              <div className="mx-auto size-12 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200/60 dark:border-amber-900/40 flex items-center justify-center text-amber-600 dark:text-amber-400 mb-2">
+                <ShieldAlert className="h-6 w-6" />
+              </div>
+              <DialogTitle className="text-center text-lg font-semibold tracking-tight text-stone-900 dark:text-stone-100">
+                WhatsApp Account Already Connected
+              </DialogTitle>
+              <DialogDescription className="text-center text-xs sm:text-sm text-stone-500 dark:text-stone-400 leading-relaxed">
+                This WhatsApp business profile is already active in another WaChat workspace or provider.
+              </DialogDescription>
+            </DialogHeader>
+
+            {/* Account Details Box */}
+            <div className="my-2 rounded-xl bg-stone-50 dark:bg-stone-950/50 border border-stone-200/80 dark:border-stone-800/80 p-4 space-y-2.5 text-xs">
+              {conflictInfo?.phone && (
+                <div className="flex items-center justify-between">
+                  <span className="text-stone-500 dark:text-stone-400 flex items-center gap-1.5 font-medium">
+                    <Phone className="size-3.5 text-stone-400" />
+                    Phone Number:
+                  </span>
+                  <span className="font-mono font-semibold text-stone-800 dark:text-stone-200">
+                    {conflictInfo.phone}
+                  </span>
+                </div>
+              )}
+              {conflictInfo?.wabaId && (
+                <div className="flex items-center justify-between">
+                  <span className="text-stone-500 dark:text-stone-400 flex items-center gap-1.5 font-medium">
+                    <Building2 className="size-3.5 text-stone-400" />
+                    WABA ID:
+                  </span>
+                  <span className="font-mono text-stone-700 dark:text-stone-300">
+                    {conflictInfo.wabaId}
+                  </span>
+                </div>
+              )}
+              {conflictInfo?.maskedEmail && (
+                <div className="flex items-center justify-between border-t border-stone-200/60 dark:border-stone-800/60 pt-2">
+                  <span className="text-stone-500 dark:text-stone-400 flex items-center gap-1.5 font-medium">
+                    <Radio className="size-3.5 text-amber-500" />
+                    Currently Linked To:
+                  </span>
+                  <span className="font-medium text-amber-700 dark:text-amber-400">
+                    {conflictInfo.maskedEmail}
+                  </span>
+                </div>
+              )}
+              {conflictInfo?.externalAppName && (
+                <div className="flex items-center justify-between border-t border-stone-200/60 dark:border-stone-800/60 pt-2">
+                  <span className="text-stone-500 dark:text-stone-400 flex items-center gap-1.5 font-medium">
+                    <Radio className="size-3.5 text-amber-500" />
+                    External Provider:
+                  </span>
+                  <span className="font-medium text-amber-700 dark:text-amber-400">
+                    {conflictInfo.externalAppName}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Warning Callout Box */}
+            <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/25 text-amber-900 dark:text-amber-200 text-xs leading-relaxed space-y-1.5">
+              <div className="font-semibold flex items-center gap-1.5 text-amber-800 dark:text-amber-300">
+                <AlertCircle className="size-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                What happens if you transfer:
+              </div>
+              <ul className="list-disc pl-5 space-y-1 text-[11px] text-amber-800/90 dark:text-amber-300/90">
+                <li>This WhatsApp account will be <strong>disconnected</strong> from the existing account.</li>
+                <li>All incoming messages, read receipts, and live chat will be <strong>redirected exclusively to your workspace</strong>.</li>
+                <li>Only one workspace can actively receive webhook messages per WhatsApp number.</li>
+              </ul>
+            </div>
+
+            {transferError && (
+              <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-700 dark:text-red-300 text-xs flex items-center gap-2">
+                <AlertCircle className="h-4 w-4 shrink-0 text-red-600" />
+                <span>{transferError}</span>
+              </div>
+            )}
+
+            <DialogFooter className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 pt-3 border-t border-stone-200/70 dark:border-stone-800/70">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleAbortTransfer}
+                disabled={transferring}
+                className="rounded-xl border border-stone-300 dark:border-stone-700 text-stone-700 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-800 text-xs font-medium h-9 px-4"
+              >
+                Abort Setup
+              </Button>
+              <Button
+                type="button"
+                onClick={handleConfirmTransfer}
+                disabled={transferring}
+                className="rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-medium h-9 px-4 shadow-sm flex items-center gap-1.5"
+              >
+                {transferring ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Disconnecting & Transferring...
+                  </>
+                ) : (
+                  <>
+                    <ArrowRightLeft className="size-3.5" />
+                    Disconnect & Transfer Here
+                  </>
                 )}
               </Button>
             </DialogFooter>
