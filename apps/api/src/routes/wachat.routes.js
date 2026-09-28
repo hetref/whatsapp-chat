@@ -511,7 +511,6 @@ async function sendTemplateMessage({
         }
 
         const rawText = await response.text();
-        console.error(`[sendTemplateMessage] Meta WhatsApp error (${testLocale}):`, response.status, rawText);
         let parsed;
         try {
             parsed = JSON.parse(rawText);
@@ -519,19 +518,47 @@ async function sendTemplateMessage({
             parsed = null;
         }
 
-        let errorMsg = parsed?.error?.error_data?.details || parsed?.error?.message || rawText;
-        if (parsed?.error?.code === 133010 || errorMsg.includes('Account not registered')) {
+        const metaError = parsed?.error || null;
+        const metaCode = metaError?.code;
+        const metaSubcode = metaError?.error_subcode;
+        const metaDetails = metaError?.error_data?.details;
+        const metaUserMsg = metaError?.error_user_msg;
+        const metaMessage = metaError?.message || rawText;
+
+        let errorMsg = metaDetails || metaUserMsg || metaMessage;
+
+        // Diagnostic enrichment for common Meta Business / Cloud API issues
+        if (metaCode === 133010 || errorMsg.includes('Account not registered')) {
             errorMsg = '(#133010) Account not registered: Phone number is verified in Meta Business, but must be registered with the WhatsApp Cloud API using a 6-digit PIN. Please visit Setup to register your number.';
+        } else if (metaCode === 100) {
+            if (metaDetails?.toLowerCase().includes('allowed list') || metaSubcode === 2494010) {
+                errorMsg = `(#100) Recipient phone number (+${to}) is not in your allowed test numbers list. In Meta Developer Mode, WhatsApp messages can ONLY be sent to phone numbers verified in your Meta Developer Dashboard (WhatsApp > API Setup > To). Please add +${to} to your test recipient list or switch your Meta App to Live Mode.`;
+            } else if (metaDetails) {
+                errorMsg = `(#100) Invalid parameter (+${to}): ${metaDetails}. Ensure the number is a valid mobile phone registered on WhatsApp and added to Meta allowed list if in Development Mode.`;
+            } else {
+                errorMsg = `(#100) Invalid parameter (+${to}): Meta rejected sending to this recipient. If your Meta App is in Development Mode, messages can only be sent to phone numbers added under WhatsApp > API Setup > To. Also verify +${to} is a valid mobile number with an active WhatsApp account.`;
+            }
         }
 
+        console.error('\n==================== [META WHATSAPP API ERROR] ====================');
+        console.error(`Recipient: +${to}`);
+        console.error(`Template: "${templateName}" (locale tested: ${testLocale})`);
+        console.error(`HTTP Status: ${response.status}`);
+        console.error(`Meta Code: ${metaCode ?? 'N/A'}, Subcode: ${metaSubcode ?? 'N/A'}`);
+        console.error(`Meta Error Details:`, metaDetails || metaUserMsg || 'None provided');
+        console.error(`Meta Raw Response:`, rawText);
+        console.error(`Diagnostic Guidance: ${errorMsg}`);
+        console.error('===================================================================\n');
+
         const isLanguageMismatch =
-            errorMsg.includes('does not exist in') ||
-            (errorMsg.includes('Template name') && errorMsg.includes('translation')) ||
-            (parsed?.error?.code === 100 && errorMsg.includes('template'));
+            metaMessage.includes('does not exist in') ||
+            (metaMessage.includes('Template name') && metaMessage.includes('translation')) ||
+            (metaCode === 100 && metaMessage.toLowerCase().includes('template') && !metaDetails?.includes('allowed list'));
 
         const err = new Error(errorMsg);
         err.statusCode = response.status;
-        err.details = parsed?.error || rawText;
+        err.details = metaError || rawText;
+        err.metaError = metaError;
         lastError = err;
 
         if (isLanguageMismatch) {

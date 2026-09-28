@@ -34,6 +34,7 @@ export function errorHandler(error, _req, res, _next) {
         error: message,
         message: message,
         details: parsedDetails,
+        metaError: error?.metaError || (parsedDetails?.error || parsedDetails),
     });
 }
 

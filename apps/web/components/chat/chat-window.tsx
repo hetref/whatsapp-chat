@@ -359,7 +359,19 @@ export function ChatWindow({
       const result = await response.json();
 
       if (!response.ok) {
-        const errorMsg = result.details?.message || result.error || result.message || 'Failed to send template';
+        const errorMsg =
+          result.error ||
+          result.message ||
+          result.details?.error_data?.details ||
+          result.details?.error_user_msg ||
+          result.details?.message ||
+          'Failed to send template';
+        console.error('[ChatWindow] ❌ Meta WhatsApp send-template failed:', {
+          recipient: recipientPhone,
+          template: templateName,
+          status: response.status,
+          result,
+        });
         throw new Error(errorMsg);
       }
 

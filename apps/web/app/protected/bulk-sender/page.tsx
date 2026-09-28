@@ -796,17 +796,30 @@ export default function BulkSenderPage() {
               messageId: result.messageId,
             });
           } else {
+            const errorDetail =
+              result.error ||
+              result.message ||
+              result.details?.error_data?.details ||
+              result.details?.error_user_msg ||
+              result.details?.message ||
+              "Failed to send";
+            console.error(`[BulkSender] ❌ Send failed for ${contact.name} (${contact.phone_number}):`, {
+              error: errorDetail,
+              response: result,
+            });
             batchResults.push({
               contact,
               success: false,
-              error: result.error || result.message || "Failed to send",
+              error: errorDetail,
             });
           }
         } catch (error) {
+          const networkErrMsg = error instanceof Error ? error.message : "Network error";
+          console.error(`[BulkSender] ❌ Exception sending to ${contact.name} (${contact.phone_number}):`, error);
           batchResults.push({
             contact,
             success: false,
-            error: error instanceof Error ? error.message : "Network error",
+            error: networkErrMsg,
           });
         }
 
@@ -1899,7 +1912,10 @@ export default function BulkSenderPage() {
                                 </span>
                               )}
                             </td>
-                            <td className="py-2 px-4 font-mono text-[11px] text-stone-500 truncate max-w-xs">
+                            <td
+                              className="py-2 px-4 font-mono text-[11px] text-stone-500 truncate max-w-xs cursor-help"
+                              title={res.error || (res.messageId ? `ID: ${res.messageId}` : undefined)}
+                            >
                               {res.messageId ? `ID: ${res.messageId}` : res.error || "—"}
                             </td>
                           </tr>
