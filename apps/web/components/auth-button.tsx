@@ -1,30 +1,26 @@
-import { auth, currentUser } from "@clerk/nextjs/server";
-import { SignOutButton, SignInButton } from "@clerk/nextjs";
+import { getSessionUser } from "@/lib/auth-server";
 import Link from "next/link";
+import { UserAvatarDropdown } from "./user-avatar-dropdown";
 
 export default async function AuthButton() {
-  const { userId } = await auth();
-  const user = await currentUser();
+  const user = await getSessionUser();
 
-  return userId ? (
+  return user ? (
     <div className="flex items-center gap-4">
-      Hey, {user?.emailAddresses[0]?.emailAddress || user?.firstName || "User"}!
-      <SignOutButton>
-        <button className="py-2 px-3 flex rounded-md no-underline bg-btn-background hover:bg-btn-background-hover">
-          Sign out
-        </button>
-      </SignOutButton>
+      <span className="text-sm font-medium">Hey, {user.name || user.email || "User"}!</span>
+      <UserAvatarDropdown />
     </div>
   ) : (
     <div className="flex gap-2">
-      <SignInButton mode="redirect">
-        <button className="py-2 px-3 flex rounded-md no-underline bg-btn-background hover:bg-btn-background-hover">
-          Sign in
-        </button>
-      </SignInButton>
+      <Link
+        href="/sign-in"
+        className="py-2 px-3 flex rounded-md no-underline bg-stone-100 hover:bg-stone-200 dark:bg-stone-800 dark:hover:bg-stone-700 text-sm font-medium transition-colors"
+      >
+        Sign in
+      </Link>
       <Link
         href="/sign-up"
-        className="py-2 px-4 flex rounded-md no-underline bg-btn-background hover:bg-btn-background-hover"
+        className="py-2 px-4 flex rounded-md no-underline bg-[#5F7C65] text-white hover:bg-[#526D57] text-sm font-medium shadow-xs transition-colors"
       >
         Sign up
       </Link>

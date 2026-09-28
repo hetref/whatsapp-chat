@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useAuth, UserButton } from "@clerk/nextjs";
+import { authClient } from "@/lib/auth-client";
+import { UserAvatarDropdown } from "@/components/user-avatar-dropdown";
 import { ThemeSwitcher } from "@/components/theme-switcher";
 import { Button } from "@/components/ui/button";
 import LogoIcon from "@/components/logo-icon";
@@ -16,7 +17,9 @@ const navLinks = [
 ];
 
 export function Navbar() {
-  const { isSignedIn, isLoaded } = useAuth();
+  const { data: session, isPending } = authClient.useSession();
+  const isSignedIn = !!session?.user;
+  const isLoaded = !isPending;
   const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
@@ -58,7 +61,7 @@ export function Navbar() {
               <Link href="/protected">
                 <Button size="sm" className="bg-[#5F7C65] hover:bg-[#526D57] text-white">Dashboard</Button>
               </Link>
-              <UserButton />
+              <UserAvatarDropdown />
             </div>
           ) : (
             <div className="flex items-center gap-2">

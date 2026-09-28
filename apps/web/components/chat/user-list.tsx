@@ -6,9 +6,9 @@ import { Input } from "@/components/ui/input";
 import { ThemeSwitcher } from "@/components/theme-switcher";
 import { Search, MessageCircle, LogOut, Plus, Edit3, Check, X, Phone, FileText, Settings, Users } from "lucide-react";
 import { useState, useEffect } from "react";
-import { useClerk } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { signOut } from "@/lib/auth-client";
 import { GroupsList } from "./groups-list";
 import { GroupManagementDialog } from "./group-management-dialog";
 
@@ -66,7 +66,6 @@ export function UserList({ users, selectedUser, onUserSelect, currentUserId, onU
   const [showGroupDialog, setShowGroupDialog] = useState(false);
   const [editingGroup, setEditingGroup] = useState<Group | null>(null);
 
-  const { signOut } = useClerk();
   const router = useRouter();
 
   // Load groups on component mount

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { useAuth } from "@clerk/nextjs";
+import { authClient } from "@/lib/auth-client";
 import Link from "next/link";
 import Script from "next/script";
 import {
@@ -86,7 +86,9 @@ const CUSTOM_PLAN_FEATURES = [
 
 export default function PricingPage() {
   const router = useRouter();
-  const { isLoaded, isSignedIn } = useAuth();
+  const { data: session, isPending } = authClient.useSession();
+  const isSignedIn = !!session?.user;
+  const isLoaded = !isPending;
   const [loading, setLoading] = useState<string | null>(null);
   const [checkingStatus, setCheckingStatus] = useState(false);
   const [currentPlan, setCurrentPlan] = useState<string | null>(null);

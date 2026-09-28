@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
-import { useAuth, UserButton } from "@clerk/nextjs";
+import { authClient } from "@/lib/auth-client";
+import { UserAvatarDropdown } from "@/components/user-avatar-dropdown";
 import {
   ArrowUpRight,
   MessageSquare,
@@ -67,9 +68,11 @@ export function HeroSection({
   secondaryCtaLabel = "Get Started",
   secondaryCtaHref = "/#pricing",
   features = defaultFeatures,
-  backgroundImage = "https://assets.watermelon.sh/hero-22-bg.avif",
+  backgroundImage = "https://images.unsplash.com/photo-1577563908411-5077b6dc7624?auto=format&fit=crop&w=2000&q=80",
 }: HeroSectionProps) {
-  const { isSignedIn, isLoaded } = useAuth();
+  const { data: session, isPending } = authClient.useSession();
+  const isSignedIn = !!session?.user;
+  const isLoaded = !isPending;
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
 
@@ -127,7 +130,7 @@ export function HeroSection({
                 >
                   Dashboard
                 </Link>
-                <UserButton />
+                <UserAvatarDropdown />
               </div>
             ) : (
               <div className="flex items-center gap-4">

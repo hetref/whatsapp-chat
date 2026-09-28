@@ -16,9 +16,11 @@ datasource db {
 /// Platform user (business owner) with Clerk authentication ID only.
 /// These are the actual users of your application.
 model User {
-  id                String   @id @db.Text // Clerk user ID (e.g., "user_...")
-  email             String?  @map("email") // User's primary email address (synced from Clerk)
-  name              String?  @map("name") // User's full name (synced from Clerk)
+  id                String   @id @db.Text // User ID
+  email             String?  @unique @map("email") // User's primary email address
+  emailVerified     Boolean  @default(false) @map("email_verified") // Better Auth email verification status
+  name              String?  @map("name") // User's full name
+  image             String?  @map("image") // Profile avatar image URL
   isActive          Boolean  @default(true) @map("is_active") // Account active status (for SaaS)
   storageUsedBytes  BigInt   @default(0) @map("storage_used_bytes") // S3 storage used in bytes
   planTier          PlanTier @default(FREE) @map("plan_tier") // Current plan tier
@@ -29,6 +31,10 @@ model User {
   apiAccessEnabled  Boolean  @default(false) @map("api_access_enabled") // API key access
   createdAt         DateTime @default(now()) @map("created_at")
   updatedAt         DateTime @updatedAt @map("updated_at")
+
+  // Better Auth Relations
+  sessions Session[]
+  accounts Account[]
 
   // Relations
   contacts   Contact[] // WhatsApp contacts owned by this user
@@ -337,3 +343,56 @@ model UsageRecord {
   @@index([periodStart])
   @@map("usage_records")
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Better Auth Core Models
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Session {
+  id        String   @id @db.Text
+  expiresAt DateTime @map("expires_at")
+  token     String   @unique
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  ipAddress String?  @map("ip_address")
+  userAgent String?  @map("user_agent")
+  userId    String   @map("user_id") @db.Text
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model Account {
+  id                    String    @id @db.Text
+  accountId             String    @map("account_id")
+  providerId            String    @map("provider_id")
+  userId                String    @map("user_id") @db.Text
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?   @map("access_token") @db.Text
+  refreshToken          String?   @map("refresh_token") @db.Text
+  idToken               String?   @map("id_token") @db.Text
+  accessTokenExpiresAt  DateTime? @map("access_token_expires_at")
+  refreshTokenExpiresAt DateTime? @map("refresh_token_expires_at")
+  scope                 String?   @map("scope")
+  password              String?   @map("password") @db.Text
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  @@unique([providerId, accountId])
+  @@index([userId])
+  @@map("accounts")
+}
+
+model Verification {
+  id         String    @id @db.Text
+  identifier String
+  value      String
+  expiresAt  DateTime  @map("expires_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime? @updatedAt @map("updated_at")
+
+  @@index([identifier])
+  @@map("verifications")
+}
+

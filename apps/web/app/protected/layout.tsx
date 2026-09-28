@@ -1,10 +1,10 @@
 "use client";
 
-import { useAuth, UserButton } from "@clerk/nextjs";
-import { useClerk } from "@clerk/nextjs";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { authClient, signOut } from "@/lib/auth-client";
+import { UserAvatarDropdown } from "@/components/user-avatar-dropdown";
 import {
   MessageCircle,
   FileText,
@@ -22,6 +22,7 @@ import {
   Send,
   Menu,
   X,
+  User as UserIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -77,6 +78,13 @@ const navItems = [
     requiresFeature: null as string | null,
   },
   {
+    name: "Profile",
+    path: "/protected/profile",
+    icon: UserIcon,
+    description: "Profile & credentials",
+    requiresFeature: null as string | null,
+  },
+  {
     name: "Setup",
     path: "/protected/setup",
     icon: Book,
@@ -90,12 +98,12 @@ export default function ProtectedLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { isLoaded, userId } = useAuth();
-  const { signOut } = useClerk();
+  const { data: session, isPending } = authClient.useSession();
+  const userId = session?.user?.id;
   const router = useRouter();
   const pathname = usePathname();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const { planTier, usage, loading: subscriptionLoading, subscriptionStatus, messagingBlocked, messagingBlockedReason } =
+  const { planTier, usage, loading: subscriptionLoading, messagingBlocked, messagingBlockedReason } =
     useSubscriptionStatus();
 
   // Auto-collapse sidebar on mobile screens by default
@@ -113,12 +121,12 @@ export default function ProtectedLayout({
   }, [pathname]);
 
   useEffect(() => {
-    if (isLoaded && !userId) {
+    if (!isPending && !session?.user) {
       router.push("/sign-in");
     }
-  }, [isLoaded, userId, router]);
+  }, [isPending, session, router]);
 
-  if (!isLoaded) {
+  if (isPending) {
     return (
       <div className="h-screen flex items-center justify-center bg-[#FAF8F5] dark:bg-[#0C0F0D]">
         <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-[#5F7C65]"></div>
@@ -126,7 +134,7 @@ export default function ProtectedLayout({
     );
   }
 
-  if (!userId) {
+  if (!session?.user) {
     return null;
   }
 
@@ -155,7 +163,7 @@ export default function ProtectedLayout({
         </div>
         <div className="flex items-center gap-1.5">
           <ThemeSwitcher />
-          <UserButton afterSignOutUrl="/" />
+          <UserAvatarDropdown />
         </div>
       </div>
 
@@ -323,13 +331,7 @@ export default function ProtectedLayout({
               sidebarCollapsed && "justify-center p-1.5 bg-transparent border-transparent",
             )}
           >
-            <UserButton
-              appearance={{
-                elements: {
-                  avatarBox: "size-8 ring-1 ring-stone-200 dark:ring-stone-700",
-                },
-              }}
-            />
+            <UserAvatarDropdown />
             {!sidebarCollapsed && (
               <div className="flex flex-col flex-1 min-w-0">
                 <span className="text-xs font-semibold text-stone-900 dark:text-stone-100 truncate">Account</span>
@@ -374,7 +376,16 @@ export default function ProtectedLayout({
                 variant="outline"
                 size="sm"
                 className="w-full justify-start gap-2 h-8 text-xs font-medium text-stone-600 dark:text-stone-400 hover:text-red-700 dark:hover:text-red-400 hover:bg-red-50/70 dark:hover:bg-red-950/20 border-stone-200/80 dark:border-stone-800 rounded-lg transition-colors"
-                onClick={() => signOut(() => router.push("/"))}
+                onClick={() =>
+                  signOut({
+                    fetchOptions: {
+                      onSuccess: () => {
+                        router.push("/");
+                        router.refresh();
+                      },
+                    },
+                  })
+                }
               >
                 <LogOut className="size-3.5" />
                 Sign Out

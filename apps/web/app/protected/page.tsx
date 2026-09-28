@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useUser } from "@clerk/nextjs";
+import { authClient } from "@/lib/auth-client";
 import { UserList } from "@/components/chat/user-list";
 import { ChatWindow } from "@/components/chat/chat-window";
 import { Button } from "@/components/ui/button";
@@ -66,7 +66,9 @@ interface ConversationApi {
 }
 
 export default function ChatPage() {
-  const { user, isLoaded } = useUser();
+  const { data: session, isPending } = authClient.useSession();
+  const user = session?.user;
+  const isLoaded = !isPending;
   const [users, setUsers] = useState<ChatUser[]>([]);
   const [selectedUser, setSelectedUser] = useState<ChatUser | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
