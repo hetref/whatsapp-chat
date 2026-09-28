@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signIn } from "@/lib/auth-client";
@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import LogoIcon from "@/components/logo-icon";
 import { Loader2, AlertCircle, ArrowRight } from "lucide-react";
 
-export default function SignInPage() {
+function SignInContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get("callbackUrl") || "/protected";
@@ -143,5 +143,19 @@ export default function SignInPage() {
 
       </div>
     </div>
+  );
+}
+
+export default function SignInPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen w-full flex items-center justify-center bg-[#FAF8F5] dark:bg-[#0C0F0D]">
+          <Loader2 className="size-8 animate-spin text-[#5F7C65]" />
+        </div>
+      }
+    >
+      <SignInContent />
+    </Suspense>
   );
 }
