@@ -76,10 +76,11 @@ export async function POST(request: NextRequest) {
 
     const apiVersion = settings.apiVersion || 'v23.0';
     const wabaId = settings.businessAccountId;
-    const origin = request.nextUrl.origin || 'https://lr1.aryanshinde.in';
-    const targetWebhookUrl = `${origin}/api/webhook/${webhookToken}`;
+    const origin = request.nextUrl.origin || 'https://www.wachat.tech';
+    const targetWebhookUrl = `${origin}/api/webhook`;
     const effectiveVerifyToken: string =
-      settings.verifyToken || process.env.VERIFY_TOKEN || webhookToken;
+      process.env.VERIFY_TOKEN?.replace(/^["']|["']$/g, '').trim() ||
+      'VAsDSKmdFNSDMvsdDOpk';
 
     console.log(`[Subscribe Webhooks] Subscribing WABA ${wabaId} to messages...`);
 

@@ -220,17 +220,24 @@ export async function GET(request: NextRequest) {
       return new NextResponse('Forbidden', { status: 403 });
     }
 
-    const envVerifyToken =
+    const cleanToken = token.trim().replace(/^["']|["']$/g, '');
+    const defaultToken = 'VAsDSKmdFNSDMvsdDOpk';
+    const envVerifyToken = (
       process.env.META_WEBHOOK_VERIFY_TOKEN ||
       process.env.WHATSAPP_VERIFY_TOKEN ||
       process.env.VERIFY_TOKEN ||
-      process.env.WEBHOOK_VERIFY_TOKEN;
-    const isEnvMatch = envVerifyToken && token === envVerifyToken;
+      process.env.WEBHOOK_VERIFY_TOKEN ||
+      defaultToken
+    ).trim().replace(/^["']|["']$/g, '');
+
+    const isEnvMatch = cleanToken === envVerifyToken || cleanToken === defaultToken;
 
     // Check if the token matches any user's verifyToken OR webhookToken
     const settings = await prisma.userSettings.findFirst({
       where: {
         OR: [
+          { verifyToken: cleanToken },
+          { webhookToken: cleanToken },
           { verifyToken: token },
           { webhookToken: token },
         ],
@@ -239,7 +246,10 @@ export async function GET(request: NextRequest) {
     });
 
     if (!settings && !isEnvMatch) {
-      console.warn('[Webhook GET] Verification failed: token does not match any user or env token');
+      console.warn('[Webhook GET] Verification failed: token does not match any user or env token:', {
+        provided: cleanToken,
+        expected: envVerifyToken,
+      });
       return new NextResponse('Forbidden', { status: 403 });
     }
 

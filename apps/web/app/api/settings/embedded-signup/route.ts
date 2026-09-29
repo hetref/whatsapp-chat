@@ -291,6 +291,33 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // 4.1 Ensure Meta App-level Webhook is subscribed
+    try {
+      const appId = process.env.NEXT_PUBLIC_META_APP_ID || '1825841578150241';
+      const appSecret = process.env.META_APP_SECRET;
+      if (appId && appSecret) {
+        const canonicalWebhookUrl = 'https://www.wachat.tech/api/webhook';
+        console.log(`[Embedded Signup] Ensuring Meta App ${appId} webhook points to ${canonicalWebhookUrl}...`);
+        const appSubParams = new URLSearchParams();
+        appSubParams.set('object', 'whatsapp_business_account');
+        appSubParams.set('callback_url', canonicalWebhookUrl);
+        appSubParams.set('fields', 'messages,message_template_status_update');
+        appSubParams.set('verify_token', 'VAsDSKmdFNSDMvsdDOpk');
+        appSubParams.set('access_token', `${appId}|${appSecret}`);
+
+        await fetch(
+          `https://graph.facebook.com/v23.0/${appId}/subscriptions`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: appSubParams,
+          }
+        );
+      }
+    } catch (appSubErr) {
+      console.warn('[Embedded Signup] Error ensuring App webhook subscription:', appSubErr);
+    }
+
     // 4. Ensure platform user exists
     await getOrCreateUser(userId);
 

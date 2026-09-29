@@ -1052,11 +1052,9 @@ export default function SetupPage() {
   };
 
   const webhookUrl =
-    typeof window !== "undefined" && settings?.webhook_token
-      ? `${window.location.origin}/api/webhook/${settings.webhook_token}`
-      : typeof window !== "undefined"
+    typeof window !== "undefined"
       ? `${window.location.origin}/api/webhook`
-      : "";
+      : "https://www.wachat.tech/api/webhook";
 
   // Connected check: Access token is added and either phone number ID or business account ID is present
   const isConnected = !!(
@@ -1499,43 +1497,63 @@ export default function SetupPage() {
                         {settings?.webhook_verified ? "Subscribed & Verified" : "Active"}
                       </span>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <div className="flex-1 min-w-0 bg-stone-100/80 dark:bg-stone-800/60 px-2.5 py-1 rounded-lg border border-stone-200/60 dark:border-stone-700/60">
-                        <p className="text-xs text-stone-600 dark:text-stone-300 truncate font-mono">
-                          {webhookUrl}
-                        </p>
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between text-[11px] text-stone-500 dark:text-stone-400">
+                        <span>Callback URL:</span>
+                        <span>Verify Token: <strong className="font-mono text-stone-700 dark:text-stone-300">VAsDSKmdFNSDMvsdDOpk</strong></span>
                       </div>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="size-7 rounded-lg text-stone-500 hover:text-stone-900 dark:hover:text-stone-100 hover:bg-stone-200/60 dark:hover:bg-stone-800 transition-colors shrink-0"
-                        onClick={() => copyToClipboard(webhookUrl, "webhook")}
-                        title="Copy Webhook URL"
-                      >
-                        {copiedWebhookUrl ? (
-                          <Check className="h-3.5 w-3.5 text-[#5F7C65]" />
-                        ) : (
-                          <Copy className="h-3.5 w-3.5" />
-                        )}
-                      </Button>
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 min-w-0 bg-stone-100/80 dark:bg-stone-800/60 px-2.5 py-1 rounded-lg border border-stone-200/60 dark:border-stone-700/60">
+                          <p className="text-xs text-stone-600 dark:text-stone-300 truncate font-mono">
+                            {webhookUrl}
+                          </p>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="size-7 rounded-lg text-stone-500 hover:text-stone-900 dark:hover:text-stone-100 hover:bg-stone-200/60 dark:hover:bg-stone-800 transition-colors shrink-0"
+                          onClick={() => copyToClipboard(webhookUrl, "webhook")}
+                          title="Copy Webhook URL"
+                        >
+                          {copiedWebhookUrl ? (
+                            <Check className="h-3.5 w-3.5 text-[#5F7C65]" />
+                          ) : (
+                            <Copy className="h-3.5 w-3.5" />
+                          )}
+                        </Button>
+                      </div>
                     </div>
 
                     <div className="mt-3 pt-3 border-t border-stone-200/50 dark:border-stone-800/50 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
                       <div className="text-[11px] text-stone-500 dark:text-stone-400">
-                        Verify that incoming WhatsApp messages reach this account and are stored in your chat.
+                        Configure Meta subscriptions and test live incoming delivery pipeline.
                       </div>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={handleRunWebhookTest}
-                        disabled={testingWebhook}
-                        className="rounded-xl border border-stone-300/80 dark:border-stone-700 bg-white/90 dark:bg-stone-800/90 text-stone-700 dark:text-stone-200 text-xs h-8 px-3 font-medium hover:bg-stone-100 dark:hover:bg-stone-700 shrink-0 flex items-center gap-1.5"
-                      >
-                        <FlaskConical className={cn("size-3.5 text-[#5F7C65]", testingWebhook && "animate-spin")} />
-                        {testingWebhook ? "Running Diagnostic..." : "Test Webhook Delivery"}
-                      </Button>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={handleSyncPhone}
+                          disabled={syncingPhone}
+                          className="rounded-xl border border-stone-300/80 dark:border-stone-700 bg-white/90 dark:bg-stone-800/90 text-stone-700 dark:text-stone-200 text-xs h-8 px-3 font-medium hover:bg-stone-100 dark:hover:bg-stone-700 shrink-0 flex items-center gap-1.5"
+                          title="Subscribe WABA and configure Meta App Webhook via Graph API"
+                        >
+                          <RefreshCw className={cn("size-3.5 text-[#5F7C65]", syncingPhone && "animate-spin")} />
+                          {syncingPhone ? "Syncing..." : "Sync Webhook to Meta"}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={handleRunWebhookTest}
+                          disabled={testingWebhook}
+                          className="rounded-xl border border-stone-300/80 dark:border-stone-700 bg-white/90 dark:bg-stone-800/90 text-stone-700 dark:text-stone-200 text-xs h-8 px-3 font-medium hover:bg-stone-100 dark:hover:bg-stone-700 shrink-0 flex items-center gap-1.5"
+                        >
+                          <FlaskConical className={cn("size-3.5 text-[#5F7C65]", testingWebhook && "animate-spin")} />
+                          {testingWebhook ? "Running..." : "Test Webhook"}
+                        </Button>
+                      </div>
                     </div>
 
                     {metaWebhookSyncInfo?.meta_configured_url && !metaWebhookSyncInfo.url_matches_active_domain && (
