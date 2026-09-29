@@ -34,6 +34,7 @@ import {
   RefreshCw,
   ShieldAlert,
   ArrowRightLeft,
+  FlaskConical,
 } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
@@ -194,6 +195,76 @@ export default function SetupPage() {
   const [checkingPhoneStatus, setCheckingPhoneStatus] = useState(false);
   const [showPinInput, setShowPinInput] = useState(false);
   const [deregisteringPhone, setDeregisteringPhone] = useState(false);
+
+  // Webhook Test states
+  const [testingWebhook, setTestingWebhook] = useState(false);
+  const [testResult, setTestResult] = useState<{
+    success: boolean;
+    message: string;
+    stage1_meta: {
+      waba_subscribed: boolean;
+      waba_subscribed_fields: string[];
+      meta_registered_url: string | null;
+      meta_registered_fields: string[];
+      current_webhook_url: string;
+      url_matches_active_domain: boolean;
+      meta_error?: string | null;
+    };
+    stage2_simulation: {
+      success: boolean;
+      status_code: number;
+      latency_ms: number;
+      message_saved: boolean;
+      contact_created: boolean;
+      contact_id?: string | null;
+      test_message_id: string;
+      test_sender: string;
+      delivered_to_user_id: string;
+    };
+  } | null>(null);
+  const [testDialogOpen, setTestDialogOpen] = useState(false);
+
+  // Dispatch comprehensive webhook test
+  const handleRunWebhookTest = async () => {
+    setTestingWebhook(true);
+    setTestResult(null);
+    setTestDialogOpen(true);
+    try {
+      const res = await fetch("/api/settings/test-webhook", {
+        method: "POST",
+      });
+      const data = await res.json();
+      setTestResult(data);
+      if (data?.success) {
+        await loadSettings();
+      }
+    } catch (err: unknown) {
+      setTestResult({
+        success: false,
+        message: err instanceof Error ? err.message : "Failed to execute webhook diagnostic test.",
+        stage1_meta: {
+          waba_subscribed: false,
+          waba_subscribed_fields: [],
+          meta_registered_url: null,
+          meta_registered_fields: [],
+          current_webhook_url: webhookUrl,
+          url_matches_active_domain: false,
+        },
+        stage2_simulation: {
+          success: false,
+          status_code: 500,
+          latency_ms: 0,
+          message_saved: false,
+          contact_created: false,
+          test_message_id: "",
+          test_sender: "",
+          delivered_to_user_id: "",
+        },
+      });
+    } finally {
+      setTestingWebhook(false);
+    }
+  };
 
   // Popup callback state - detect synchronously so popup callback never renders main dashboard or fires initial fetches
   const [isPopupCallback, setIsPopupCallback] = useState(() => {
@@ -1070,6 +1141,17 @@ export default function SetupPage() {
                     <Button
                       variant="outline"
                       size="sm"
+                      onClick={handleRunWebhookTest}
+                      disabled={testingWebhook}
+                      className="rounded-xl border border-stone-300/80 dark:border-stone-700 bg-white/80 dark:bg-stone-800/80 hover:bg-stone-100 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-200 text-xs h-9 px-3.5 shadow-2xs font-medium transition-all active:scale-[0.98] flex items-center gap-1.5"
+                      title="Dispatch test incoming WhatsApp message and verify Meta subscriptions"
+                    >
+                      <FlaskConical className={cn("size-3.5 text-[#5F7C65]", testingWebhook && "animate-spin")} />
+                      {testingWebhook ? "Testing..." : "Test Webhook"}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
                       onClick={handleSyncPhone}
                       disabled={syncingPhone}
                       className="rounded-xl border border-stone-300/80 dark:border-stone-700 bg-white/80 dark:bg-stone-800/80 hover:bg-stone-100 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-200 text-xs h-9 px-3.5 shadow-2xs font-medium transition-all active:scale-[0.98]"
@@ -1255,6 +1337,23 @@ export default function SetupPage() {
                         ) : (
                           <Copy className="h-3.5 w-3.5" />
                         )}
+                      </Button>
+                    </div>
+
+                    <div className="mt-3 pt-3 border-t border-stone-200/50 dark:border-stone-800/50 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                      <div className="text-[11px] text-stone-500 dark:text-stone-400">
+                        Verify that incoming WhatsApp messages reach this account and are stored in your chat.
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleRunWebhookTest}
+                        disabled={testingWebhook}
+                        className="rounded-xl border border-stone-300/80 dark:border-stone-700 bg-white/90 dark:bg-stone-800/90 text-stone-700 dark:text-stone-200 text-xs h-8 px-3 font-medium hover:bg-stone-100 dark:hover:bg-stone-700 shrink-0 flex items-center gap-1.5"
+                      >
+                        <FlaskConical className={cn("size-3.5 text-[#5F7C65]", testingWebhook && "animate-spin")} />
+                        {testingWebhook ? "Running Diagnostic..." : "Test Webhook Delivery"}
                       </Button>
                     </div>
 
@@ -1954,6 +2053,174 @@ export default function SetupPage() {
                     Disconnect & Transfer Here
                   </>
                 )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Webhook Diagnostic & Test Results Dialog */}
+        <Dialog open={testDialogOpen} onOpenChange={setTestDialogOpen}>
+          <DialogContent className="max-w-xl rounded-2xl border-stone-200 dark:border-stone-800 bg-[#FAF8F5] dark:bg-stone-900 p-6 shadow-xl max-h-[85vh] overflow-y-auto">
+            <DialogHeader className="space-y-1.5">
+              <div className="flex items-center gap-3">
+                <div className={cn(
+                  "size-10 rounded-xl border flex items-center justify-center shrink-0",
+                  testResult?.success
+                    ? "bg-[#5F7C65]/15 border-[#5F7C65]/30 text-[#5F7C65]"
+                    : testResult
+                    ? "bg-amber-500/15 border-amber-500/30 text-amber-600"
+                    : "bg-stone-500/15 border-stone-500/30 text-stone-600"
+                )}>
+                  <FlaskConical className="size-5" />
+                </div>
+                <div>
+                  <DialogTitle className="text-base font-semibold text-stone-900 dark:text-stone-100">
+                    Webhook Ingestion &amp; Meta Subscriptions Test
+                  </DialogTitle>
+                  <DialogDescription className="text-xs text-stone-600 dark:text-stone-400">
+                    Live end-to-end diagnostic of Meta webhook subscriptions and simulated message delivery.
+                  </DialogDescription>
+                </div>
+              </div>
+            </DialogHeader>
+
+            {testingWebhook ? (
+              <div className="py-10 flex flex-col items-center justify-center space-y-3">
+                <Loader2 className="size-8 animate-spin text-[#5F7C65]" />
+                <p className="text-xs font-medium text-stone-600 dark:text-stone-400">
+                  Sending simulated WhatsApp message and querying Meta Graph API...
+                </p>
+              </div>
+            ) : testResult ? (
+              <div className="space-y-4 py-2 text-xs">
+                {/* Overall Status Banner */}
+                <div className={cn(
+                  "p-3.5 rounded-xl border flex items-start gap-2.5",
+                  testResult.success
+                    ? "bg-[#5F7C65]/10 border-[#5F7C65]/30 text-[#2D583F] dark:text-[#8EAE95]"
+                    : "bg-amber-500/10 border-amber-500/30 text-amber-900 dark:text-amber-200"
+                )}>
+                  {testResult.success ? (
+                    <CheckCircle2 className="size-5 shrink-0 text-[#5F7C65] mt-0.5" />
+                  ) : (
+                    <AlertCircle className="size-5 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
+                  )}
+                  <div>
+                    <div className="font-semibold text-sm">
+                      {testResult.success
+                        ? "Webhook Ingestion & Verification Successful!"
+                        : "Webhook Test Completed with Warnings"}
+                    </div>
+                    <div className="text-xs opacity-90 mt-0.5">
+                      {testResult.message || (testResult.success
+                        ? "Simulated incoming WhatsApp message was accepted by the webhook endpoint and verified in the database for your account."
+                        : "Review the diagnostic details below to ensure Meta is routing incoming customer messages.")}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Stage 1: Simulated Payload Delivery */}
+                <div className="p-3.5 rounded-xl bg-white dark:bg-stone-800/80 border border-stone-200/80 dark:border-stone-700/80 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-stone-900 dark:text-stone-100 flex items-center gap-1.5">
+                      <Radio className="size-3.5 text-[#5F7C65]" />
+                      Simulated Webhook Delivery
+                    </span>
+                    <span className={cn(
+                      "px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider",
+                      testResult.stage2_simulation.success
+                        ? "bg-[#5F7C65]/15 text-[#5F7C65] border border-[#5F7C65]/30"
+                        : "bg-red-500/15 text-red-600 border border-red-500/30"
+                    )}>
+                      {testResult.stage2_simulation.success ? "Passed (200 OK)" : `Failed (${testResult.stage2_simulation.status_code})`}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-[11px] text-stone-600 dark:text-stone-400 pt-1">
+                    <div>
+                      Target URL: <span className="font-mono text-stone-800 dark:text-stone-200 truncate block">{testResult.stage1_meta.current_webhook_url}</span>
+                    </div>
+                    <div>
+                      DB Verified: <span className={cn("font-medium", testResult.stage2_simulation.message_saved ? "text-[#5F7C65]" : "text-amber-600")}>
+                        {testResult.stage2_simulation.message_saved ? "Yes (Saved in Chat)" : "Pending / Not Found"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Stage 2: Meta Subscriptions Check */}
+                <div className="p-3.5 rounded-xl bg-white dark:bg-stone-800/80 border border-stone-200/80 dark:border-stone-700/80 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-stone-900 dark:text-stone-100 flex items-center gap-1.5">
+                      <ShieldCheck className="size-3.5 text-[#5F7C65]" />
+                      Meta Graph API Subscription Check
+                    </span>
+                    <span className={cn(
+                      "px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider",
+                      testResult.stage1_meta.waba_subscribed
+                        ? "bg-[#5F7C65]/15 text-[#5F7C65] border border-[#5F7C65]/30"
+                        : "bg-amber-500/15 text-amber-600 border border-amber-500/30"
+                    )}>
+                      {testResult.stage1_meta.waba_subscribed ? "WABA Subscribed" : "Not Confirmed"}
+                    </span>
+                  </div>
+
+                  <div className="space-y-1.5 text-[11px] text-stone-600 dark:text-stone-400 pt-1">
+                    {testResult.stage1_meta.meta_registered_url ? (
+                      <div>
+                        Meta Callback URL:
+                        <span className="font-mono text-stone-800 dark:text-stone-200 block truncate bg-stone-100 dark:bg-stone-900 p-1 rounded mt-0.5">
+                          {testResult.stage1_meta.meta_registered_url}
+                        </span>
+                      </div>
+                    ) : null}
+
+                    {testResult.stage1_meta.meta_registered_fields && testResult.stage1_meta.meta_registered_fields.length > 0 && (
+                      <div>
+                        Subscribed Meta Fields:
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {testResult.stage1_meta.meta_registered_fields.map((field: string) => (
+                            <span key={field} className={cn(
+                              "px-1.5 py-0.5 rounded text-[10px] font-mono",
+                              field === "messages"
+                                ? "bg-[#5F7C65]/20 text-[#2D583F] dark:text-[#8EAE95] font-semibold"
+                                : "bg-stone-100 dark:bg-stone-900 text-stone-600 dark:text-stone-300"
+                            )}>
+                              {field}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Helpful Guidance */}
+                <div className="p-3 rounded-xl bg-stone-100 dark:bg-stone-800/50 border border-stone-200/80 dark:border-stone-700/80 text-[11px] text-stone-600 dark:text-stone-400 space-y-1">
+                  <div className="font-semibold text-stone-800 dark:text-stone-200">How to trigger a real test from Meta:</div>
+                  <div>
+                    Go to Meta Developer Dashboard → Your App → <strong>WhatsApp</strong> → <strong>Configuration</strong> → <strong>Webhook fields</strong> → click <strong>Test</strong> next to the <code>messages</code> field.
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            <DialogFooter className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 pt-3 border-t border-stone-200/70 dark:border-stone-800/70">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setTestDialogOpen(false)}
+                className="rounded-xl border border-stone-300 dark:border-stone-700 text-stone-700 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-800 text-xs font-medium h-9 px-4"
+              >
+                Close
+              </Button>
+              <Button
+                type="button"
+                onClick={handleRunWebhookTest}
+                disabled={testingWebhook}
+                className="rounded-xl bg-[#5F7C65] hover:bg-[#526D57] text-white text-xs font-medium h-9 px-4 shadow-sm flex items-center gap-1.5"
+              >
+                <RefreshCw className={cn("size-3.5", testingWebhook && "animate-spin")} />
+                {testingWebhook ? "Running..." : "Run Test Again"}
               </Button>
             </DialogFooter>
           </DialogContent>
