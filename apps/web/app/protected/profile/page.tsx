@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { authClient, updateUser, changePassword, signOut } from "@/lib/auth-client";
@@ -27,29 +27,24 @@ import {
   EyeOff,
   Lock,
   ShieldCheck,
-  Sparkles,
-  Clock,
   HardDrive,
   Users,
   CreditCard,
   ArrowRight,
-  RefreshCw,
   LogOut,
   Camera,
-  Laptop,
-  Globe,
-  Activity,
-  Layers,
+  Upload,
+  Trash2,
   Cpu,
   Database,
-  ExternalLink,
+  Activity,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export default function ProfilePage() {
   const router = useRouter();
   const { data: session, isPending } = authClient.useSession();
-  const { planTier, usage, isActive: subActive } = useSubscriptionStatus();
+  const { planTier, usage } = useSubscriptionStatus();
 
   // Active tab state
   const [activeTab, setActiveTab] = useState<string>("profile");
@@ -57,8 +52,12 @@ export default function ProfilePage() {
   // Profile info state
   const [name, setName] = useState("");
   const [imageUrl, setImageUrl] = useState("");
+  const [avatarUploading, setAvatarUploading] = useState(false);
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileMessage, setProfileMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  // Hidden file input reference for S3 avatar upload
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Password change state
   const [currentPassword, setCurrentPassword] = useState("");
@@ -80,7 +79,7 @@ export default function ProfilePage() {
       if (session.user.name && !name) {
         setName(session.user.name);
       }
-      if (session.user.image && !imageUrl) {
+      if (session.user.image) {
         setImageUrl(session.user.image);
       }
     }
@@ -101,6 +100,8 @@ export default function ProfilePage() {
 
   const user = session?.user;
   if (!user) return null;
+
+  const currentAvatar = imageUrl || user.image;
 
   const initials = (user.name || "User")
     .split(" ")
@@ -134,6 +135,85 @@ export default function ProfilePage() {
     setTimeout(() => setCopiedId(false), 2000);
   };
 
+  /**
+   * Handle direct Avatar upload to S3
+   */
+  const handleAvatarFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      setProfileMessage({ type: "error", text: "Please upload an image file (PNG, JPG, WEBP, GIF)." });
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setProfileMessage({ type: "error", text: "Avatar image must be 5MB or smaller." });
+      return;
+    }
+
+    setAvatarUploading(true);
+    setProfileMessage(null);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const res = await fetch("/api/users/avatar", {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Failed to upload avatar to S3.");
+      }
+
+      setImageUrl(data.imageUrl);
+      setProfileMessage({ type: "success", text: "Avatar uploaded to S3 and profile updated." });
+
+      // Refresh router and Better Auth state
+      router.refresh();
+    } catch (err: any) {
+      setProfileMessage({ type: "error", text: err?.message || "Failed to upload avatar." });
+    } finally {
+      setAvatarUploading(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    }
+  };
+
+  /**
+   * Handle Avatar removal from S3
+   */
+  const handleRemoveAvatar = async () => {
+    setAvatarUploading(true);
+    setProfileMessage(null);
+
+    try {
+      const res = await fetch("/api/users/avatar", {
+        method: "DELETE",
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Failed to remove avatar.");
+      }
+
+      setImageUrl("");
+      setProfileMessage({ type: "success", text: "Avatar removed from S3." });
+      router.refresh();
+    } catch (err: any) {
+      setProfileMessage({ type: "error", text: err?.message || "Failed to remove avatar." });
+    } finally {
+      setAvatarUploading(false);
+    }
+  };
+
+  /**
+   * Handle display name profile update
+   */
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     setProfileMessage(null);
@@ -142,7 +222,6 @@ export default function ProfilePage() {
     try {
       const result = await updateUser({
         name: name.trim() || user.name || "",
-        image: imageUrl.trim() || undefined,
       });
 
       if (result.error) {
@@ -158,6 +237,9 @@ export default function ProfilePage() {
     }
   };
 
+  /**
+   * Handle password update
+   */
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setPasswordMessage(null);
@@ -211,7 +293,17 @@ export default function ProfilePage() {
 
   return (
     <div className="h-full overflow-y-auto bg-[#FAF8F5]/50 dark:bg-[#0C0F0D]">
-      <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 pb-20 space-y-8">
+      {/* Hidden file input for S3 avatar upload */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleAvatarFileChange}
+        accept="image/png,image/jpeg,image/webp,image/gif"
+        className="hidden"
+      />
+
+      {/* Full-width container matching Setup, Media, and API Keys pages */}
+      <div className="w-full px-4 sm:px-6 lg:px-8 py-6 sm:py-8 pb-16 space-y-8">
         {/* ========================================================================= */}
         {/* 1. HEADER SECTION                                                         */}
         {/* ========================================================================= */}
@@ -245,34 +337,60 @@ export default function ProfilePage() {
         </div>
 
         {/* ========================================================================= */}
-        {/* 2. EXECUTIVE BENTO ROW: Main Identity Card + Capacity & Security Card     */}
+        {/* 2. EXECUTIVE BENTO ROW: Identity Card + Workspace Capacity Card           */}
         {/* ========================================================================= */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
           {/* Main Identity Doppelrand Card (7 cols) */}
           <div className="lg:col-span-7 rounded-2xl border border-stone-200/80 dark:border-stone-800/80 bg-white/80 dark:bg-stone-900/70 backdrop-blur-md shadow-[0_4px_20px_-4px_rgba(30,45,35,0.06)] p-1.5 flex flex-col justify-between">
-            <div className="h-full rounded-[calc(1rem-0.125rem)] bg-[#FAF8F5]/80 dark:bg-stone-900/90 p-5 sm:p-6 border border-stone-200/60 dark:border-stone-800/60 flex flex-col justify-between space-y-6">
-              {/* Top Profile Summary */}
+            <div className="h-full rounded-[calc(1rem-0.125rem)] bg-[#FAF8F5]/80 dark:bg-stone-900/90 p-5 sm:p-6 border border-stone-200/60 dark:border-stone-800/60 flex flex-col justify-center">
               <div className="flex flex-col sm:flex-row items-start sm:items-center gap-5">
-                {/* Avatar with concentric ring */}
+                {/* Avatar with concentric ring & direct S3 upload trigger */}
                 <div className="relative group shrink-0">
-                  <div className="size-20 sm:size-22 rounded-2xl bg-gradient-to-br from-[#5F7C65] to-[#2D583F] text-white flex items-center justify-center font-bold text-2xl shadow-md border-2 border-white dark:border-stone-800 ring-4 ring-[#5F7C65]/20 overflow-hidden">
-                    {user.image ? (
+                  <div
+                    onClick={() => fileInputRef.current?.click()}
+                    className="size-20 sm:size-22 rounded-2xl bg-gradient-to-br from-[#5F7C65] to-[#2D583F] text-white flex items-center justify-center font-bold text-2xl shadow-md border-2 border-white dark:border-stone-800 ring-4 ring-[#5F7C65]/20 overflow-hidden cursor-pointer relative"
+                    title="Click to upload profile photo to S3"
+                  >
+                    {currentAvatar ? (
                       <img
-                        src={user.image}
+                        src={currentAvatar}
                         alt={user.name || "User Avatar"}
                         className="size-full object-cover"
                       />
                     ) : (
                       <span className="tracking-wider">{initials}</span>
                     )}
+
+                    {/* Hover upload overlay */}
+                    <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white">
+                      {avatarUploading ? (
+                        <Loader2 className="size-6 animate-spin text-white" />
+                      ) : (
+                        <>
+                          <Camera className="size-5 mb-0.5" />
+                          <span className="text-[9px] uppercase font-semibold tracking-wider">Change</span>
+                        </>
+                      )}
+                    </div>
                   </div>
-                  <div className="absolute -bottom-1 -right-1 size-6 rounded-full bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 flex items-center justify-center shadow-xs">
-                    <ShieldCheck className="size-3.5 text-[#5F7C65]" />
-                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={avatarUploading}
+                    className="absolute -bottom-1 -right-1 size-7 rounded-full bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 flex items-center justify-center shadow-xs text-stone-600 dark:text-stone-300 hover:text-[#5F7C65] transition-colors cursor-pointer"
+                    title="Upload photo to S3"
+                  >
+                    {avatarUploading ? (
+                      <Loader2 className="size-3.5 animate-spin text-[#5F7C65]" />
+                    ) : (
+                      <Camera className="size-3.5" />
+                    )}
+                  </button>
                 </div>
 
-                {/* Identity Information */}
-                <div className="flex-1 min-w-0 space-y-1">
+                {/* Identity Information & Actions */}
+                <div className="flex-1 min-w-0 space-y-2">
                   <div className="flex items-center gap-2.5 flex-wrap">
                     <h2 className="text-xl font-semibold tracking-tight text-stone-900 dark:text-stone-100 truncate">
                       {user.name || "Unnamed User"}
@@ -290,7 +408,7 @@ export default function ProfilePage() {
                     <span className="truncate">{user.email}</span>
                   </p>
 
-                  <div className="pt-1 flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap pt-0.5">
                     <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/90 dark:bg-stone-800/90 border border-stone-200/80 dark:border-stone-700/80 text-[11px] font-mono text-stone-600 dark:text-stone-300 shadow-2xs">
                       <Fingerprint className="size-3 text-[#5F7C65] shrink-0" />
                       <span className="truncate max-w-[150px] sm:max-w-[220px]">
@@ -300,7 +418,7 @@ export default function ProfilePage() {
                         type="button"
                         onClick={handleCopyId}
                         title="Copy Sovereign User ID"
-                        className="p-0.5 rounded hover:bg-stone-100 dark:hover:bg-stone-700 text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 transition-colors ml-0.5"
+                        className="p-0.5 rounded hover:bg-stone-100 dark:hover:bg-stone-700 text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 transition-colors ml-0.5 cursor-pointer"
                       >
                         {copiedId ? (
                           <Check className="size-3 text-[#5F7C65]" />
@@ -309,6 +427,7 @@ export default function ProfilePage() {
                         )}
                       </button>
                     </div>
+
                     {copiedId && (
                       <span className="text-[11px] font-medium text-[#2D583F] dark:text-[#8EAE95] animate-fade-in">
                         Copied!
@@ -317,45 +436,12 @@ export default function ProfilePage() {
                   </div>
                 </div>
               </div>
-
-              {/* Bottom Metadata Badges */}
-              <div className="pt-4 border-t border-stone-200/60 dark:border-stone-800/60 grid grid-cols-2 sm:grid-cols-3 gap-3">
-                <div className="p-2.5 rounded-xl bg-white/60 dark:bg-stone-800/40 border border-stone-200/60 dark:border-stone-700/60">
-                  <span className="text-[10px] uppercase font-semibold text-stone-400 dark:text-stone-500 tracking-wider block">
-                    Security Level
-                  </span>
-                  <span className="text-xs font-semibold text-stone-800 dark:text-stone-200 flex items-center gap-1.5 mt-0.5">
-                    <Shield className="size-3.5 text-[#5F7C65]" />
-                    Argon2id Encrypted
-                  </span>
-                </div>
-
-                <div className="p-2.5 rounded-xl bg-white/60 dark:bg-stone-800/40 border border-stone-200/60 dark:border-stone-700/60">
-                  <span className="text-[10px] uppercase font-semibold text-stone-400 dark:text-stone-500 tracking-wider block">
-                    Auth System
-                  </span>
-                  <span className="text-xs font-semibold text-stone-800 dark:text-stone-200 flex items-center gap-1.5 mt-0.5">
-                    <Layers className="size-3.5 text-[#5F7C65]" />
-                    Better Auth Native
-                  </span>
-                </div>
-
-                <div className="col-span-2 sm:col-span-1 p-2.5 rounded-xl bg-white/60 dark:bg-stone-800/40 border border-stone-200/60 dark:border-stone-700/60">
-                  <span className="text-[10px] uppercase font-semibold text-stone-400 dark:text-stone-500 tracking-wider block">
-                    Cloud Connection
-                  </span>
-                  <span className="text-xs font-semibold text-stone-800 dark:text-stone-200 flex items-center gap-1.5 mt-0.5">
-                    <Activity className="size-3.5 text-[#5F7C65]" />
-                    Live Cloud API
-                  </span>
-                </div>
-              </div>
             </div>
           </div>
 
-          {/* Workspace Capacity & Governance Card (5 cols) */}
+          {/* Workspace Capacity Card (5 cols) */}
           <div className="lg:col-span-5 rounded-2xl border border-stone-200/80 dark:border-stone-800/80 bg-white/80 dark:bg-stone-900/70 backdrop-blur-md shadow-[0_4px_20px_-4px_rgba(30,45,35,0.06)] p-1.5 flex flex-col justify-between">
-            <div className="h-full rounded-[calc(1rem-0.125rem)] bg-[#FAF8F5]/80 dark:bg-stone-900/90 p-5 sm:p-6 border border-stone-200/60 dark:border-stone-800/60 flex flex-col justify-between space-y-5">
+            <div className="h-full rounded-[calc(1rem-0.125rem)] bg-[#FAF8F5]/80 dark:bg-stone-900/90 p-5 sm:p-6 border border-stone-200/60 dark:border-stone-800/60 flex flex-col justify-center space-y-4">
               {/* Header */}
               <div className="flex items-center justify-between pb-3 border-b border-stone-200/60 dark:border-stone-800/60">
                 <div className="flex items-center gap-2.5">
@@ -418,14 +504,6 @@ export default function ProfilePage() {
                   />
                 </div>
               </div>
-
-              {/* Security Shield Banner */}
-              <div className="p-3 rounded-xl bg-[#5F7C65]/8 dark:bg-[#5F7C65]/15 border border-[#5F7C65]/20 flex items-center gap-2.5">
-                <ShieldCheck className="size-4 text-[#5F7C65] shrink-0" />
-                <p className="text-[11px] text-[#2D583F] dark:text-[#8EAE95] font-medium leading-tight">
-                  Your credentials and API secrets are protected with hardware-accelerated encryption.
-                </p>
-              </div>
             </div>
           </div>
         </div>
@@ -439,7 +517,7 @@ export default function ProfilePage() {
             <TabsList className="bg-stone-200/60 dark:bg-stone-800/60 p-1 rounded-xl h-auto gap-1 border border-stone-200/70 dark:border-stone-700/70">
               <TabsTrigger
                 value="profile"
-                className="rounded-lg px-4 py-2 text-xs font-semibold text-stone-600 dark:text-stone-400 data-[state=active]:bg-white dark:data-[state=active]:bg-stone-900 data-[state=active]:text-[#2D583F] dark:data-[state=active]:text-[#8EAE95] data-[state=active]:shadow-xs transition-all flex items-center gap-2"
+                className="rounded-lg px-4 py-2 text-xs font-semibold text-stone-600 dark:text-stone-400 data-[state=active]:bg-white dark:data-[state=active]:bg-stone-900 data-[state=active]:text-[#2D583F] dark:data-[state=active]:text-[#8EAE95] data-[state=active]:shadow-xs transition-all flex items-center gap-2 cursor-pointer"
               >
                 <UserIcon className="size-3.5" />
                 <span>Identity &amp; Profile</span>
@@ -447,7 +525,7 @@ export default function ProfilePage() {
 
               <TabsTrigger
                 value="security"
-                className="rounded-lg px-4 py-2 text-xs font-semibold text-stone-600 dark:text-stone-400 data-[state=active]:bg-white dark:data-[state=active]:bg-stone-900 data-[state=active]:text-[#2D583F] dark:data-[state=active]:text-[#8EAE95] data-[state=active]:shadow-xs transition-all flex items-center gap-2"
+                className="rounded-lg px-4 py-2 text-xs font-semibold text-stone-600 dark:text-stone-400 data-[state=active]:bg-white dark:data-[state=active]:bg-stone-900 data-[state=active]:text-[#2D583F] dark:data-[state=active]:text-[#8EAE95] data-[state=active]:shadow-xs transition-all flex items-center gap-2 cursor-pointer"
               >
                 <KeyRound className="size-3.5" />
                 <span>Password &amp; Credentials</span>
@@ -455,7 +533,7 @@ export default function ProfilePage() {
 
               <TabsTrigger
                 value="sessions"
-                className="rounded-lg px-4 py-2 text-xs font-semibold text-stone-600 dark:text-stone-400 data-[state=active]:bg-white dark:data-[state=active]:bg-stone-900 data-[state=active]:text-[#2D583F] dark:data-[state=active]:text-[#8EAE95] data-[state=active]:shadow-xs transition-all flex items-center gap-2"
+                className="rounded-lg px-4 py-2 text-xs font-semibold text-stone-600 dark:text-stone-400 data-[state=active]:bg-white dark:data-[state=active]:bg-stone-900 data-[state=active]:text-[#2D583F] dark:data-[state=active]:text-[#8EAE95] data-[state=active]:shadow-xs transition-all flex items-center gap-2 cursor-pointer"
               >
                 <Shield className="size-3.5" />
                 <span>System Security</span>
@@ -468,7 +546,7 @@ export default function ProfilePage() {
           </div>
 
           {/* ======================================================================= */}
-          {/* TAB 1: IDENTITY & PROFILE                                              */}
+          {/* TAB 1: IDENTITY & PROFILE (with S3 Avatar Upload & Display Name)        */}
           {/* ======================================================================= */}
           <TabsContent value="profile" className="focus-visible:outline-none">
             <div className="rounded-2xl border border-stone-200/80 dark:border-stone-800/80 bg-white/80 dark:bg-stone-900/70 backdrop-blur-md shadow-[0_4px_20px_-4px_rgba(30,45,35,0.06)] p-1.5">
@@ -483,7 +561,7 @@ export default function ProfilePage() {
                       Personal Identity &amp; Profile Details
                     </h3>
                     <p className="text-xs text-stone-500 dark:text-stone-400 mt-0.5">
-                      Your display name is visible across chat conversations and message audit records.
+                      Your display name and avatar photo are visible across chat conversations and message audit records.
                     </p>
                   </div>
                 </div>
@@ -505,8 +583,71 @@ export default function ProfilePage() {
                   </div>
                 )}
 
-                <form onSubmit={handleUpdateProfile} className="space-y-6 max-w-2xl">
-                  {/* Grid for Name and Avatar */}
+                {/* S3 Avatar Upload Section */}
+                <div className="p-4 sm:p-5 rounded-2xl border border-stone-200/80 dark:border-stone-700/80 bg-white/70 dark:bg-stone-800/40 space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="flex items-center gap-4">
+                      <div className="relative size-14 rounded-2xl bg-gradient-to-br from-[#5F7C65] to-[#2D583F] text-white flex items-center justify-center font-bold text-lg shadow-sm border border-stone-200 dark:border-stone-700 overflow-hidden shrink-0">
+                        {currentAvatar ? (
+                          <img
+                            src={currentAvatar}
+                            alt={user.name || "Avatar Preview"}
+                            className="size-full object-cover"
+                          />
+                        ) : (
+                          <span>{initials}</span>
+                        )}
+                        {avatarUploading && (
+                          <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                            <Loader2 className="size-5 animate-spin text-white" />
+                          </div>
+                        )}
+                      </div>
+
+                      <div>
+                        <h4 className="text-xs font-semibold text-stone-900 dark:text-stone-100">
+                          Profile Avatar
+                        </h4>
+                        <p className="text-[11px] text-stone-500 dark:text-stone-400 mt-0.5 leading-relaxed">
+                          Upload a PNG, JPG, or WEBP (up to 5MB). Automatically saved to your private S3 bucket and replaces previous avatars.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={avatarUploading}
+                        className="h-9 px-4 rounded-xl bg-[#5F7C65] hover:bg-[#526D57] text-white text-xs font-semibold shadow-xs flex items-center gap-2 cursor-pointer"
+                      >
+                        {avatarUploading ? (
+                          <Loader2 className="size-3.5 animate-spin mr-1" />
+                        ) : (
+                          <Upload className="size-3.5" />
+                        )}
+                        <span>{currentAvatar ? "Change Avatar" : "Upload Avatar"}</span>
+                      </Button>
+
+                      {currentAvatar && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={handleRemoveAvatar}
+                          disabled={avatarUploading}
+                          className="h-9 px-3 rounded-xl border-stone-200/80 dark:border-stone-700 text-stone-600 dark:text-stone-400 hover:text-red-700 hover:bg-red-50/50 dark:hover:bg-red-950/20 text-xs font-medium cursor-pointer"
+                          title="Remove avatar from S3"
+                        >
+                          <Trash2 className="size-3.5" />
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Profile Form */}
+                <form onSubmit={handleUpdateProfile} className="space-y-6">
+                  {/* Grid for Name and Email */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                     {/* Display Name Input */}
                     <div>
@@ -532,61 +673,37 @@ export default function ProfilePage() {
                       </p>
                     </div>
 
-                    {/* Avatar Image URL Input */}
+                    {/* Primary Sovereign Email (Read-only) */}
                     <div>
-                      <Label
-                        htmlFor="avatarUrl"
-                        className="text-xs font-semibold text-stone-700 dark:text-stone-300 block mb-1.5"
-                      >
-                        Avatar Image URL (Optional)
-                      </Label>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <Label
+                          htmlFor="accountEmail"
+                          className="text-xs font-semibold text-stone-700 dark:text-stone-300"
+                        >
+                          Primary Account Email
+                        </Label>
+                        <span className="text-[11px] font-semibold text-[#2D583F] dark:text-[#8EAE95] flex items-center gap-1">
+                          <ShieldCheck className="size-3.5 text-[#5F7C65]" />
+                          Sovereign Identifier
+                        </span>
+                      </div>
                       <div className="relative">
-                        <Camera className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-stone-400" />
+                        <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-stone-400" />
                         <Input
-                          id="avatarUrl"
-                          type="url"
-                          value={imageUrl}
-                          onChange={(e) => setImageUrl(e.target.value)}
-                          placeholder="https://example.com/avatar.jpg"
-                          className="pl-10 h-11 rounded-xl bg-white dark:bg-stone-800/80 border-stone-200 dark:border-stone-700 focus-visible:ring-[#5F7C65]"
+                          id="accountEmail"
+                          type="email"
+                          disabled
+                          value={user.email}
+                          className="pl-10 h-11 rounded-xl bg-stone-100/70 dark:bg-stone-800/40 border-stone-200/80 dark:border-stone-700 text-stone-600 dark:text-stone-400 cursor-not-allowed font-medium"
                         />
                       </div>
                       <p className="text-[11px] text-stone-400 mt-1">
-                        Direct public image link or S3 media asset.
+                        Account email is permanently linked to your authentication credentials.
                       </p>
                     </div>
                   </div>
 
-                  {/* Primary Sovereign Email (Read-only) */}
-                  <div>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <Label
-                        htmlFor="accountEmail"
-                        className="text-xs font-semibold text-stone-700 dark:text-stone-300"
-                      >
-                        Primary Account Email
-                      </Label>
-                      <span className="text-[11px] font-semibold text-[#2D583F] dark:text-[#8EAE95] flex items-center gap-1">
-                        <ShieldCheck className="size-3.5 text-[#5F7C65]" />
-                        Sovereign Identifier
-                      </span>
-                    </div>
-                    <div className="relative">
-                      <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-stone-400" />
-                      <Input
-                        id="accountEmail"
-                        type="email"
-                        disabled
-                        value={user.email}
-                        className="pl-10 h-11 rounded-xl bg-stone-100/70 dark:bg-stone-800/40 border-stone-200/80 dark:border-stone-700 text-stone-600 dark:text-stone-400 cursor-not-allowed font-medium"
-                      />
-                    </div>
-                    <p className="text-[11px] text-stone-400 mt-1">
-                      Account email is permanently linked to your authentication provider for sovereign security.
-                    </p>
-                  </div>
-
-                  {/* Save Profile Button with Button-in-Button architecture */}
+                  {/* Save Profile Button */}
                   <div className="pt-2">
                     <button
                       type="submit"
@@ -670,7 +787,7 @@ export default function ProfilePage() {
                       <button
                         type="button"
                         onClick={() => setShowCurrentPassword(!showCurrentPassword)}
-                        className="absolute right-3.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 dark:hover:text-stone-200"
+                        className="absolute right-3.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 cursor-pointer"
                         title={showCurrentPassword ? "Hide password" : "Show password"}
                       >
                         {showCurrentPassword ? (
@@ -715,7 +832,7 @@ export default function ProfilePage() {
                       <button
                         type="button"
                         onClick={() => setShowNewPassword(!showNewPassword)}
-                        className="absolute right-3.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 dark:hover:text-stone-200"
+                        className="absolute right-3.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 cursor-pointer"
                         title={showNewPassword ? "Hide password" : "Show password"}
                       >
                         {showNewPassword ? (
@@ -825,7 +942,7 @@ export default function ProfilePage() {
                       <button
                         type="button"
                         onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                        className="absolute right-3.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 dark:hover:text-stone-200"
+                        className="absolute right-3.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 cursor-pointer"
                         title={showConfirmPassword ? "Hide password" : "Show password"}
                       >
                         {showConfirmPassword ? (
@@ -979,7 +1096,7 @@ export default function ProfilePage() {
                         },
                       })
                     }
-                    className="h-9 px-4 rounded-xl text-xs font-semibold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 border-red-200 dark:border-red-900/50"
+                    className="h-9 px-4 rounded-xl text-xs font-semibold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 border-red-200 dark:border-red-900/50 cursor-pointer"
                   >
                     <LogOut className="size-3.5 mr-1.5" />
                     Sign Out Now

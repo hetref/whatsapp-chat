@@ -3,7 +3,9 @@ import {
   PutObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
-  DeleteObjectCommand
+  DeleteObjectCommand,
+  ListObjectsV2Command,
+  DeleteObjectsCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
@@ -404,6 +406,126 @@ export async function generatePresignedUrlByKey(
     return presignedUrl;
   } catch (error) {
     console.error('Error generating presigned URL by key:', error);
+    return null;
+  }
+}
+
+/**
+ * Upload User Avatar to S3 and clean up any existing avatar files for that user.
+ * Guarantees no orphaned or duplicated avatar files for the user.
+ */
+export async function uploadUserAvatar(
+  userId: string,
+  fileBuffer: Buffer,
+  mimeType: string
+): Promise<{ s3Key: string; ext: string }> {
+  const ext = getFileExtensionFromMimeType(mimeType) || 'jpg';
+  const prefix = `avatars/${userId}/`;
+  const newKey = `${prefix}avatar_${Date.now()}.${ext}`;
+
+  // 1. List and delete any previous avatar files under avatars/${userId}/
+  try {
+    const listCmd = new ListObjectsV2Command({
+      Bucket: BUCKET_NAME,
+      Prefix: prefix,
+    });
+    const listRes = await s3Client.send(listCmd);
+    if (listRes.Contents && listRes.Contents.length > 0) {
+      const objectsToDelete = listRes.Contents.map((obj) => ({ Key: obj.Key! }));
+      const deleteCmd = new DeleteObjectsCommand({
+        Bucket: BUCKET_NAME,
+        Delete: { Objects: objectsToDelete },
+      });
+      await s3Client.send(deleteCmd);
+      console.log(`[S3 Avatar] Cleaned up ${objectsToDelete.length} existing avatar(s) for user ${userId}`);
+    }
+  } catch (err) {
+    console.warn(`[S3 Avatar] Error cleaning previous avatars for user ${userId}:`, err);
+  }
+
+  // 2. Upload the new avatar
+  const uploadCmd = new PutObjectCommand({
+    Bucket: BUCKET_NAME,
+    Key: newKey,
+    Body: fileBuffer,
+    ContentType: mimeType,
+    ACL: 'private',
+    Metadata: {
+      'user-id': userId,
+      'upload-timestamp': new Date().toISOString(),
+      'content-type': mimeType,
+    },
+  });
+
+  await s3Client.send(uploadCmd);
+  console.log(`[S3 Avatar] Successfully uploaded avatar to ${newKey}`);
+
+  return { s3Key: newKey, ext };
+}
+
+/**
+ * Delete any avatars for a user
+ */
+export async function deleteUserAvatar(userId: string): Promise<boolean> {
+  const prefix = `avatars/${userId}/`;
+  try {
+    const listCmd = new ListObjectsV2Command({
+      Bucket: BUCKET_NAME,
+      Prefix: prefix,
+    });
+    const listRes = await s3Client.send(listCmd);
+    if (listRes.Contents && listRes.Contents.length > 0) {
+      const objectsToDelete = listRes.Contents.map((obj) => ({ Key: obj.Key! }));
+      const deleteCmd = new DeleteObjectsCommand({
+        Bucket: BUCKET_NAME,
+        Delete: { Objects: objectsToDelete },
+      });
+      await s3Client.send(deleteCmd);
+      console.log(`[S3 Avatar] Deleted ${objectsToDelete.length} avatar(s) for user ${userId}`);
+    }
+    return true;
+  } catch (err) {
+    console.error(`[S3 Avatar] Failed to delete avatars for user ${userId}:`, err);
+    return false;
+  }
+}
+
+/**
+ * Fetch Avatar Object from S3 for streaming
+ */
+export async function getUserAvatarStream(userId: string): Promise<{ buffer: Buffer; contentType: string } | null> {
+  const prefix = `avatars/${userId}/`;
+  try {
+    const listCmd = new ListObjectsV2Command({
+      Bucket: BUCKET_NAME,
+      Prefix: prefix,
+    });
+    const listRes = await s3Client.send(listCmd);
+    if (!listRes.Contents || listRes.Contents.length === 0) {
+      return null;
+    }
+
+    // Sort by LastModified desc to get newest
+    const latest = listRes.Contents.sort((a, b) => 
+      (b.LastModified?.getTime() || 0) - (a.LastModified?.getTime() || 0)
+    )[0];
+
+    if (!latest?.Key) return null;
+
+    const getCmd = new GetObjectCommand({
+      Bucket: BUCKET_NAME,
+      Key: latest.Key,
+    });
+    const response = await s3Client.send(getCmd);
+    if (!response.Body) return null;
+
+    const byteArray = await response.Body.transformToByteArray();
+    return {
+      buffer: Buffer.from(byteArray),
+      contentType: response.ContentType || 'image/jpeg',
+    };
+  } catch (err) {
+    console.error(`[S3 Avatar] Error fetching avatar for user ${userId}:`, err);
     return null;
   }
 } 

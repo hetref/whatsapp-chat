@@ -152,16 +152,17 @@ The sidebar is the persistent visual anchor for the application. It must embody 
 - **Floating Collapse Toggle**:
   - Tactile circular pill on the border with smooth chevron rotation.
 
-### E. Internal Settings & Workspace Configuration Pages (`/protected/setup`, `/protected/api-keys`, etc.)
+### E. Internal Settings & Workspace Configuration Pages (`/protected/profile`, `/protected/setup`, `/protected/media`, `/protected/api-keys`, etc.)
 
 Internal configuration pages must maintain identical aesthetic harmony with the rest of the sovereign SaaS platform:
 
-1. **Page Canvas & Header Architecture**:
+1. **Page Canvas & Full-Width Architecture**:
    - Background: `bg-[#FAF8F5]/50 dark:bg-[#0C0F0D]` flowing naturally from the layout.
-   - Width: **Full-width layouts** (`w-full px-4 sm:px-6 lg:px-8 py-6 sm:py-8 pb-16`) rather than restrictive boxed `max-w-5xl` wrappers. Avoid dead side margins on widescreen monitors.
+   - Width: **Full-width layouts** (`w-full px-4 sm:px-6 lg:px-8 py-6 sm:py-8 pb-16`) across ALL workspace and settings pages (`/protected/profile`, `/protected/setup`, `/protected/media`, `/protected/api-keys`, etc.) rather than restrictive boxed `max-w-5xl` or `max-w-6xl` wrappers. Avoid dead side margins or excessive blank whitespace on widescreen displays.
    - Eyebrow Badge: Pill with `LogoIcon` (`bg-[#5F7C65]/10 text-[#2D583F] dark:text-[#8EAE95] border border-[#5F7C65]/20`).
    - Headline: `text-2xl sm:text-3xl font-semibold tracking-[-0.035em] text-stone-900 dark:text-stone-100` featuring selective `font-[Georgia,serif] italic font-normal text-[#2D583F] dark:text-[#8EAE95]` accents.
    - Subtitle: `text-stone-600 dark:text-stone-400 text-sm sm:text-base mt-1.5 max-w-2xl leading-relaxed`.
+   - Profile Avatars: Direct S3 file uploads per user (`avatars/${userId}/...`) with automated cleanup of previous avatar files, eliminating duplication and URL inputs.
 
 2. **Status Enclosures (Doppelrand Architecture)**:
    - Primary status containers feature nested concentric geometry: outer shell `rounded-2xl border border-stone-200/80 dark:border-stone-800/80 bg-white/80 dark:bg-stone-900/70 backdrop-blur-md p-1.5 shadow-[0_4px_20px_-4px_rgba(30,45,35,0.06)]`, inner core `rounded-[calc(1rem-0.125rem)] bg-[#FAF8F5]/80 dark:bg-stone-900/90 p-5 sm:p-6 border border-stone-200/60 dark:border-stone-800/60`.
