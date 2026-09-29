@@ -54,6 +54,7 @@ export async function GET() {
 
     const isConnected = data.status === 'CONNECTED';
     const isVerified = data.code_verification_status === 'VERIFIED';
+    const isPinEnabled = Boolean(data.is_pin_enabled);
 
     return NextResponse.json({
       success: true,
@@ -62,6 +63,8 @@ export async function GET() {
       code_verification_status: data.code_verification_status || 'UNKNOWN',
       is_connected: isConnected,
       is_verified: isVerified,
+      is_pin_enabled: isPinEnabled,
+      registration_needed: !isConnected,
       display_phone_number: data.display_phone_number,
       verified_name: data.verified_name,
       quality_rating: data.quality_rating,
@@ -144,6 +147,8 @@ export async function POST(request: NextRequest) {
 
       if (subcode === 2388001 || (userTitle && userTitle.includes('Cannot create certificate'))) {
         errorDetails = userMsg || 'This number is registered to an existing WhatsApp account. To use this number with WhatsApp Cloud API, open the WhatsApp or WhatsApp Business app on your phone, go to Settings > Account > Delete my account. Wait 3 minutes, then click Register here again.';
+      } else if (subcode === 133005 || (err.message && err.message.toLowerCase().includes('pin'))) {
+        errorDetails = 'Two-step verification PIN is incorrect. If two-factor authentication is configured in Meta Business Suite for this number, please enter that 6-digit PIN and click Register again.';
       }
 
       return NextResponse.json(
@@ -162,7 +167,7 @@ export async function POST(request: NextRequest) {
     let updatedPhoneData = null;
     try {
       const queryRes = await fetch(
-        `https://graph.facebook.com/${apiVersion}/${settings.phoneNumberId}?fields=id,display_phone_number,verified_name,code_verification_status,quality_rating,status`,
+        `https://graph.facebook.com/${apiVersion}/${settings.phoneNumberId}?fields=id,display_phone_number,verified_name,code_verification_status,quality_rating,status,is_pin_enabled`,
         {
           headers: {
             Authorization: `Bearer ${settings.accessToken}`,
@@ -176,11 +181,27 @@ export async function POST(request: NextRequest) {
       console.warn('[Register Phone] Error querying updated status:', queryErr);
     }
 
+    // Sync phone number or verified name to database if available
+    try {
+      if (updatedPhoneData?.display_phone_number || updatedPhoneData?.verified_name) {
+        await prisma.userSettings.update({
+          where: { id: userId },
+          data: {
+            phoneNumber: updatedPhoneData.display_phone_number ? updatedPhoneData.display_phone_number.replace(/\D/g, '') : undefined,
+            fullName: updatedPhoneData.verified_name || undefined,
+          },
+        });
+      }
+    } catch (syncErr) {
+      console.warn('[Register Phone] Error syncing settings in DB:', syncErr);
+    }
+
     return NextResponse.json({
       success: true,
       message: 'Phone number registered successfully with WhatsApp Cloud API! You can now send messages.',
       meta_response: result,
       phone_data: updatedPhoneData,
+      is_connected: updatedPhoneData?.status === 'CONNECTED',
     });
   } catch (error: unknown) {
     console.error('[Register Phone POST] Error:', error);

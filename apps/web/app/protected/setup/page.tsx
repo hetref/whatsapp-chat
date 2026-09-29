@@ -186,6 +186,8 @@ export default function SetupPage() {
     code_verification_status?: string;
     is_connected?: boolean;
     is_verified?: boolean;
+    is_pin_enabled?: boolean;
+    registration_needed?: boolean;
     display_phone_number?: string;
     verified_name?: string;
     quality_rating?: string;
@@ -355,6 +357,7 @@ export default function SetupPage() {
         });
       }
       await loadSettings();
+      await checkPhoneRegistration();
     } catch (err) {
       console.warn("Error syncing phone / webhook subscription:", err);
     } finally {
@@ -395,10 +398,15 @@ export default function SetupPage() {
           code_verification_status: data.code_verification_status,
           is_connected: data.is_connected,
           is_verified: data.is_verified,
+          is_pin_enabled: data.is_pin_enabled,
+          registration_needed: data.registration_needed,
           display_phone_number: data.display_phone_number,
           verified_name: data.verified_name,
           quality_rating: data.quality_rating,
         });
+        if (data.is_pin_enabled) {
+          setShowPinInput(true);
+        }
       }
     } catch (e) {
       console.warn("Failed to check phone registration:", e);
@@ -409,28 +417,33 @@ export default function SetupPage() {
 
   // Automatically check registration status when settings change
   useEffect(() => {
-    if (settings?.has_access_token && settings?.phone_number_id) {
+    if (settings?.has_access_token && (settings?.phone_number_id || settings?.has_phone_number_id)) {
       checkPhoneRegistration();
     }
-  }, [settings?.has_access_token, settings?.phone_number_id, checkPhoneRegistration]);
+  }, [settings?.has_access_token, settings?.phone_number_id, settings?.has_phone_number_id, checkPhoneRegistration]);
 
   // Register phone number with WhatsApp Cloud API using 6-digit PIN
-  const handleRegisterPhone = async (e?: React.FormEvent) => {
+  const handleRegisterPhone = async (e?: React.FormEvent, customPin?: string) => {
     if (e) e.preventDefault();
     setRegisteringPhone(true);
     setPhoneRegError(null);
     setPhoneRegSuccess(null);
+    const pinToSubmit = (customPin || phonePin || "123456").trim();
     try {
       const res = await fetch("/api/settings/register-phone", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pin: phonePin }),
+        body: JSON.stringify({ pin: pinToSubmit }),
       });
       const data = await res.json();
       if (!res.ok || !data.success) {
-        throw new Error(data.error || "Failed to register phone number with Meta");
+        const errMessage = data.error || "Failed to register phone number with Meta";
+        if (errMessage.toLowerCase().includes("pin") || data.error_subcode === 133005) {
+          setShowPinInput(true);
+        }
+        throw new Error(errMessage);
       }
-      setPhoneRegSuccess("Phone number registered successfully! Status is now Connected. You can now send WhatsApp messages.");
+      setPhoneRegSuccess("Phone number registered successfully on Meta Cloud API! Status is now Connected & Active.");
       setShowPinInput(false);
       await checkPhoneRegistration();
       await loadSettings();
@@ -569,6 +582,7 @@ export default function SetupPage() {
         setSettings(data.settings);
       }
       await loadSettings();
+      await checkPhoneRegistration();
     } catch (err: unknown) {
       console.error("Embedded Signup error:", err);
       setEmbeddedError(err instanceof Error ? err.message : "Failed to connect WhatsApp account");
@@ -855,6 +869,7 @@ export default function SetupPage() {
           setSettings(data.settings);
         }
         await loadSettings();
+        await checkPhoneRegistration();
       } else if (conflictInfo.source === "manual" && conflictInfo.manualPayload) {
         const response = await fetch("/api/settings/save", {
           method: "POST",
@@ -874,6 +889,7 @@ export default function SetupPage() {
         setConflictDialogOpen(false);
         setConflictInfo(null);
         await loadSettings();
+        await checkPhoneRegistration();
         setTimeout(() => setAccessTokenSuccess(false), 3000);
       }
     } catch (err: unknown) {
@@ -1212,6 +1228,113 @@ export default function SetupPage() {
                   </div>
                 )}
 
+                {/* Action Required: Cloud API Registration Banner */}
+                {phoneRegStatus && phoneRegStatus.status !== "CONNECTED" && (
+                  <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/25 space-y-3 mt-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="flex items-start gap-2.5">
+                        <AlertCircle className="size-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                        <div>
+                          <div className="font-semibold text-sm text-amber-900 dark:text-amber-200 flex items-center gap-2 flex-wrap">
+                            <span>Phone Registration Required with Meta Cloud API</span>
+                            {phoneRegStatus.is_pin_enabled ? (
+                              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-800 dark:text-amber-300 border border-amber-500/30">
+                                2FA PIN Enabled on Meta
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-stone-500/15 text-stone-700 dark:text-stone-300">
+                                Standard PIN (123456)
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-amber-800/90 dark:text-amber-300/90 mt-0.5">
+                            This phone number is verified with Meta, but Cloud API registration is required before WhatsApp allows sending or receiving messages.
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <Button
+                          type="button"
+                          onClick={() => handleRegisterPhone()}
+                          disabled={registeringPhone}
+                          className="rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-medium h-9 px-4 shadow-sm flex items-center gap-1.5 transition-all active:scale-[0.98]"
+                        >
+                          {registeringPhone ? (
+                            <>
+                              <Loader2 className="size-3.5 animate-spin mr-1" />
+                              Registering on Meta...
+                            </>
+                          ) : (
+                            <>
+                              <Zap className="size-3.5" />
+                              Register Phone Now
+                            </>
+                          )}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setShowPinInput(!showPinInput)}
+                          className="rounded-xl border-amber-500/30 text-amber-800 dark:text-amber-300 hover:bg-amber-500/10 text-xs h-9 px-3"
+                        >
+                          {showPinInput ? "Hide PIN" : "Edit PIN"}
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* PIN Customization Row */}
+                    {showPinInput && (
+                      <div className="pt-2.5 border-t border-amber-500/20 flex flex-col sm:flex-row sm:items-center gap-3 text-xs">
+                        <div className="flex items-center gap-2">
+                          <Label htmlFor="reg-pin" className="text-xs font-medium text-amber-900 dark:text-amber-200 shrink-0">
+                            6-Digit Security PIN:
+                          </Label>
+                          <Input
+                            id="reg-pin"
+                            type="password"
+                            maxLength={6}
+                            value={phonePin}
+                            onChange={(e) => setPhonePin(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                            placeholder="123456"
+                            className="w-28 h-8 text-center font-mono tracking-widest text-xs rounded-lg border-amber-500/30 bg-white dark:bg-stone-900"
+                          />
+                        </div>
+                        <p className="text-[11px] text-amber-700 dark:text-amber-400">
+                          {phoneRegStatus.is_pin_enabled
+                            ? "Meta has Two-Step Verification active. Enter the 6-digit PIN configured in Meta Business Manager."
+                            : "Default PIN is 123456. You can keep this or enter your custom 6-digit PIN."}
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Error Notice */}
+                    {phoneRegError && (
+                      <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/25 text-red-700 dark:text-red-300 text-xs flex items-start gap-2">
+                        <AlertCircle className="size-4 shrink-0 text-red-600 mt-0.5" />
+                        <div className="space-y-1">
+                          <div className="font-semibold">Registration Error:</div>
+                          <div>{phoneRegError}</div>
+                          {phoneRegError.toLowerCase().includes("pin") && (
+                            <div className="text-[11px] text-red-600 dark:text-red-400">
+                              💡 Tip: Click &quot;Edit PIN&quot; above and enter the exact 6-digit PIN set in WhatsApp Manager (Phone Numbers &gt; Two-step verification).
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Success Notice */}
+                    {phoneRegSuccess && (
+                      <div className="p-3 rounded-lg bg-green-500/10 border border-green-500/25 text-green-700 dark:text-green-300 text-xs flex items-center gap-2">
+                        <CheckCircle2 className="size-4 shrink-0 text-green-600" />
+                        <span>{phoneRegSuccess}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* 4-Item Metadata Grid */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-5">
                   {/* Card 1: Connected Phone */}
@@ -1226,11 +1349,30 @@ export default function SetupPage() {
                           <span className="size-1 rounded-full bg-[#5F7C65]" />
                           Registered &amp; Active
                         </span>
-                      ) : phoneRegStatus?.code_verification_status === 'VERIFIED' ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold tracking-wide uppercase bg-amber-500/10 text-amber-800 dark:text-amber-300 border border-amber-500/20">
-                          Verified (Registration Needed)
-                        </span>
-                      ) : null}
+                      ) : (
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold tracking-wide uppercase bg-amber-500/10 text-amber-800 dark:text-amber-300 border border-amber-500/20">
+                            {phoneRegStatus?.status === 'PENDING'
+                              ? 'Pending Approval'
+                              : 'Verified (Registration Needed)'}
+                          </span>
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={() => handleRegisterPhone()}
+                            disabled={registeringPhone}
+                            className="h-6 px-2.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-[11px] font-medium shadow-2xs flex items-center gap-1 transition-all active:scale-95"
+                            title="Register phone with Meta Cloud API"
+                          >
+                            {registeringPhone ? (
+                              <Loader2 className="size-3 animate-spin" />
+                            ) : (
+                              <Zap className="size-3" />
+                            )}
+                            {registeringPhone ? "Registering..." : "Register"}
+                          </Button>
+                        </div>
+                      )}
                     </div>
                     <p className="text-base sm:text-lg font-bold text-stone-900 dark:text-stone-100 font-mono tracking-tight">
                       {settings?.phone_number || settings?.phone_number_id || "WhatsApp Account (WABA Active)"}
@@ -1243,6 +1385,45 @@ export default function SetupPage() {
                       <p className="text-xs text-stone-500 dark:text-stone-400">
                         Account linked via Meta Embedded Signup
                       </p>
+                    )}
+
+                    {/* Quick Register Action inside Card 1 */}
+                    {phoneRegStatus && phoneRegStatus.status !== 'CONNECTED' && (
+                      <div className="mt-2.5 pt-2.5 border-t border-stone-200/70 dark:border-stone-800/70 flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-amber-500/5 dark:bg-amber-500/10 -mx-4 -mb-4 p-3 rounded-b-xl border-t border-amber-500/20">
+                        <div className="text-[11px] text-amber-800 dark:text-amber-300">
+                          {phoneRegStatus.is_pin_enabled ? (
+                            <span>Meta Two-Factor Auth detected. Ready to register.</span>
+                          ) : (
+                            <span>One-click registration needed to send &amp; receive messages.</span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={() => handleRegisterPhone()}
+                            disabled={registeringPhone}
+                            className="h-7 px-3 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-medium shadow-xs flex items-center gap-1.5 transition-all active:scale-95"
+                          >
+                            {registeringPhone ? (
+                              <Loader2 className="size-3 animate-spin" />
+                            ) : (
+                              <Zap className="size-3" />
+                            )}
+                            {registeringPhone ? "Registering..." : "Register Phone"}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setShowPinInput(!showPinInput)}
+                            className="h-7 px-2 text-[11px] rounded-lg border-amber-500/30 text-amber-800 dark:text-amber-300 hover:bg-amber-500/15"
+                            title="Configure 6-digit PIN"
+                          >
+                            {showPinInput ? "Hide PIN" : "PIN"}
+                          </Button>
+                        </div>
+                      </div>
                     )}
                   </div>
 
