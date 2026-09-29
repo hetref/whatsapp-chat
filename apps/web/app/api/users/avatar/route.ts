@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import {
   uploadUserAvatar,
   deleteUserAvatar,
+  getUserAvatarPresignedUrl,
   getUserAvatarStream,
 } from '@/lib/aws-s3';
 
@@ -11,7 +12,7 @@ export const runtime = 'nodejs';
 
 /**
  * GET /api/users/avatar
- * Serves the user avatar directly from S3 with HTTP caching headers.
+ * Redirects to a fresh, secure S3 presigned URL for the user's avatar.
  * Query params: ?userId=<userId>
  */
 export async function GET(request: NextRequest) {
@@ -28,19 +29,32 @@ export async function GET(request: NextRequest) {
       return new NextResponse('User ID required', { status: 400 });
     }
 
-    const avatarStream = await getUserAvatarStream(targetUserId);
-    if (!avatarStream) {
-      return new NextResponse('Avatar not found', { status: 404 });
+    // 1. Try generating a 7-day presigned URL for the user's avatar
+    const presignedUrl = await getUserAvatarPresignedUrl(targetUserId, 604800);
+    if (presignedUrl) {
+      // Fast redirect to the secure S3 presigned URL
+      return NextResponse.redirect(presignedUrl, {
+        status: 307,
+        headers: {
+          'Cache-Control': 'public, max-age=3600, stale-while-revalidate=86400',
+        },
+      });
     }
 
-    return new NextResponse(avatarStream.buffer as unknown as BodyInit, {
-      status: 200,
-      headers: {
-        'Content-Type': avatarStream.contentType,
-        'Content-Length': avatarStream.buffer.length.toString(),
-        'Cache-Control': 'public, max-age=86400, stale-while-revalidate=604800',
-      },
-    });
+    // 2. Fallback: stream bytes directly if redirect is unavailable
+    const avatarStream = await getUserAvatarStream(targetUserId);
+    if (avatarStream) {
+      return new NextResponse(avatarStream.buffer as unknown as BodyInit, {
+        status: 200,
+        headers: {
+          'Content-Type': avatarStream.contentType,
+          'Content-Length': avatarStream.buffer.length.toString(),
+          'Cache-Control': 'public, max-age=86400, stale-while-revalidate=604800',
+        },
+      });
+    }
+
+    return new NextResponse('Avatar not found', { status: 404 });
   } catch (error) {
     console.error('[API /users/avatar GET] Error serving avatar:', error);
     return new NextResponse('Internal Server Error', { status: 500 });
@@ -49,8 +63,8 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST /api/users/avatar
- * Uploads a new user avatar to S3, automatically cleans up any previous avatar files,
- * and updates user.image in the database.
+ * Uploads a new user avatar to S3 using a single deterministic key `avatars/${userId}/avatar`.
+ * Atomically replaces previous avatars (no duplicate files) and returns the secure image URL.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -80,10 +94,10 @@ export async function POST(request: NextRequest) {
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    // Upload to S3 & delete any previous avatar files for this user
-    await uploadUserAvatar(userId, buffer, file.type);
+    // Upload to S3 & generate presigned URL
+    const { presignedUrl } = await uploadUserAvatar(userId, buffer, file.type);
 
-    // Reference URL with cache-busting timestamp
+    // Stable endpoint with cache-busting timestamp
     const avatarUrl = `/api/users/avatar?userId=${encodeURIComponent(userId)}&v=${Date.now()}`;
 
     // Update database user record
@@ -98,7 +112,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       imageUrl: avatarUrl,
-      message: 'Avatar uploaded and updated successfully.',
+      presignedUrl,
+      message: 'Avatar uploaded to S3 successfully.',
     });
   } catch (error: any) {
     console.error('[API /users/avatar POST] Error uploading avatar:', error);
@@ -120,7 +135,7 @@ export async function DELETE() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Delete all avatar files in S3 for this user
+    // Delete avatar in S3
     await deleteUserAvatar(userId);
 
     // Clear user image in database

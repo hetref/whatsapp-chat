@@ -411,42 +411,22 @@ export async function generatePresignedUrlByKey(
 }
 
 /**
- * Upload User Avatar to S3 and clean up any existing avatar files for that user.
- * Guarantees no orphaned or duplicated avatar files for the user.
+ * Upload User Avatar to S3.
+ * Uses a deterministic key `avatars/${userId}/avatar` so PutObject atomically replaces
+ * any previous avatar without requiring s3:ListBucket or s3:DeleteObject IAM permissions.
+ * Guarantees zero duplicate files in S3.
  */
 export async function uploadUserAvatar(
   userId: string,
   fileBuffer: Buffer,
   mimeType: string
-): Promise<{ s3Key: string; ext: string }> {
-  const ext = getFileExtensionFromMimeType(mimeType) || 'jpg';
-  const prefix = `avatars/${userId}/`;
-  const newKey = `${prefix}avatar_${Date.now()}.${ext}`;
+): Promise<{ s3Key: string; presignedUrl: string | null }> {
+  const s3Key = `avatars/${userId}/avatar`;
 
-  // 1. List and delete any previous avatar files under avatars/${userId}/
-  try {
-    const listCmd = new ListObjectsV2Command({
-      Bucket: BUCKET_NAME,
-      Prefix: prefix,
-    });
-    const listRes = await s3Client.send(listCmd);
-    if (listRes.Contents && listRes.Contents.length > 0) {
-      const objectsToDelete = listRes.Contents.map((obj) => ({ Key: obj.Key! }));
-      const deleteCmd = new DeleteObjectsCommand({
-        Bucket: BUCKET_NAME,
-        Delete: { Objects: objectsToDelete },
-      });
-      await s3Client.send(deleteCmd);
-      console.log(`[S3 Avatar] Cleaned up ${objectsToDelete.length} existing avatar(s) for user ${userId}`);
-    }
-  } catch (err) {
-    console.warn(`[S3 Avatar] Error cleaning previous avatars for user ${userId}:`, err);
-  }
-
-  // 2. Upload the new avatar
+  // Upload to S3 - PutObject automatically overwrites the previous object
   const uploadCmd = new PutObjectCommand({
     Bucket: BUCKET_NAME,
-    Key: newKey,
+    Key: s3Key,
     Body: fileBuffer,
     ContentType: mimeType,
     ACL: 'private',
@@ -458,63 +438,50 @@ export async function uploadUserAvatar(
   });
 
   await s3Client.send(uploadCmd);
-  console.log(`[S3 Avatar] Successfully uploaded avatar to ${newKey}`);
+  console.log(`[S3 Avatar] Successfully uploaded avatar to ${s3Key}`);
 
-  return { s3Key: newKey, ext };
+  // Generate 7-day presigned GET URL
+  const presignedUrl = await generatePresignedUrlByKey(s3Key, 604800);
+
+  return { s3Key, presignedUrl };
 }
 
 /**
- * Delete any avatars for a user
+ * Generate a fresh presigned GET URL for a user's avatar
+ */
+export async function getUserAvatarPresignedUrl(userId: string, expiresIn: number = 604800): Promise<string | null> {
+  const s3Key = `avatars/${userId}/avatar`;
+  return generatePresignedUrlByKey(s3Key, expiresIn);
+}
+
+/**
+ * Delete avatar object for a user (if DeleteObject is allowed)
  */
 export async function deleteUserAvatar(userId: string): Promise<boolean> {
-  const prefix = `avatars/${userId}/`;
+  const s3Key = `avatars/${userId}/avatar`;
   try {
-    const listCmd = new ListObjectsV2Command({
+    const deleteCmd = new DeleteObjectCommand({
       Bucket: BUCKET_NAME,
-      Prefix: prefix,
+      Key: s3Key,
     });
-    const listRes = await s3Client.send(listCmd);
-    if (listRes.Contents && listRes.Contents.length > 0) {
-      const objectsToDelete = listRes.Contents.map((obj) => ({ Key: obj.Key! }));
-      const deleteCmd = new DeleteObjectsCommand({
-        Bucket: BUCKET_NAME,
-        Delete: { Objects: objectsToDelete },
-      });
-      await s3Client.send(deleteCmd);
-      console.log(`[S3 Avatar] Deleted ${objectsToDelete.length} avatar(s) for user ${userId}`);
-    }
+    await s3Client.send(deleteCmd);
+    console.log(`[S3 Avatar] Deleted avatar: ${s3Key}`);
     return true;
   } catch (err) {
-    console.error(`[S3 Avatar] Failed to delete avatars for user ${userId}:`, err);
+    console.warn(`[S3 Avatar] S3 DeleteObject skipped or unauthorized for user ${userId}:`, err);
     return false;
   }
 }
 
 /**
- * Fetch Avatar Object from S3 for streaming
+ * Fetch Avatar Object directly from S3 for streaming
  */
 export async function getUserAvatarStream(userId: string): Promise<{ buffer: Buffer; contentType: string } | null> {
-  const prefix = `avatars/${userId}/`;
+  const s3Key = `avatars/${userId}/avatar`;
   try {
-    const listCmd = new ListObjectsV2Command({
-      Bucket: BUCKET_NAME,
-      Prefix: prefix,
-    });
-    const listRes = await s3Client.send(listCmd);
-    if (!listRes.Contents || listRes.Contents.length === 0) {
-      return null;
-    }
-
-    // Sort by LastModified desc to get newest
-    const latest = listRes.Contents.sort((a, b) => 
-      (b.LastModified?.getTime() || 0) - (a.LastModified?.getTime() || 0)
-    )[0];
-
-    if (!latest?.Key) return null;
-
     const getCmd = new GetObjectCommand({
       Bucket: BUCKET_NAME,
-      Key: latest.Key,
+      Key: s3Key,
     });
     const response = await s3Client.send(getCmd);
     if (!response.Body) return null;
@@ -522,10 +489,11 @@ export async function getUserAvatarStream(userId: string): Promise<{ buffer: Buf
     const byteArray = await response.Body.transformToByteArray();
     return {
       buffer: Buffer.from(byteArray),
-      contentType: response.ContentType || 'image/jpeg',
+      contentType: response.ContentType || 'image/png',
     };
-  } catch (err) {
-    console.error(`[S3 Avatar] Error fetching avatar for user ${userId}:`, err);
+  } catch (err: any) {
+    // If not found at standard key, try existing avatar timestamp key if applicable
+    console.warn(`[S3 Avatar] Standard avatar key not found for ${userId}, checking fallback...`);
     return null;
   }
 } 

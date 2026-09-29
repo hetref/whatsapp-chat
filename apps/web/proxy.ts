@@ -22,6 +22,7 @@ const publicPrefixes = [
   "/api/flow-endpoint",
   "/api/wc",
   "/api/razorpay/webhook",
+  "/api/users/avatar",
 ];
 
 function isPublic(pathname: string): boolean {
