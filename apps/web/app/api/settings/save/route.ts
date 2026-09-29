@@ -177,7 +177,8 @@ export async function POST(request: NextRequest) {
     // If businessAccountId and accessToken are present, ensure WABA is subscribed to webhooks for messages
     if (settings.businessAccountId && settings.accessToken) {
       try {
-        const subUrl = new URL(`https://graph.facebook.com/${settings.apiVersion || 'v23.0'}/${settings.businessAccountId}/subscribed_apps`);
+        const apiVersion = settings.apiVersion || 'v23.0';
+        const subUrl = new URL(`https://graph.facebook.com/${apiVersion}/${settings.businessAccountId}/subscribed_apps`);
         subUrl.searchParams.set('subscribed_fields', 'messages,message_template_status_update');
         fetch(subUrl.toString(), {
           method: 'POST',
@@ -192,6 +193,32 @@ export async function POST(request: NextRequest) {
           const resData = await res.json();
           console.log('[Settings POST] WABA webhook subscription status:', resData);
         }).catch((err) => console.warn('[Settings POST] Error subscribing WABA to messages:', err));
+
+        // Also ensure Meta App webhook subscription points to current domain and user's webhook token
+        const appId = process.env.NEXT_PUBLIC_META_APP_ID || '1825841578150241';
+        const appSecret = process.env.META_APP_SECRET || '';
+        if (appId && appSecret && settings.webhookToken) {
+          const origin = request.nextUrl.origin || 'https://www.wachat.tech';
+          const targetWebhookUrl = `${origin}/api/webhook/${settings.webhookToken}`;
+          const effectiveVerifyToken: string =
+            settings.verifyToken || process.env.VERIFY_TOKEN || settings.webhookToken || 'default_verify_token';
+
+          const appSubParams = new URLSearchParams();
+          appSubParams.set('object', 'whatsapp_business_account');
+          appSubParams.set('callback_url', targetWebhookUrl);
+          appSubParams.set('fields', 'messages,message_template_status_update');
+          appSubParams.set('verify_token', effectiveVerifyToken);
+          appSubParams.set('access_token', `${appId}|${appSecret}`);
+
+          fetch(`https://graph.facebook.com/${apiVersion}/${appId}/subscriptions`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: appSubParams,
+          }).then(async (appRes) => {
+            const appData = await appRes.json();
+            console.log('[Settings POST] Meta App webhook subscription update:', appData);
+          }).catch((appErr) => console.warn('[Settings POST] Error updating Meta App webhook:', appErr));
+        }
       } catch (subErr) {
         console.warn('[Settings POST] Error in subscribed_apps fetch:', subErr);
       }

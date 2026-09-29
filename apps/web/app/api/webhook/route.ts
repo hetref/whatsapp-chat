@@ -516,11 +516,14 @@ export async function POST(request: NextRequest) {
         // Ensure user record exists in prisma.user
         await getOrCreateUser(businessOwnerId);
 
-        // Check if subscription is active
-        const subCheck = await checkSubscriptionActive(businessOwnerId);
-        if (!subCheck.active) {
-          console.log(`⛔ Incoming message blocked for user ${businessOwnerId}: subscription ${subCheck.status}`);
-          continue;
+        // Check subscription status for analytics/logging, but never drop customer incoming messages
+        try {
+          const subCheck = await checkSubscriptionActive(businessOwnerId);
+          if (!subCheck.active) {
+            console.warn(`[Webhook POST] User ${businessOwnerId} subscription status: ${subCheck.status}. Processing incoming message to prevent data loss.`);
+          }
+        } catch (subErr) {
+          console.warn('[Webhook POST] Subscription check warning:', subErr);
         }
 
         // 2. Process each incoming message

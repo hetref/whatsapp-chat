@@ -120,7 +120,9 @@ export default function ChatPage() {
     if (!selectedUser || !user) return;
 
     try {
-      const response = await fetch(`/api/messages?conversationId=${selectedUser.id}&limit=50`);
+      const response = await fetch(`/api/messages?conversationId=${selectedUser.id}&limit=50`, {
+        headers: user?.id ? { 'x-user-id': user.id } : undefined,
+      });
       const result = await response.json();
 
       if (response.ok && result.messages) {
@@ -213,7 +215,9 @@ export default function ChatPage() {
       console.log('Fetching user conversations...');
 
       try {
-        const response = await fetch('/api/conversations');
+        const response = await fetch('/api/conversations', {
+          headers: user?.id ? { 'x-user-id': user.id } : undefined,
+        });
         const result = await response.json();
 
         if (response.ok && result.conversations) {
@@ -275,7 +279,8 @@ export default function ChatPage() {
     // Real-time SSE stream for instantaneous status marks and incoming messages
     let eventSource: EventSource | null = null;
     try {
-      eventSource = new EventSource(`/api/messages/stream?conversationId=${selectedUser.id}`);
+      const sseUrl = `/api/messages/stream?conversationId=${encodeURIComponent(selectedUser.id)}${user?.id ? `&userId=${encodeURIComponent(user.id)}` : ''}`;
+      eventSource = new EventSource(sseUrl);
 
       eventSource.onmessage = (event) => {
         try {
@@ -403,7 +408,8 @@ export default function ChatPage() {
     // SSE connection for broadcast status updates
     let eventSource: EventSource | null = null;
     try {
-      eventSource = new EventSource(`/api/messages/stream?conversationId=${broadcastGroupId}`);
+      const sseUrl = `/api/messages/stream?conversationId=${encodeURIComponent(broadcastGroupId)}${user?.id ? `&userId=${encodeURIComponent(user.id)}` : ''}`;
+      eventSource = new EventSource(sseUrl);
       eventSource.onmessage = (event) => {
         try {
           if (!event.data) return;
@@ -499,7 +505,9 @@ export default function ChatPage() {
     console.log('Refreshing user conversations...');
 
     try {
-      const response = await fetch('/api/conversations');
+      const response = await fetch('/api/conversations', {
+        headers: user?.id ? { 'x-user-id': user.id } : undefined,
+      });
       const result = await response.json();
 
       if (response.ok && result.conversations) {

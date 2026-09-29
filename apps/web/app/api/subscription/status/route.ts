@@ -63,16 +63,17 @@ export async function GET(req: NextRequest) {
       if (!user) throw new Error(`Failed to create user ${userId}`);
     }
 
-    // If no subscription, return as free user
+    // If no subscription, return based on user's assigned plan tier
     if (!user.subscription) {
       const planInfo = await getUserPlanInfo(userId);
       const subActiveCheck = await checkSubscriptionActive(userId);
+      const activeTier = user.planTier || 'FREE';
       return NextResponse.json({
         hasSubscription: false,
-        isActive: true, // Free users are active
+        isActive: subActiveCheck.active,
         daysRemaining: null,
-        status: 'FREE',
-        planTier: 'FREE',
+        status: activeTier,
+        planTier: activeTier,
         messagingBlocked: !subActiveCheck.active,
         messagingBlockedReason: subActiveCheck.active ? null : subActiveCheck.message,
         usage: planInfo ? {

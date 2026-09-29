@@ -256,18 +256,12 @@ async function handleWebhookPost(req, res, pathToken = null) {
                     continue;
                 }
 
-                // Resolve business owner for inbound messages
+                // Resolve business owner for inbound messages:
+                // Prioritize phoneNumberIdStr and wabaId (latest updatedAt) so reconnected accounts always route to current profile!
                 let userSettings = null;
-                if (pathToken) {
+                if (phoneNumberIdStr) {
                     userSettings = await prisma.userSettings.findFirst({
-                        where: { webhookToken: pathToken },
-                        select: { id: true, accessToken: true, apiVersion: true, phoneNumberId: true, businessAccountId: true },
-                    });
-                }
-
-                if (!userSettings && phoneNumberIdStr) {
-                    userSettings = await prisma.userSettings.findFirst({
-                        where: { phoneNumberId: phoneNumberIdStr },
+                        where: { phoneNumberId: phoneNumberIdStr, accessToken: { not: null } },
                         orderBy: { updatedAt: 'desc' },
                         select: { id: true, accessToken: true, apiVersion: true, phoneNumberId: true, businessAccountId: true },
                     });
@@ -275,8 +269,15 @@ async function handleWebhookPost(req, res, pathToken = null) {
 
                 if (!userSettings && wabaId) {
                     userSettings = await prisma.userSettings.findFirst({
-                        where: { businessAccountId: wabaId },
+                        where: { businessAccountId: wabaId, accessToken: { not: null } },
                         orderBy: { updatedAt: 'desc' },
+                        select: { id: true, accessToken: true, apiVersion: true, phoneNumberId: true, businessAccountId: true },
+                    });
+                }
+
+                if (!userSettings && pathToken) {
+                    userSettings = await prisma.userSettings.findFirst({
+                        where: { webhookToken: pathToken },
                         select: { id: true, accessToken: true, apiVersion: true, phoneNumberId: true, businessAccountId: true },
                     });
                 }

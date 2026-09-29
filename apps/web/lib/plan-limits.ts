@@ -250,7 +250,9 @@ export async function checkSubscriptionActive(userId: string): Promise<{
   const subStatus = user.subscription?.status;
 
   if (!subStatus) {
-    return { active: false, status: 'NO_SUBSCRIPTION', planTier, message: 'No active subscription found. Please subscribe to a plan.' };
+    // User is on an assigned tier (e.g. SILVER / GOLD) without a Razorpay subscription record
+    // (e.g. granted by admin, beta access, trial, or promotional).
+    return { active: true, status: 'ACTIVE', planTier, message: '' };
   }
 
   switch (subStatus) {

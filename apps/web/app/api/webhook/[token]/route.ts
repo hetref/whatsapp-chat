@@ -418,35 +418,17 @@ export async function POST(
       return new NextResponse('Forbidden', { status: 403 });
     }
 
-    // Find user by webhook token
-    const userSettings = await prisma.userSettings.findFirst({
+    // Find user by webhook token (fallback)
+    const tokenUserSettings = await prisma.userSettings.findFirst({
       where: { webhookToken: webhookToken },
       select: { id: true, accessToken: true, apiVersion: true, phoneNumberId: true, businessAccountId: true },
     });
-
-    if (!userSettings) {
-      console.error('[Webhook POST /:token] No user found for webhook token:', webhookToken?.substring(0, 8));
-      return new NextResponse('OK', { status: 200 });
-    }
-
-    const businessOwnerId = userSettings.id;
-    const accessToken = userSettings.accessToken;
-    const apiVersion = userSettings.apiVersion || 'v23.0';
-
-    // Ensure user record exists in prisma.user
-    await getOrCreateUser(businessOwnerId);
-
-    // Check if subscription is active
-    const subCheck = await checkSubscriptionActive(businessOwnerId);
-    if (!subCheck.active) {
-      console.log(`⛔ Incoming message blocked for user ${businessOwnerId}: subscription ${subCheck.status}`);
-      return new NextResponse('OK', { status: 200 });
-    }
 
     const entries = Array.isArray(body?.entry) ? body.entry : [];
 
     for (const entry of entries) {
       const changes = Array.isArray(entry?.changes) ? entry.changes : [];
+      const wabaId = entry?.id ? String(entry.id) : null;
 
       for (const change of changes) {
         const value = change?.value;
@@ -466,15 +448,66 @@ export async function POST(
 
         if (messages.length === 0) continue;
 
-        // Auto-link phone number ID if received from Meta and not yet stored or updated
-        const phoneNumberId = value.metadata?.phone_number_id ? String(value.metadata.phone_number_id) : null;
-        if (phoneNumberId && userSettings.phoneNumberId !== phoneNumberId) {
-          console.log(`[Webhook POST /:token] Auto-updating phoneNumberId for user ${businessOwnerId}: ${phoneNumberId}`);
+        // Resolve active profile for this incoming phone line:
+        // Prioritize the user who currently has this phoneNumberId or WABA ID connected (newest updatedAt),
+        // ensuring messages are always attributed to the current profile even after account reconnects.
+        const phoneNumberIdStr = value.metadata?.phone_number_id ? String(value.metadata.phone_number_id) : null;
+
+        let activeSettings = null;
+        if (phoneNumberIdStr) {
+          activeSettings = await prisma.userSettings.findFirst({
+            where: { phoneNumberId: phoneNumberIdStr, accessToken: { not: null } },
+            orderBy: { updatedAt: 'desc' },
+            select: { id: true, accessToken: true, apiVersion: true, phoneNumberId: true, businessAccountId: true },
+          });
+        }
+
+        if (!activeSettings && wabaId) {
+          activeSettings = await prisma.userSettings.findFirst({
+            where: { businessAccountId: wabaId, accessToken: { not: null } },
+            orderBy: { updatedAt: 'desc' },
+            select: { id: true, accessToken: true, apiVersion: true, phoneNumberId: true, businessAccountId: true },
+          });
+        }
+
+        if (!activeSettings) {
+          activeSettings = tokenUserSettings;
+        }
+
+        if (!activeSettings) {
+          console.error('[Webhook POST /:token] No user settings found for incoming message:', {
+            phoneNumberId: phoneNumberIdStr,
+            wabaId,
+            webhookToken: webhookToken?.substring(0, 8),
+          });
+          continue;
+        }
+
+        const businessOwnerId = activeSettings.id;
+        const accessToken = activeSettings.accessToken;
+        const apiVersion = activeSettings.apiVersion || 'v23.0';
+
+        // Ensure user record exists in prisma.user
+        await getOrCreateUser(businessOwnerId);
+
+        // Auto-link phone number ID if received from Meta and not yet stored
+        if (phoneNumberIdStr && activeSettings.phoneNumberId !== phoneNumberIdStr) {
+          console.log(`[Webhook POST /:token] Auto-updating phoneNumberId for user ${businessOwnerId}: ${phoneNumberIdStr}`);
           await prisma.userSettings.update({
             where: { id: businessOwnerId },
-            data: { phoneNumberId, updatedAt: new Date() },
+            data: { phoneNumberId: phoneNumberIdStr, updatedAt: new Date() },
           });
-          userSettings.phoneNumberId = phoneNumberId;
+          activeSettings.phoneNumberId = phoneNumberIdStr;
+        }
+
+        // Check subscription status for analytics/logging, but never drop customer incoming messages
+        try {
+          const subCheck = await checkSubscriptionActive(businessOwnerId);
+          if (!subCheck.active) {
+            console.warn(`[Webhook POST /:token] User ${businessOwnerId} subscription status: ${subCheck.status}. Processing incoming message to prevent data loss.`);
+          }
+        } catch (subErr) {
+          console.warn('[Webhook POST /:token] Subscription check warning:', subErr);
         }
 
         // Process each incoming message
