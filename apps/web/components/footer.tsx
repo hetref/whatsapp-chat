@@ -142,7 +142,7 @@ export function Footer() {
 
         <div className="flex flex-col md:flex-row justify-between items-center gap-4 pt-8 text-xs text-muted-foreground">
           <p>&copy; {year} WaChat by DevAlly. All rights reserved.</p>
-          <div className="flex flex-wrap items-center gap-6">
+          <div className="flex flex-wrap justify-center items-center gap-6">
             <Link href="/privacy" className="hover:text-foreground transition-colors">
               Privacy Policy
             </Link>

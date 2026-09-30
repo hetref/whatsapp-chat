@@ -68,7 +68,7 @@ export function HeroSection({
   secondaryCtaLabel = "Get Started",
   secondaryCtaHref = "/#pricing",
   features = defaultFeatures,
-  backgroundImage = "https://images.unsplash.com/photo-1577563908411-5077b6dc7624?auto=format&fit=crop&w=2000&q=80",
+  backgroundImage = "/hero-section-bg-img.png",
 }: HeroSectionProps) {
   const { data: session, isPending } = authClient.useSession();
   const isSignedIn = !!session?.user;
@@ -216,7 +216,7 @@ export function HeroSection({
             src={backgroundImage}
             alt=""
             fetchPriority="high"
-            className="animate-hero-img absolute inset-0 h-full w-full object-cover object-[78%_top] sm:object-right-top transition-all duration-700"
+            className="animate-hero-img absolute inset-0 h-full w-full object-cover object-top transition-all duration-700"
           />
           {/* Soft atmospheric gradient vignette to ensure flawless contrast */}
           <div className="absolute inset-0 bg-gradient-to-r from-[#FAF8F5] via-[#FAF8F5]/85 to-transparent lg:w-3/5" />
