@@ -16,7 +16,8 @@ import { getOrCreateUser } from '@/lib/user-sync';
 export async function GET(req: NextRequest) {
   try {
     // Check authentication
-    const { userId } = await auth();
+    const authResult = await auth();
+    const userId = authResult?.userId || req.headers.get('x-user-id');
     if (!userId) {
       return NextResponse.json(
         { error: 'Unauthorized' },

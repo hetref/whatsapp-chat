@@ -16,9 +16,8 @@ const app = express();
 const { corsMiddleware, limiter, securityHeaders } = createSecurityMiddleware();
 const port = env.apiPort;
 
-if (env.trustProxy) {
-    app.set('trust proxy', 1);
-}
+// Trust reverse proxy (Next.js / Nginx / Cloudflare / Ingress)
+app.set('trust proxy', 1);
 
 // Always return fresh payloads for API routes (no ETag/304 behavior).
 app.set('etag', false);

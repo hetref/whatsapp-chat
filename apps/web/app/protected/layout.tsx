@@ -122,20 +122,19 @@ export default function ProtectedLayout({
 
   useEffect(() => {
     if (!isPending && !session?.user) {
-      router.push("/sign-in");
+      window.location.href = "/sign-in";
     }
-  }, [isPending, session, router]);
+  }, [isPending, session]);
 
-  if (isPending) {
+  if (isPending || !session?.user) {
     return (
-      <div className="h-screen flex items-center justify-center bg-[#FAF8F5] dark:bg-[#0C0F0D]">
+      <div className="h-screen flex flex-col items-center justify-center gap-3 bg-[#FAF8F5] dark:bg-[#0C0F0D] text-stone-700 dark:text-stone-300">
         <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-[#5F7C65]"></div>
+        {!isPending && !session?.user && (
+          <p className="text-sm font-medium animate-pulse">Redirecting to sign in...</p>
+        )}
       </div>
     );
-  }
-
-  if (!session?.user) {
-    return null;
   }
 
   const isActive = (path: string) => {

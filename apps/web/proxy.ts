@@ -43,13 +43,6 @@ export default async function proxy(req: NextRequest) {
 
   // Never intercept or inspect /api/auth endpoints or public webhook endpoints
   if (pathname.startsWith("/api/auth") || isPublic(pathname)) {
-    // If a logged-in user visits sign-in or sign-up, redirect to /protected
-    if (pathname === "/sign-in" || pathname === "/sign-up") {
-      const sessionCookie = getSessionCookie(req);
-      if (sessionCookie) {
-        return NextResponse.redirect(new URL("/protected", req.url));
-      }
-    }
     return NextResponse.next();
   }
 
@@ -63,11 +56,6 @@ export default async function proxy(req: NextRequest) {
     const redirectUrl = new URL("/sign-in", req.url);
     redirectUrl.searchParams.set("callbackUrl", pathname);
     return NextResponse.redirect(redirectUrl);
-  }
-
-  // Redirect logged-in users away from auth pages
-  if (pathname === "/sign-in" || pathname === "/sign-up") {
-    return NextResponse.redirect(new URL("/protected", req.url));
   }
 
   // User is authenticated by session cookie.

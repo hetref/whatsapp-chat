@@ -6,7 +6,7 @@ export const env = {
         .split(',')
         .map((value) => value.trim())
         .filter(Boolean),
-    trustProxy: process.env.API_TRUST_PROXY === 'true',
+    trustProxy: process.env.API_TRUST_PROXY !== 'false',
     razorpayWebhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET || '',
 };
 

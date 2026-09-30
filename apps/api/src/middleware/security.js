@@ -23,6 +23,7 @@ export function createSecurityMiddleware() {
         limit: 240,
         standardHeaders: true,
         legacyHeaders: false,
+        validate: { xForwardedForHeader: false },
     });
 
     const securityHeaders = helmet({

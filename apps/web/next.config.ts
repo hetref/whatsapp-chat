@@ -5,9 +5,9 @@ const nextConfig: NextConfig = {
   allowedDevOrigins: ['lr1.aryanshinde.in'],
   async rewrites() {
     const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:4000';
-    // TODO: Update the nextjs api call to direct api calls
     return {
-      beforeFiles: [
+      beforeFiles: [],
+      afterFiles: [
         {
           source: '/api/flow-endpoint',
           destination: `${apiBase}/api/flow-endpoint`,
@@ -57,35 +57,10 @@ const nextConfig: NextConfig = {
           destination: `${apiBase}/api/send-media/:path*`,
         },
         {
-          source: '/api/media',
-          destination: `${apiBase}/api/media`,
-        },
-        {
-          source: '/api/media/:path*',
-          destination: `${apiBase}/api/media/:path*`,
-        },
-        {
           source: '/api/razorpay/webhook',
           destination: `${apiBase}/api/razorpay/webhook`,
         },
-        {
-          source: '/api/razorpay',
-          destination: `${apiBase}/api/razorpay`,
-        },
-        {
-          source: '/api/razorpay/:path*',
-          destination: `${apiBase}/api/razorpay/:path*`,
-        },
-        {
-          source: '/api/subscription',
-          destination: `${apiBase}/api/subscription`,
-        },
-        {
-          source: '/api/subscription/:path*',
-          destination: `${apiBase}/api/subscription/:path*`,
-        },
       ],
-      afterFiles: [],
       fallback: [],
     };
   },
