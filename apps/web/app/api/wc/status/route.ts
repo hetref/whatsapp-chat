@@ -15,8 +15,6 @@ export async function GET(request: NextRequest) {
 
         const { userId, settings } = authResult.data;
 
-        console.log('[WC API] Checking status for user:', userId);
-
         // Fetch all templates to get statistics
         const apiUrl = `https://graph.facebook.com/${settings.apiVersion}/${settings.businessAccountId}/message_templates?fields=status&limit=1000`;
 

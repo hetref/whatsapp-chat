@@ -151,7 +151,6 @@ async function processStatusUpdate(statusItem: any) {
   });
 
   if (!existing) {
-    console.log(`[Webhook Status /:token] Message ${messageId} not found in database yet. Status: ${targetStatus}`);
     return;
   }
 
@@ -190,7 +189,6 @@ async function processStatusUpdate(statusItem: any) {
       where: { id: messageId },
       data: updateData,
     });
-    console.log(`[Webhook Status /:token] Updated ${messageId} -> ${targetStatus}`);
   } catch (e) {
     console.error(`[Webhook Status /:token] Error updating ${messageId}:`, e);
   }
@@ -210,8 +208,6 @@ export async function GET(
     const mode = searchParams.get('hub.mode');
     const verifyToken = searchParams.get('hub.verify_token');
     const challenge = searchParams.get('hub.challenge');
-
-    console.log('[Webhook GET /:token] Verification attempt for token:', webhookToken?.substring(0, 8) + '...');
 
     if (mode !== 'subscribe') {
       console.warn('[Webhook GET /:token] Invalid mode:', mode);
@@ -235,7 +231,7 @@ export async function GET(
     });
 
     if (!settings) {
-      console.error('[Webhook GET /:token] Webhook token not found:', webhookToken?.substring(0, 8));
+      console.error('[Webhook GET /:token] Webhook token not found');
       return new NextResponse('Forbidden', { status: 403 });
     }
 
@@ -260,14 +256,9 @@ export async function GET(
       isEnvMatch;
 
     if (!isValidToken) {
-      console.warn('[Webhook GET /:token] Verify token mismatch:', {
-        provided: cleanToken,
-        expected: envVerifyToken,
-      });
+      console.warn('[Webhook GET /:token] Verify token mismatch');
       return new NextResponse('Forbidden', { status: 403 });
     }
-
-    console.log('[Webhook GET /:token] Verified successfully for user:', settings.id);
 
     // Mark webhook as verified for this user
     await prisma.userSettings.update({
@@ -421,8 +412,6 @@ export async function POST(
     const { token: webhookToken } = await params;
     const body = await request.json();
 
-    console.log('[Webhook POST /:token] Received payload for token:', webhookToken?.substring(0, 8) + '...');
-
     if (!webhookToken) {
       console.error('[Webhook POST /:token] No webhook token in URL');
       return new NextResponse('Forbidden', { status: 403 });
@@ -450,7 +439,6 @@ export async function POST(
         // Process status updates (sent, delivered, read, failed)
         const statuses = Array.isArray(value.statuses) ? value.statuses : [];
         if (statuses.length > 0) {
-          console.log(`[Webhook POST /:token] Processing ${statuses.length} status updates`);
           for (const s of statuses) {
             await processStatusUpdate(s);
           }
@@ -502,7 +490,6 @@ export async function POST(
 
         // Auto-link phone number ID if received from Meta and not yet stored
         if (phoneNumberIdStr && activeSettings.phoneNumberId !== phoneNumberIdStr) {
-          console.log(`[Webhook POST /:token] Auto-updating phoneNumberId for user ${businessOwnerId}: ${phoneNumberIdStr}`);
           await prisma.userSettings.update({
             where: { id: businessOwnerId },
             data: { phoneNumberId: phoneNumberIdStr, updatedAt: new Date() },
@@ -533,8 +520,6 @@ export async function POST(
           );
           const contactName = contactInfo?.profile?.name || rawSender;
 
-          console.log(`[Webhook POST /:token] Processing ${message.type} from ${contactName} (${cleanPhone})`);
-
           // Look up contact by clean phone or raw phone
           let existingContact = await prisma.contact.findFirst({
             where: {
@@ -549,7 +534,6 @@ export async function POST(
 
           // Create contact if they don't exist
           if (!existingContact) {
-            console.log(`[Webhook POST /:token] Creating new contact for user ${businessOwnerId}: ${contactName} (${cleanPhone})`);
             try {
               existingContact = await prisma.contact.create({
                 data: {
@@ -616,9 +600,7 @@ export async function POST(
               timestamp: messageTimestamp,
             });
 
-            if (result.updated) {
-              console.log(`[Webhook POST /:token] Reaction updated: ${reactionTargetId} (${emoji || 'removed'})`);
-            } else {
+            if (!result.updated) {
               console.warn(`[Webhook POST /:token] Reaction target not found: ${reactionTargetId}`);
             }
 
@@ -631,7 +613,6 @@ export async function POST(
           // Handle media upload to S3 if applicable
           let s3UploadSuccess = false;
           if (mediaData && mediaData.id && accessToken) {
-            console.log(`[Webhook POST /:token] Processing media upload for ${messageType}: ${mediaData.id}`);
             try {
               const whatsappMediaUrl = await getWhatsAppMediaUrl(mediaData.id, accessToken, apiVersion);
               if (whatsappMediaUrl && /^\d+$/.test(mediaData.id)) {
@@ -693,7 +674,6 @@ export async function POST(
                 mediaData: messageObject.media_data || undefined,
               },
             });
-            console.log(`[Webhook POST /:token] ${messageType} message stored successfully: ${message.id} (from: ${cleanPhone})`);
           } catch (messageError: unknown) {
             console.error('[Webhook POST /:token] Error storing message:', messageError);
           }

@@ -26,8 +26,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             return createErrorResponse('Template ID is required', 400, 'Validation Error');
         }
 
-        console.log('[WC API] Fetching template:', id);
-
         // Build WhatsApp Business API URL
         const fields = 'id,name,status,category,language,components,previous_category,rejected_reason,quality_score';
         const apiUrl = `https://graph.facebook.com/${settings.apiVersion}/${id}?fields=${fields}`;
@@ -73,8 +71,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
         const templateData = await response.json();
 
-        console.log('[WC API] Successfully fetched template:', templateData.id);
-
         return createSuccessResponse({
             template: templateData,
         });
@@ -119,8 +115,6 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
                 'Validation Error'
             );
         }
-
-        console.log('[WC API] Deleting template:', { id, name: templateName });
 
         // Build WhatsApp Business API URL for deletion
         // Note: WhatsApp requires the WABA ID and template name for deletion
@@ -181,8 +175,6 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
         }
 
         const responseData = await response.json();
-
-        console.log('[WC API] Template deleted successfully:', responseData);
 
         return createSuccessResponse(
             {

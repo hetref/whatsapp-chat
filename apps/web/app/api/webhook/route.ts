@@ -151,7 +151,6 @@ async function processStatusUpdate(statusItem: any) {
   });
 
   if (!existing) {
-    console.log(`[Webhook Status] Message ${messageId} not found in database yet. Status: ${targetStatus}`);
     return;
   }
 
@@ -190,7 +189,6 @@ async function processStatusUpdate(statusItem: any) {
       where: { id: messageId },
       data: updateData,
     });
-    console.log(`[Webhook Status] Updated ${messageId} -> ${targetStatus}`);
   } catch (e) {
     console.error(`[Webhook Status] Error updating ${messageId}:`, e);
   }
@@ -203,12 +201,10 @@ async function processStatusUpdate(statusItem: any) {
  */
 export async function GET(request: NextRequest) {
   try {
-    const searchParams = request.nextUrl.searchParams;
+    const { searchParams } = request.nextUrl;
     const mode = searchParams.get('hub.mode');
     const token = searchParams.get('hub.verify_token');
     const challenge = searchParams.get('hub.challenge');
-
-    console.log('[Webhook GET] Verification attempt:', { mode, token: token ? '***' : null });
 
     if (mode !== 'subscribe') {
       console.warn('[Webhook GET] Invalid mode:', mode);
@@ -252,8 +248,6 @@ export async function GET(request: NextRequest) {
       });
       return new NextResponse('Forbidden', { status: 403 });
     }
-
-    console.log('[Webhook GET] Webhook verified successfully for:', settings?.id || 'env_token');
 
     if (settings) {
       await prisma.userSettings.update({
@@ -301,8 +295,6 @@ async function getWhatsAppMediaUrl(
     }
 
     const mediaInfo = await mediaInfoResponse.json();
-    console.log('[Webhook] Media info retrieved:', { id: mediaId, url: mediaInfo.url });
-
     return mediaInfo.url;
   } catch (error: unknown) {
     console.error('[Webhook] Error getting WhatsApp media URL:', error);
@@ -407,8 +399,6 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
 
-    console.log('[Webhook POST] Received payload:', JSON.stringify(body, null, 2));
-
     const entries = Array.isArray(body?.entry) ? body.entry : [];
     if (entries.length === 0) {
       return new NextResponse('OK', { status: 200 });
@@ -428,7 +418,6 @@ export async function POST(request: NextRequest) {
         // Process status updates (sent, delivered, read, failed)
         const statuses = Array.isArray(value.statuses) ? value.statuses : [];
         if (statuses.length > 0) {
-          console.log(`[Webhook POST] Processing ${statuses.length} status updates`);
           for (const s of statuses) {
             await processStatusUpdate(s);
           }
@@ -444,13 +433,6 @@ export async function POST(request: NextRequest) {
         const displayPhoneNumber = value.metadata?.display_phone_number
           ? String(value.metadata.display_phone_number).replace(/\D/g, '')
           : null;
-
-        console.log('[Webhook POST] Incoming message:', {
-          phoneNumberId: phoneNumberIdStr,
-          wabaId,
-          displayPhoneNumber,
-          messageCount: messages.length,
-        });
 
         // 1. Robust business owner lookup: check phoneNumberId, WABA ID, or displayPhoneNumber
         let userSettings = null;
@@ -477,7 +459,6 @@ export async function POST(request: NextRequest) {
               data: { phoneNumberId: phoneNumberIdStr, updatedAt: new Date() },
             });
             userSettings.phoneNumberId = phoneNumberIdStr;
-            console.log(`[Webhook POST] Auto-linked phoneNumberId ${phoneNumberIdStr} to user ${userSettings.id}`);
           }
         }
 
@@ -509,7 +490,6 @@ export async function POST(request: NextRequest) {
                 },
               });
               userSettings.phoneNumberId = phoneNumberIdStr;
-              console.log(`[Webhook POST] Routed to active user ${userSettings.id} and updated phoneNumberId to ${phoneNumberIdStr}`);
             }
           }
         }
@@ -549,8 +529,6 @@ export async function POST(request: NextRequest) {
           );
           const contactName = contactInfo?.profile?.name || rawSender;
 
-          console.log(`[Webhook POST] Processing ${message.type} from ${contactName} (${cleanPhone})`);
-
           // Look up contact by clean phone or raw phone
           let existingContact = await prisma.contact.findFirst({
             where: {
@@ -565,7 +543,6 @@ export async function POST(request: NextRequest) {
 
           // Create contact if they don't exist
           if (!existingContact) {
-            console.log(`[Webhook POST] Creating new contact for user ${businessOwnerId}: ${contactName} (${cleanPhone})`);
             try {
               existingContact = await prisma.contact.create({
                 data: {
@@ -632,9 +609,7 @@ export async function POST(request: NextRequest) {
               timestamp: messageTimestamp,
             });
 
-            if (result.updated) {
-              console.log(`[Webhook POST] Reaction updated: ${reactionTargetId} (${emoji || 'removed'})`);
-            } else {
+            if (!result.updated) {
               console.warn(`[Webhook POST] Reaction target not found: ${reactionTargetId}`);
             }
 
@@ -647,7 +622,6 @@ export async function POST(request: NextRequest) {
           // Handle media upload to S3 if applicable
           let s3UploadSuccess = false;
           if (mediaData && mediaData.id && accessToken) {
-            console.log(`[Webhook POST] Processing media download for ${messageType}: ${mediaData.id}`);
             try {
               const whatsappMediaUrl = await getWhatsAppMediaUrl(mediaData.id, accessToken, apiVersion);
               if (whatsappMediaUrl && /^\d+$/.test(mediaData.id)) {
@@ -709,7 +683,6 @@ export async function POST(request: NextRequest) {
                 mediaData: messageObject.media_data || undefined,
               },
             });
-            console.log(`[Webhook POST] ${messageType} message stored successfully: ${message.id} (from: ${cleanPhone})`);
           } catch (messageError: unknown) {
             console.error('[Webhook POST] Error storing message:', messageError);
           }

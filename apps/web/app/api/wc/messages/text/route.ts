@@ -68,12 +68,6 @@ export async function POST(request: NextRequest) {
             }
         };
 
-        console.log('[WC API] Sending text message:', {
-            to: cleanPhoneNumber,
-            textLength: text.length,
-            userId
-        });
-
         // Send message via WhatsApp Cloud API
         const whatsappResponse = await fetch(whatsappApiUrl, {
             method: 'POST',
@@ -104,8 +98,6 @@ export async function POST(request: NextRequest) {
 
         const messageId = responseData.messages?.[0]?.id;
         const timestamp = new Date();
-
-        console.log('[WC API] Message sent successfully:', messageId);
 
         // Find or create contact for this phone number
         let contact = await prisma.contact.findUnique({

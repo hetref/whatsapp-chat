@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { authClient, signOut } from "@/lib/auth-client";
 import { UserAvatarDropdown } from "@/components/user-avatar-dropdown";
@@ -23,6 +23,8 @@ import {
   Menu,
   X,
   User as UserIcon,
+  BadgeCheck,
+  Phone,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -106,6 +108,46 @@ export default function ProtectedLayout({
   const { planTier, usage, loading: subscriptionLoading, messagingBlocked, messagingBlockedReason } =
     useSubscriptionStatus();
 
+  // Connected Meta WhatsApp Profile details for sidebar & account card
+  const [metaInfo, setMetaInfo] = useState<{
+    verified_name?: string;
+    display_phone_number?: string;
+    profile_picture_url?: string | null;
+    is_official_business_account?: boolean;
+    status?: string;
+  } | null>(null);
+
+  const fetchMetaProfile = useCallback(async () => {
+    try {
+      const res = await fetch("/api/whatsapp/business-profile");
+      const json = await res.json();
+      if (json.connected && json.data) {
+        setMetaInfo({
+          verified_name: json.data.verified_name,
+          display_phone_number: json.data.display_phone_number,
+          profile_picture_url: json.data.profile_picture_url,
+          is_official_business_account: json.data.is_official_business_account,
+          status: json.data.status,
+        });
+      }
+    } catch {
+      // Silently fall back
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchMetaProfile();
+
+    const handleUpdate = () => {
+      fetchMetaProfile();
+    };
+
+    window.addEventListener("whatsapp-profile-updated", handleUpdate);
+    return () => {
+      window.removeEventListener("whatsapp-profile-updated", handleUpdate);
+    };
+  }, [fetchMetaProfile]);
+
   // Auto-collapse sidebar on mobile screens by default
   useEffect(() => {
     if (typeof window !== "undefined" && window.innerWidth < 768) {
@@ -162,7 +204,12 @@ export default function ProtectedLayout({
         </div>
         <div className="flex items-center gap-1.5">
           <ThemeSwitcher />
-          <UserAvatarDropdown />
+          <UserAvatarDropdown
+            metaName={metaInfo?.verified_name}
+            metaPhone={metaInfo?.display_phone_number}
+            metaImage={metaInfo?.profile_picture_url}
+            isVerified={metaInfo?.is_official_business_account}
+          />
         </div>
       </div>
 
@@ -326,34 +373,59 @@ export default function ProtectedLayout({
           {/* Account Profile Card */}
           <div
             className={cn(
-              "flex items-center gap-2.5 p-2 rounded-xl bg-white/60 dark:bg-stone-900/50 border border-stone-200/60 dark:border-stone-800/60",
-              sidebarCollapsed && "justify-center p-1.5 bg-transparent border-transparent",
+              "flex items-center gap-2.5 p-2 rounded-xl bg-white/70 dark:bg-stone-900/60 border border-stone-200/70 dark:border-stone-800/70 shadow-2xs",
+              sidebarCollapsed && "justify-center p-1.5 bg-transparent border-transparent shadow-none",
             )}
           >
-            <UserAvatarDropdown />
+            <UserAvatarDropdown
+              metaName={metaInfo?.verified_name}
+              metaPhone={metaInfo?.display_phone_number}
+              metaImage={metaInfo?.profile_picture_url}
+              isVerified={metaInfo?.is_official_business_account}
+            />
             {!sidebarCollapsed && (
               <div className="flex flex-col flex-1 min-w-0">
-                <span className="text-xs font-semibold text-stone-900 dark:text-stone-100 truncate">Account</span>
-                {!subscriptionLoading && (
-                  <Badge
-                    variant="outline"
-                    className={cn(
-                      "w-fit text-[10px] px-2 py-0 h-4 font-medium mt-0.5 rounded-full border",
-                      planTier === "GOLD" &&
-                        "bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800",
-                      planTier === "SILVER" &&
-                        "bg-stone-100 text-stone-800 border-stone-300 dark:bg-stone-800 dark:text-stone-300 dark:border-stone-700",
-                      planTier === "FREE" &&
-                        "bg-[#5F7C65]/10 text-[#2D583F] border-[#5F7C65]/20 dark:bg-[#5F7C65]/20 dark:text-[#8EAE95]",
-                    )}
-                  >
-                    {planTier === "FREE"
-                      ? "Free"
-                      : planTier === "SILVER"
-                        ? "Silver"
-                        : "Gold"}
-                  </Badge>
-                )}
+                <div className="flex items-center gap-1 min-w-0">
+                  <span className="text-xs font-semibold text-stone-900 dark:text-stone-100 truncate">
+                    {metaInfo?.verified_name || session.user.name || "WhatsApp Account"}
+                  </span>
+                  {metaInfo?.is_official_business_account && (
+                    <span title="Verified Business" className="inline-flex shrink-0">
+                      <BadgeCheck className="size-3.5 text-sky-600" />
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-1.5 mt-0.5 min-w-0">
+                  {metaInfo?.display_phone_number ? (
+                    <span className="font-mono text-[10px] text-stone-500 dark:text-stone-400 truncate">
+                      {metaInfo.display_phone_number}
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-stone-500 dark:text-stone-400 truncate">
+                      {session.user.email}
+                    </span>
+                  )}
+                  {!subscriptionLoading && (
+                    <Badge
+                      variant="outline"
+                      className={cn(
+                        "text-[9px] px-1.5 py-0 h-3.5 font-medium rounded-full border shrink-0",
+                        planTier === "GOLD" &&
+                          "bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800",
+                        planTier === "SILVER" &&
+                          "bg-stone-100 text-stone-800 border-stone-300 dark:bg-stone-800 dark:text-stone-300 dark:border-stone-700",
+                        planTier === "FREE" &&
+                          "bg-[#5F7C65]/10 text-[#2D583F] border-[#5F7C65]/20 dark:bg-[#5F7C65]/20 dark:text-[#8EAE95]",
+                      )}
+                    >
+                      {planTier === "FREE"
+                        ? "Free"
+                        : planTier === "SILVER"
+                          ? "Silver"
+                          : "Gold"}
+                    </Badge>
+                  )}
+                </div>
               </div>
             )}
             {!sidebarCollapsed && (

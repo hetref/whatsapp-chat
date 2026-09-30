@@ -13,8 +13,6 @@ export async function compressImageIfNeeded(file: File, maxSizeBytes: number = 5
     return file;
   }
 
-  console.log(`[ImageCompression] Compressing ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB) to fit under ${(maxSizeBytes / 1024 / 1024).toFixed(1)} MB`);
-
   return new Promise((resolve) => {
     const reader = new FileReader();
     reader.onload = (event) => {
@@ -64,8 +62,6 @@ export async function compressImageIfNeeded(file: File, maxSizeBytes: number = 5
               return;
             }
 
-            console.log(`[ImageCompression] Compression attempt with quality ${q.toFixed(2)} resulted in size: ${(blob.size / 1024 / 1024).toFixed(2)} MB`);
-
             if (blob.size > maxSizeBytes && q > 0.1) {
               // Iterate and reduce quality
               attemptCompression(q - 0.15);
@@ -74,7 +70,6 @@ export async function compressImageIfNeeded(file: File, maxSizeBytes: number = 5
                 type: outputMime,
                 lastModified: Date.now(),
               });
-              console.log(`[ImageCompression] Successfully compressed image to ${compressedFile.name} (${(compressedFile.size / 1024 / 1024).toFixed(2)} MB)`);
               resolve(compressedFile);
             }
           }, outputMime, q);

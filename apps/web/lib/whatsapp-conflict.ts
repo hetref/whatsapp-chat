@@ -219,8 +219,6 @@ export async function transferWhatsAppAccount({
   newUserId: string;
   reason?: string;
 }): Promise<void> {
-  console.log(`[WhatsApp Transfer] Unlinking WhatsApp from previous user ${previousUserId} -> new user ${newUserId}. Reason: ${reason}`);
-
   await prisma.userSettings.update({
     where: { id: previousUserId },
     data: {
@@ -234,6 +232,4 @@ export async function transferWhatsAppAccount({
       updatedAt: new Date(),
     },
   });
-
-  console.log(`[WhatsApp Transfer] Successfully unlinked WhatsApp credentials from user ${previousUserId}`);
 }

@@ -120,7 +120,6 @@ export async function POST(request: NextRequest) {
     if (appId && appSecret && (!metaAppCallbackUrl || !urlMatchesCurrentDomain)) {
       try {
         const canonicalWebhookUrl = `${origin}/api/webhook`;
-        console.log('[Test Webhook] Auto-configuring Meta App Webhook to:', canonicalWebhookUrl);
         const autoSubParams = new URLSearchParams();
         autoSubParams.set('object', 'whatsapp_business_account');
         autoSubParams.set('callback_url', canonicalWebhookUrl);
@@ -137,7 +136,6 @@ export async function POST(request: NextRequest) {
           }
         );
         const autoSubData = await autoSubRes.json();
-        console.log('[Test Webhook] Auto-configure App Webhook result:', autoSubData);
         if (autoSubData.success) {
           metaAppCallbackUrl = canonicalWebhookUrl;
           metaAppFields = ['messages', 'message_template_status_update'];
@@ -154,7 +152,6 @@ export async function POST(request: NextRequest) {
     // 1.4 Auto-remedy: If WABA is not subscribed, auto-subscribe it now!
     if (settings.businessAccountId && !wabaSubscribed) {
       try {
-        console.log('[Test Webhook] Auto-subscribing WABA to messages:', settings.businessAccountId);
         const subUrl = new URL(`https://graph.facebook.com/${apiVersion}/${settings.businessAccountId}/subscribed_apps`);
         subUrl.searchParams.set('subscribed_fields', 'messages,message_template_status_update');
         const subRes = await fetch(subUrl.toString(), {
@@ -168,7 +165,6 @@ export async function POST(request: NextRequest) {
           }),
         });
         const subData = await subRes.json();
-        console.log('[Test Webhook] Auto-subscribe WABA result:', subData);
         if (subData.success) {
           wabaSubscribed = true;
           wabaSubscribedFields = ['messages', 'message_template_status_update'];

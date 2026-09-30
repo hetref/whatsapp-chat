@@ -51,12 +51,6 @@ async function handleVerification(req, res, pathToken = null) {
         const token = req.query['hub.verify_token'];
         const challenge = req.query['hub.challenge'];
 
-        console.log('[API Webhook GET] Verification attempt:', {
-            mode,
-            pathToken: pathToken ? '***' : null,
-            token: token ? '***' : null,
-        });
-
         if (mode !== 'subscribe') {
             return res.status(403).send('Forbidden');
         }
@@ -94,7 +88,6 @@ async function handleVerification(req, res, pathToken = null) {
                 where: { id: settings.id },
                 data: { webhookVerified: true, updatedAt: new Date() },
             });
-            console.log(`[API Webhook GET] Verified and updated userSettings for ${settings.id}`);
         }
 
         return res.status(200).send(challenge);
@@ -120,7 +113,6 @@ async function processStatusUpdate(statusItem, metadata = null) {
 
     const targetStatus = normalizeStatus(rawStatus);
     if (!targetStatus) {
-        console.log(`[API Webhook] Unknown status received: ${rawStatus}`);
         return;
     }
 
@@ -140,7 +132,6 @@ async function processStatusUpdate(statusItem, metadata = null) {
     });
 
     if (!existingMessage) {
-        console.log(`[API Webhook Status] Message ${messageId} not found in database yet (may be pending create). Status: ${targetStatus}`);
         return;
     }
 
@@ -149,7 +140,6 @@ async function processStatusUpdate(statusItem, metadata = null) {
 
     // Do not downgrade status (e.g. READ should not downgrade to DELIVERED or SENT)
     if (newRank < currentRank && currentRank !== STATUS_RANK.FAILED) {
-        console.log(`[API Webhook Status] Ignoring status downgrade for ${messageId}: current ${existingMessage.status} (rank ${currentRank}) vs new ${targetStatus} (rank ${newRank})`);
         return;
     }
 
@@ -195,8 +185,6 @@ async function processStatusUpdate(statusItem, metadata = null) {
             },
         });
 
-        console.log(`[API Webhook Status] Updated message ${messageId} -> ${targetStatus} for user ${updated.userId}`);
-
         // Broadcast real-time status update to SSE clients
         chatEventBus.publishStatusUpdate({
             userId: updated.userId,
@@ -220,7 +208,6 @@ async function processStatusUpdate(statusItem, metadata = null) {
 async function handleWebhookPost(req, res, pathToken = null) {
     try {
         const body = req.body;
-        console.log('[API Webhook POST] Received payload:', JSON.stringify(body, null, 2));
 
         const entries = Array.isArray(body?.entry) ? body.entry : [];
         if (entries.length === 0) {
@@ -244,7 +231,6 @@ async function handleWebhookPost(req, res, pathToken = null) {
                 // 1. Process Status Updates (delivery and read receipts)
                 const statuses = Array.isArray(value.statuses) ? value.statuses : [];
                 if (statuses.length > 0) {
-                    console.log(`[API Webhook POST] Processing ${statuses.length} status updates...`);
                     for (const statusItem of statuses) {
                         await processStatusUpdate(statusItem, value.metadata);
                     }
@@ -354,8 +340,6 @@ async function handleWebhookPost(req, res, pathToken = null) {
                         const reactionTargetId = message.reaction?.message_id;
                         const emoji = message.reaction?.emoji || '';
 
-                        console.log(`[API Webhook POST] Incoming reaction for target message ${reactionTargetId} from ${cleanPhone}: "${emoji}"`);
-
                         if (!reactionTargetId) {
                             console.warn('[API Webhook POST] Reaction missing target message_id', message.id);
                             continue;
@@ -418,8 +402,6 @@ async function handleWebhookPost(req, res, pathToken = null) {
                                 where: { id: targetMessage.id },
                                 data: { reactions: filtered },
                             });
-
-                            console.log(`[API Webhook POST] Updated reactions for message ${targetMessage.id}:`, filtered);
 
                             // Broadcast real-time reaction update to SSE clients
                             chatEventBus.publishReactionUpdate({
@@ -501,8 +483,6 @@ async function handleWebhookPost(req, res, pathToken = null) {
                                 mediaData: mediaData ? JSON.stringify(mediaData) : undefined,
                             },
                         });
-
-                        console.log(`[API Webhook POST] Stored incoming message ${savedMessage.id} from ${cleanPhone}`);
 
                         // Publish new message event
                         chatEventBus.publishNewMessage({

@@ -122,20 +122,71 @@ export async function POST(request: NextRequest) {
       updateData.verifyToken = verify_token;
     }
 
-    console.log('Updating user settings for user:', userId);
-
     // Check if user settings exist
     const existingSettings = await prisma.userSettings.findUnique({
       where: { id: userId },
-      select: { id: true, webhookToken: true }
+      select: {
+        id: true,
+        webhookToken: true,
+        accessToken: true,
+        phoneNumberId: true,
+        businessAccountId: true,
+        apiVersion: true,
+      },
     });
+
+    // Auto-resolve businessAccountId if not provided and not yet stored
+    const effectiveToken = updateData.accessToken || existingSettings?.accessToken;
+    const effectivePhoneId = updateData.phoneNumberId || existingSettings?.phoneNumberId;
+    const effectiveApiVersion = updateData.apiVersion || existingSettings?.apiVersion || 'v23.0';
+
+    if (!updateData.businessAccountId && !existingSettings?.businessAccountId && effectiveToken && effectivePhoneId) {
+      let resolvedWabaId: string | null = null;
+      try {
+        const phoneLookupRes = await fetch(
+          `https://graph.facebook.com/${effectiveApiVersion}/${effectivePhoneId}?fields=whatsapp_business_account`,
+          { headers: { Authorization: `Bearer ${effectiveToken}` } }
+        );
+        if (phoneLookupRes.ok) {
+          const phoneLookup = await phoneLookupRes.json();
+          if (phoneLookup?.whatsapp_business_account?.id) {
+            resolvedWabaId = String(phoneLookup.whatsapp_business_account.id);
+          }
+        }
+      } catch (e) {
+        console.warn('[Settings POST] Method A WABA discovery error:', e);
+      }
+
+      if (!resolvedWabaId) {
+        try {
+          const debugRes = await fetch(
+            `https://graph.facebook.com/${effectiveApiVersion}/debug_token?input_token=${effectiveToken}&access_token=${effectiveToken}`
+          );
+          if (debugRes.ok) {
+            const debugData = await debugRes.json();
+            const scopes = debugData?.data?.granular_scopes || [];
+            const wabaScope = scopes.find(
+              (s: any) => s.scope === 'whatsapp_business_management' || s.scope === 'whatsapp_business_messaging'
+            );
+            if (wabaScope?.target_ids?.[0]) {
+              resolvedWabaId = String(wabaScope.target_ids[0]);
+            }
+          }
+        } catch (e) {
+          console.warn('[Settings POST] Method B WABA discovery error:', e);
+        }
+      }
+
+      if (resolvedWabaId) {
+        updateData.businessAccountId = resolvedWabaId;
+      }
+    }
 
     let result;
     if (existingSettings) {
       // Generate webhook token if it doesn't exist
       if (!existingSettings.webhookToken) {
         updateData.webhookToken = generateWebhookToken();
-        console.log('Generated new webhook token for user:', userId);
       }
 
       // Update existing settings
@@ -147,7 +198,6 @@ export async function POST(request: NextRequest) {
     } else {
       // Insert new settings with a webhook token
       const webhookToken = generateWebhookToken();
-      console.log('Generated webhook token for new user settings:', userId);
 
       // Ensure user exists in DB with email + name from Clerk
       await getOrCreateUser(userId);
@@ -172,8 +222,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log('Settings saved successfully for user:', userId);
-
     // If businessAccountId and accessToken are present, ensure WABA is subscribed to webhooks for messages
     if (settings.businessAccountId && settings.accessToken) {
       try {
@@ -189,9 +237,6 @@ export async function POST(request: NextRequest) {
           body: new URLSearchParams({
             subscribed_fields: 'messages,message_template_status_update',
           }),
-        }).then(async (res) => {
-          const resData = await res.json();
-          console.log('[Settings POST] WABA webhook subscription status:', resData);
         }).catch((err) => console.warn('[Settings POST] Error subscribing WABA to messages:', err));
 
         // Also ensure Meta App webhook subscription points to current domain and user's webhook token
@@ -214,9 +259,6 @@ export async function POST(request: NextRequest) {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
             body: appSubParams,
-          }).then(async (appRes) => {
-            const appData = await appRes.json();
-            console.log('[Settings POST] Meta App webhook subscription update:', appData);
           }).catch((appErr) => console.warn('[Settings POST] Error updating Meta App webhook:', appErr));
         }
       } catch (subErr) {
@@ -276,7 +318,6 @@ export async function GET() {
     // If no settings exist at all, create them with a webhook token
     if (!settings) {
       const webhookToken = generateWebhookToken();
-      console.log('Creating initial settings with webhook token for new user:', userId);
 
       try {
         // Ensure user exists in DB with email + name from Clerk
@@ -305,7 +346,6 @@ export async function GET() {
           where: { id: userId },
           data: { webhookToken: webhookToken }
         });
-        console.log('Generated webhook token for existing user:', userId);
       } catch (updateError: unknown) {
         console.error('Error updating webhook token:', updateError);
       }
@@ -315,7 +355,6 @@ export async function GET() {
     const isPhoneIdInvalidOrMissing = !settings?.phoneNumberId || !String(settings.phoneNumberId).trim() || settings.phoneNumberId === settings.businessAccountId;
     if (settings && settings.businessAccountId && settings.accessToken && isPhoneIdInvalidOrMissing) {
       try {
-        console.log(`[Settings GET] Querying Meta phone numbers for WABA ${settings.businessAccountId}...`);
         const phoneRes = await fetch(
           `https://graph.facebook.com/${settings.apiVersion || 'v23.0'}/${settings.businessAccountId}/phone_numbers?fields=id,display_phone_number,verified_name,code_verification_status,quality_rating`,
           {
@@ -325,7 +364,6 @@ export async function GET() {
           }
         );
         const phoneData = await phoneRes.json();
-        console.log('[Settings GET] Meta phone numbers response:', JSON.stringify(phoneData));
         if (phoneData.data && phoneData.data.length > 0) {
           const firstPhone = phoneData.data[0];
           settings = await prisma.userSettings.update({
@@ -337,10 +375,67 @@ export async function GET() {
               updatedAt: new Date(),
             },
           });
-          console.log('[Settings GET] Successfully linked phone number to user:', firstPhone.id);
         }
       } catch (phoneErr) {
         console.warn('[Settings GET] Error discovering phone numbers:', phoneErr);
+      }
+    }
+
+    // If settings has phoneNumberId and accessToken, but no businessAccountId, auto-discover WABA from Meta
+    const isWabaMissing = !settings?.businessAccountId || !String(settings.businessAccountId).trim();
+    if (settings && settings.phoneNumberId && settings.accessToken && isWabaMissing) {
+      try {
+        let resolvedWabaId: string | null = null;
+        const apiVer = settings.apiVersion || 'v23.0';
+
+        // Method A: Phone lookup
+        try {
+          const phoneLookupRes = await fetch(
+            `https://graph.facebook.com/${apiVer}/${settings.phoneNumberId}?fields=whatsapp_business_account`,
+            { headers: { Authorization: `Bearer ${settings.accessToken}` } }
+          );
+          if (phoneLookupRes.ok) {
+            const phoneLookup = await phoneLookupRes.json();
+            if (phoneLookup?.whatsapp_business_account?.id) {
+              resolvedWabaId = String(phoneLookup.whatsapp_business_account.id);
+            }
+          }
+        } catch (e) {
+          console.warn('[Settings GET] Method A WABA discovery:', e);
+        }
+
+        // Method B: Debug token
+        if (!resolvedWabaId) {
+          try {
+            const debugRes = await fetch(
+              `https://graph.facebook.com/${apiVer}/debug_token?input_token=${settings.accessToken}&access_token=${settings.accessToken}`
+            );
+            if (debugRes.ok) {
+              const debugData = await debugRes.json();
+              const scopes = debugData?.data?.granular_scopes || [];
+              const wabaScope = scopes.find(
+                (s: any) => s.scope === 'whatsapp_business_management' || s.scope === 'whatsapp_business_messaging'
+              );
+              if (wabaScope?.target_ids?.[0]) {
+                resolvedWabaId = String(wabaScope.target_ids[0]);
+              }
+            }
+          } catch (e) {
+            console.warn('[Settings GET] Method B WABA discovery:', e);
+          }
+        }
+
+        if (resolvedWabaId) {
+          settings = await prisma.userSettings.update({
+            where: { id: userId },
+            data: {
+              businessAccountId: resolvedWabaId,
+              updatedAt: new Date(),
+            },
+          });
+        }
+      } catch (wabaErr) {
+        console.warn('[Settings GET] Error discovering WABA ID:', wabaErr);
       }
     }
 

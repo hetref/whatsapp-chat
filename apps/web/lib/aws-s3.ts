@@ -125,8 +125,6 @@ export async function downloadAndUploadToS3(
   whatsappAccessToken?: string
 ): Promise<number> {
   try {
-    console.log(`Downloading file from URL: ${fileUrl}`);
-
     // Security validation
     if (!fileUrl || !senderId || !mediaId || !mimeType) {
       throw new Error('Missing required parameters for S3 upload');
@@ -154,7 +152,6 @@ export async function downloadAndUploadToS3(
     if (fileUrl.includes('lookaside.fbsbx.com') || fileUrl.includes('graph.facebook.com')) {
       if (whatsappAccessToken) {
         headers['Authorization'] = `Bearer ${whatsappAccessToken}`;
-        console.log('Added WhatsApp authentication header for media download');
       } else {
         throw new Error('WhatsApp media URL detected but no access token provided');
       }
@@ -195,14 +192,10 @@ export async function downloadAndUploadToS3(
       throw new Error('Downloaded file is empty');
     }
 
-    console.log(`Downloaded file: ${buffer.length} bytes`);
-
     // Generate S3 key with sanitized sender ID
     const fileExtension = getFileExtensionFromMimeType(mimeType);
     const sanitizedSenderId = senderId.replace(/[^0-9]/g, ''); // Remove non-numeric chars
     const s3Key = `${sanitizedSenderId}/${mediaId}.${fileExtension}`;
-
-    console.log(`Uploading to S3: ${s3Key} (${buffer.length} bytes)`);
 
     // Upload to S3 with enhanced metadata
     const uploadCommand = new PutObjectCommand({
@@ -222,7 +215,6 @@ export async function downloadAndUploadToS3(
     });
 
     await s3Client.send(uploadCommand);
-    console.log('S3 upload successful');
 
     // Return the number of bytes uploaded
     return buffer.length;
@@ -246,8 +238,6 @@ export async function uploadFileToS3(
     const fileExtension = getFileExtensionFromMimeType(file.type);
     const s3Key = `${senderId}/${mediaId}.${fileExtension}`;
 
-    console.log(`Uploading file to S3: ${s3Key} (${file.size} bytes)`);
-
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
@@ -264,7 +254,6 @@ export async function uploadFileToS3(
     });
 
     await s3Client.send(uploadCommand);
-    console.log('S3 file upload successful');
 
     return buffer.length;
 
@@ -293,7 +282,6 @@ export async function generatePresignedUrl(
     });
 
     const presignedUrl = await getSignedUrl(s3Client, command, { expiresIn });
-    console.log(`Generated presigned URL for ${s3Key} (expires in ${expiresIn}s)`);
 
     return presignedUrl;
   } catch (error) {
@@ -344,7 +332,6 @@ export async function deleteFromS3(
     });
 
     await s3Client.send(command);
-    console.log(`Deleted S3 object: ${s3Key}`);
     return true;
   } catch (error) {
     console.error('Error deleting from S3:', error);
@@ -409,91 +396,4 @@ export async function generatePresignedUrlByKey(
     return null;
   }
 }
-
-/**
- * Upload User Avatar to S3.
- * Uses a deterministic key `avatars/${userId}/avatar` so PutObject atomically replaces
- * any previous avatar without requiring s3:ListBucket or s3:DeleteObject IAM permissions.
- * Guarantees zero duplicate files in S3.
- */
-export async function uploadUserAvatar(
-  userId: string,
-  fileBuffer: Buffer,
-  mimeType: string
-): Promise<{ s3Key: string; presignedUrl: string | null }> {
-  const s3Key = `avatars/${userId}/avatar`;
-
-  // Upload to S3 - PutObject automatically overwrites the previous object
-  const uploadCmd = new PutObjectCommand({
-    Bucket: BUCKET_NAME,
-    Key: s3Key,
-    Body: fileBuffer,
-    ContentType: mimeType,
-    ACL: 'private',
-    Metadata: {
-      'user-id': userId,
-      'upload-timestamp': new Date().toISOString(),
-      'content-type': mimeType,
-    },
-  });
-
-  await s3Client.send(uploadCmd);
-  console.log(`[S3 Avatar] Successfully uploaded avatar to ${s3Key}`);
-
-  // Generate 7-day presigned GET URL
-  const presignedUrl = await generatePresignedUrlByKey(s3Key, 604800);
-
-  return { s3Key, presignedUrl };
-}
-
-/**
- * Generate a fresh presigned GET URL for a user's avatar
- */
-export async function getUserAvatarPresignedUrl(userId: string, expiresIn: number = 604800): Promise<string | null> {
-  const s3Key = `avatars/${userId}/avatar`;
-  return generatePresignedUrlByKey(s3Key, expiresIn);
-}
-
-/**
- * Delete avatar object for a user (if DeleteObject is allowed)
- */
-export async function deleteUserAvatar(userId: string): Promise<boolean> {
-  const s3Key = `avatars/${userId}/avatar`;
-  try {
-    const deleteCmd = new DeleteObjectCommand({
-      Bucket: BUCKET_NAME,
-      Key: s3Key,
-    });
-    await s3Client.send(deleteCmd);
-    console.log(`[S3 Avatar] Deleted avatar: ${s3Key}`);
-    return true;
-  } catch (err) {
-    console.warn(`[S3 Avatar] S3 DeleteObject skipped or unauthorized for user ${userId}:`, err);
-    return false;
-  }
-}
-
-/**
- * Fetch Avatar Object directly from S3 for streaming
- */
-export async function getUserAvatarStream(userId: string): Promise<{ buffer: Buffer; contentType: string } | null> {
-  const s3Key = `avatars/${userId}/avatar`;
-  try {
-    const getCmd = new GetObjectCommand({
-      Bucket: BUCKET_NAME,
-      Key: s3Key,
-    });
-    const response = await s3Client.send(getCmd);
-    if (!response.Body) return null;
-
-    const byteArray = await response.Body.transformToByteArray();
-    return {
-      buffer: Buffer.from(byteArray),
-      contentType: response.ContentType || 'image/png',
-    };
-  } catch (err: any) {
-    // If not found at standard key, try existing avatar timestamp key if applicable
-    console.warn(`[S3 Avatar] Standard avatar key not found for ${userId}, checking fallback...`);
-    return null;
-  }
-} 
+ 

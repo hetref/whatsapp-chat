@@ -82,8 +82,6 @@ export async function POST(request: NextRequest) {
       process.env.VERIFY_TOKEN?.replace(/^["']|["']$/g, '').trim() ||
       'VAsDSKmdFNSDMvsdDOpk';
 
-    console.log(`[Subscribe Webhooks] Subscribing WABA ${wabaId} to messages...`);
-
     // 1. Subscribe WABA to webhook fields: messages, message_template_status_update
     const subUrl = new URL(`https://graph.facebook.com/${apiVersion}/${wabaId}/subscribed_apps`);
     subUrl.searchParams.set('subscribed_fields', 'messages,message_template_status_update');
@@ -106,7 +104,6 @@ export async function POST(request: NextRequest) {
     } catch {
       subData = { status: subResponse.status, statusText: subResponse.statusText };
     }
-    console.log('[Subscribe Webhooks] WABA subscription response:', subData);
 
     // 2. Query subscribed apps on WABA to verify active subscription
     let currentSubscriptions: Record<string, unknown> | null = null;
@@ -132,7 +129,6 @@ export async function POST(request: NextRequest) {
 
     if (appId && appSecret) {
       try {
-        console.log(`[Subscribe Webhooks] Setting App ${appId} webhook to ${targetWebhookUrl}...`);
         const appSubParams = new URLSearchParams();
         appSubParams.set('object', 'whatsapp_business_account');
         appSubParams.set('callback_url', targetWebhookUrl);
@@ -156,7 +152,6 @@ export async function POST(request: NextRequest) {
         } catch {
           appSubscriptionResult = { status: appSubRes.status, statusText: appSubRes.statusText };
         }
-        console.log('[Subscribe Webhooks] Meta App Subscriptions update result:', appSubscriptionResult);
       } catch (appErr) {
         console.warn('[Subscribe Webhooks] Error updating app subscriptions via API:', appErr);
       }
@@ -167,7 +162,6 @@ export async function POST(request: NextRequest) {
           `https://graph.facebook.com/${apiVersion}/${appId}/subscriptions?access_token=${appId}|${appSecret}`
         );
         currentAppWebhooks = await queryAppSub.json();
-        console.log('[Subscribe Webhooks] Current Meta App Webhooks config:', JSON.stringify(currentAppWebhooks));
       } catch (queryAppErr) {
         console.warn('[Subscribe Webhooks] Error querying app subscriptions:', queryAppErr);
       }

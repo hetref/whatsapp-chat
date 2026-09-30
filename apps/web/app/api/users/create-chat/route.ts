@@ -91,8 +91,6 @@ async function handleSingleUserCreation(
     );
   }
 
-  console.log(`Creating/getting contact ${cleanPhoneNumber} for user ${currentUserId}, custom name: "${customName}"`);
-
   try {
     // Check if contact already exists for this user
     let contact = await prisma.contact.findUnique({
@@ -132,8 +130,6 @@ async function handleSingleUserCreation(
         data: { customName }
       });
     }
-
-    console.log(`Successfully ${isNew ? 'created' : 'retrieved'} contact:`, contact.id);
 
     return NextResponse.json({
       success: true,
@@ -184,8 +180,6 @@ async function handleBulkUserCreation(
       { status: 400 }
     );
   }
-
-  console.log(`Bulk creating ${users.length} contacts for user ${currentUserId}`);
 
   // Check contacts limit for the entire batch
   const contactCheck = await checkContactsLimit(currentUserId, users.length);
@@ -319,8 +313,6 @@ async function handleBulkUserCreation(
       results.failedCount++;
     }
   }
-
-  console.log(`Bulk creation completed: ${results.successCount} success, ${results.failedCount} failed`);
 
   return NextResponse.json({
     success: true,

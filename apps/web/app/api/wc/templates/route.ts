@@ -78,8 +78,6 @@ export async function GET(request: NextRequest) {
 
         apiUrl += `?${params.toString()}`;
 
-        console.log('[WC API] Fetching templates:', { businessAccountId: settings.businessAccountId });
-
         // Fetch templates from WhatsApp Business API
         const response = await fetch(apiUrl, {
             method: 'GET',
@@ -120,8 +118,6 @@ export async function GET(request: NextRequest) {
         }
 
         const templatesData = await response.json() as { data: WhatsAppTemplate[]; paging?: Record<string, unknown> };
-
-        console.log(`[WC API] Successfully fetched ${templatesData.data?.length || 0} templates`);
 
         // Transform the data
         const transformedTemplates: TransformedTemplate[] = templatesData.data?.map((template: WhatsAppTemplate) => ({
@@ -200,12 +196,6 @@ export async function POST(request: NextRequest) {
             return createErrorResponse(validationError, 400, 'Validation Error');
         }
 
-        console.log('[WC API] Creating template:', {
-            name: templateData.name,
-            category: templateData.category,
-            language: templateData.language,
-        });
-
         // Prepare WhatsApp Business API request
         const apiUrl = `https://graph.facebook.com/${settings.apiVersion}/${settings.businessAccountId}/message_templates`;
 
@@ -268,8 +258,6 @@ export async function POST(request: NextRequest) {
                 timestamp: new Date().toISOString()
             }, { status: response.status });
         }
-
-        console.log('[WC API] Template created successfully:', responseData.id);
 
         return createSuccessResponse(
             {

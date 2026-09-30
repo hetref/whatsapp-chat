@@ -7,12 +7,6 @@ router.post('/', async (req, res) => {
         const body = req.body || {};
         const { screen_id, data = {}, flow_token, flow_cta } = body;
 
-        console.log('Flow payload received', {
-            screen_id,
-            flow_token: flow_token ? 'present' : 'missing',
-            flow_cta: flow_cta || null,
-        });
-
         if (screen_id === 'SIGN_IN') {
             const { email, password } = data;
 

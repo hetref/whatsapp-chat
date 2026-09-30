@@ -16,8 +16,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    console.log('[Settings Disconnect] Disconnecting WhatsApp for user:', userId);
-
     const existingSettings = await prisma.userSettings.findUnique({
       where: { id: userId },
     });

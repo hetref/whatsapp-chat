@@ -21,8 +21,6 @@ async function uploadMediaToWhatsApp(
     apiVersion: string
 ): Promise<MediaUploadResult> {
     try {
-        console.log(`[WC API] Uploading to WhatsApp: ${file.name} (${file.type}, ${file.size} bytes)`);
-
         const formData = new FormData();
         formData.append('file', file);
         formData.append('type', file.type);
@@ -49,7 +47,6 @@ async function uploadMediaToWhatsApp(
         }
 
         const result = await uploadResponse.json();
-        console.log('[WC API] Media uploaded to WhatsApp:', result.id);
 
         return {
             id: result.id,
@@ -221,8 +218,6 @@ export async function POST(request: NextRequest) {
             const file = files[i];
             const caption = captions[i] || '';
 
-            console.log(`[WC API] Processing file ${i + 1}/${files.length}: ${file.name}`);
-
             try {
                 // Upload media to WhatsApp
                 const mediaUpload = await uploadMediaToWhatsApp(
@@ -248,8 +243,6 @@ export async function POST(request: NextRequest) {
                 );
 
                 const messageId = messageResponse.messages?.[0]?.id;
-
-                console.log(`[WC API] Media message sent successfully: ${messageId}`);
 
                 // Find or create contact for this phone number
                 let contact = await prisma.contact.findUnique({

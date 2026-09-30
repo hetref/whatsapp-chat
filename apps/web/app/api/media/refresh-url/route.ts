@@ -107,8 +107,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log(`Generated presigned URL for message: ${messageId} (expires in ${PRESIGNED_URL_EXPIRY}s)`);
-
     // Return the URL and expiry info - NOT stored in DB
     return NextResponse.json({
       success: true,

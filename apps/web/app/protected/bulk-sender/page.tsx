@@ -803,10 +803,7 @@ export default function BulkSenderPage() {
               result.details?.error_user_msg ||
               result.details?.message ||
               "Failed to send";
-            console.error(`[BulkSender] ❌ Send failed for ${contact.name} (${contact.phone_number}):`, {
-              error: errorDetail,
-              response: result,
-            });
+            console.error('[BulkSender] ❌ Send failed:', errorDetail);
             batchResults.push({
               contact,
               success: false,
@@ -815,7 +812,7 @@ export default function BulkSenderPage() {
           }
         } catch (error) {
           const networkErrMsg = error instanceof Error ? error.message : "Network error";
-          console.error(`[BulkSender] ❌ Exception sending to ${contact.name} (${contact.phone_number}):`, error);
+          console.error('[BulkSender] ❌ Exception sending message:', error);
           batchResults.push({
             contact,
             success: false,

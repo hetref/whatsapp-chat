@@ -50,8 +50,6 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      console.log(`[Embedded Signup] Exchanging code for access token with Meta App ${appId}...`);
-
       const tokenUrl = new URL('https://graph.facebook.com/v23.0/oauth/access_token');
       tokenUrl.searchParams.set('client_id', appId);
       tokenUrl.searchParams.set('client_secret', appSecret);
@@ -68,7 +66,6 @@ export async function POST(request: NextRequest) {
 
       // If token exchange failed and redirect_uri was provided, retry without redirect_uri
       if ((!tokenResponse.ok || !tokenData.access_token) && body.redirect_uri) {
-        console.log('[Embedded Signup] Retrying token exchange without redirect_uri...');
         tokenUrl.searchParams.delete('redirect_uri');
         const retryRes = await fetch(tokenUrl.toString(), { method: 'GET' });
         const retryData = await retryRes.json();
@@ -82,7 +79,6 @@ export async function POST(request: NextRequest) {
       if (!tokenResponse.ok || !tokenData.access_token) {
         const originFallback = request.nextUrl.origin || 'http://localhost:3000';
         const fallbackRedirect = `${originFallback}/protected/setup`;
-        console.log('[Embedded Signup] Retrying token exchange with fallback redirect_uri:', fallbackRedirect);
         tokenUrl.searchParams.set('redirect_uri', fallbackRedirect);
         const retryRes = await fetch(tokenUrl.toString(), { method: 'GET' });
         const retryData = await retryRes.json();
@@ -104,7 +100,6 @@ export async function POST(request: NextRequest) {
       }
 
       resolvedAccessToken = tokenData.access_token;
-      console.log('[Embedded Signup] Access token received successfully');
     }
 
     // 1.2 If no access token and no code in request, check if user settings in database already has an access token
@@ -121,7 +116,6 @@ export async function POST(request: NextRequest) {
         if (!phone_number_id && existing.phoneNumberId) {
           phone_number_id = existing.phoneNumberId;
         }
-        console.log('[Embedded Signup] Using existing access token from database for user:', userId);
       }
     }
 
@@ -152,7 +146,6 @@ export async function POST(request: NextRequest) {
             );
             if (wabaScope?.target_ids?.[0]) {
               waba_id = wabaScope.target_ids[0];
-              console.log('[Embedded Signup] Discovered WABA ID via debug_token:', waba_id);
             }
           }
         }
@@ -171,7 +164,6 @@ export async function POST(request: NextRequest) {
           const meWabaData = await meWabaRes.json();
           if (meWabaData.data && meWabaData.data.length > 0) {
             waba_id = meWabaData.data[0].id;
-            console.log('[Embedded Signup] Discovered WABA ID via /me/whatsapp_business_accounts:', waba_id);
           }
         } catch (err) {
           console.warn('[Embedded Signup] Error querying /me/whatsapp_business_accounts:', err);
@@ -203,7 +195,6 @@ export async function POST(request: NextRequest) {
     } else if (waba_id) {
       // Fallback: list phone numbers under WABA
       try {
-        console.log(`[Embedded Signup] Querying phone numbers for WABA ${waba_id}...`);
         const phonesRes = await fetch(
           `https://graph.facebook.com/v23.0/${waba_id}/phone_numbers?fields=id,display_phone_number,verified_name,code_verification_status,quality_rating`,
           {
@@ -213,13 +204,11 @@ export async function POST(request: NextRequest) {
           }
         );
         const phonesData = await phonesRes.json();
-        console.log('[Embedded Signup] Phone numbers query result:', JSON.stringify(phonesData));
         if (phonesData.data && phonesData.data.length > 0) {
           const firstPhone = phonesData.data[0];
           phone_number_id = firstPhone.id;
           displayPhoneNumber = firstPhone.display_phone_number || null;
           verifiedName = firstPhone.verified_name || null;
-          console.log('[Embedded Signup] Discovered phone_number_id:', phone_number_id, 'display:', displayPhoneNumber);
         }
       } catch (phonesErr) {
         console.warn('[Embedded Signup] Error discovering phone numbers:', phonesErr);
@@ -271,10 +260,9 @@ export async function POST(request: NextRequest) {
     // 4. Subscribe WABA to webhooks once conflict check passes
     if (waba_id) {
       try {
-        console.log(`[Embedded Signup] Subscribing WABA ${waba_id} to app webhooks with subscribed_fields=messages...`);
         const subUrl = new URL(`https://graph.facebook.com/v23.0/${waba_id}/subscribed_apps`);
         subUrl.searchParams.set('subscribed_fields', 'messages,message_template_status_update');
-        const subResponse = await fetch(subUrl.toString(), {
+        await fetch(subUrl.toString(), {
           method: 'POST',
           headers: {
             Authorization: `Bearer ${resolvedAccessToken}`,
@@ -284,8 +272,6 @@ export async function POST(request: NextRequest) {
             subscribed_fields: 'messages,message_template_status_update',
           }),
         });
-        const subData = await subResponse.json();
-        console.log('[Embedded Signup] WABA webhook subscription response:', subData);
       } catch (subErr) {
         console.warn('[Embedded Signup] Error subscribing WABA to webhooks:', subErr);
       }
@@ -297,7 +283,6 @@ export async function POST(request: NextRequest) {
       const appSecret = process.env.META_APP_SECRET;
       if (appId && appSecret) {
         const canonicalWebhookUrl = 'https://www.wachat.tech/api/webhook';
-        console.log(`[Embedded Signup] Ensuring Meta App ${appId} webhook points to ${canonicalWebhookUrl}...`);
         const appSubParams = new URLSearchParams();
         appSubParams.set('object', 'whatsapp_business_account');
         appSubParams.set('callback_url', canonicalWebhookUrl);
@@ -355,8 +340,6 @@ export async function POST(request: NextRequest) {
         webhookToken: webhookToken,
       },
     });
-
-    console.log('[Embedded Signup] WhatsApp account successfully connected for user:', userId);
 
     return NextResponse.json({
       success: true,

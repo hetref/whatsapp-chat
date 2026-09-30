@@ -1,22 +1,72 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { authClient, signOut } from "@/lib/auth-client";
-import { User, Settings, CreditCard, LogOut, Loader2, Shield } from "lucide-react";
+import { User, Settings, CreditCard, LogOut, Loader2, Phone, BadgeCheck, BarChart3 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface UserAvatarDropdownProps {
   className?: string;
   align?: "start" | "center" | "end";
+  metaName?: string;
+  metaPhone?: string;
+  metaImage?: string | null;
+  isVerified?: boolean;
 }
 
-export function UserAvatarDropdown({ className, align = "end" }: UserAvatarDropdownProps) {
+interface MetaSummary {
+  verified_name?: string;
+  display_phone_number?: string;
+  profile_picture_url?: string | null;
+  is_official_business_account?: boolean;
+}
+
+export function UserAvatarDropdown({
+  className,
+  align = "end",
+  metaName,
+  metaPhone,
+  metaImage,
+  isVerified,
+}: UserAvatarDropdownProps) {
   const { data: session, isPending } = authClient.useSession();
+  const [internalMeta, setInternalMeta] = useState<MetaSummary | null>(null);
   const [loggingOut, setLoggingOut] = useState(false);
   const router = useRouter();
+
+  // Load Meta WhatsApp Business Profile if props not explicitly provided
+  const loadMetaProfile = useCallback(async () => {
+    try {
+      const res = await fetch("/api/whatsapp/business-profile");
+      const data = await res.json();
+      if (data.connected && data.data) {
+        setInternalMeta({
+          verified_name: data.data.verified_name,
+          display_phone_number: data.data.display_phone_number,
+          profile_picture_url: data.data.profile_picture_url,
+          is_official_business_account: data.data.is_official_business_account,
+        });
+      }
+    } catch {
+      // Graceful fallback to session user
+    }
+  }, []);
+
+  useEffect(() => {
+    loadMetaProfile();
+
+    const handleUpdate = () => {
+      loadMetaProfile();
+    };
+
+    window.addEventListener("whatsapp-profile-updated", handleUpdate);
+    return () => {
+      window.removeEventListener("whatsapp-profile-updated", handleUpdate);
+    };
+  }, [loadMetaProfile]);
 
   if (isPending) {
     return (
@@ -29,18 +79,31 @@ export function UserAvatarDropdown({ className, align = "end" }: UserAvatarDropd
   }
 
   const user = session.user;
-  const name = user.name || "User";
-  const email = user.email || "";
-  const image = user.image;
+  const effectiveName =
+    metaName || internalMeta?.verified_name || user.name || "WhatsApp Business";
+  const effectivePhone =
+    metaPhone || internalMeta?.display_phone_number || "";
+  const effectiveImage =
+    metaImage !== undefined
+      ? metaImage
+      : internalMeta?.profile_picture_url !== undefined
+      ? internalMeta.profile_picture_url
+      : user.image;
+  const effectiveVerified =
+    isVerified !== undefined
+      ? isVerified
+      : Boolean(internalMeta?.is_official_business_account);
 
-  // Extract initials
-  const initials = name
-    .split(" ")
-    .map((n) => n[0])
-    .filter(Boolean)
-    .slice(0, 2)
-    .join("")
-    .toUpperCase() || "U";
+  // Extract initials (max 2 characters)
+  const initials =
+    effectiveName
+      .trim()
+      .split(/\s+/)
+      .map((n) => n[0])
+      .filter(Boolean)
+      .slice(0, 2)
+      .join("")
+      .toUpperCase() || "W";
 
   const handleSignOut = async () => {
     try {
@@ -68,18 +131,18 @@ export function UserAvatarDropdown({ className, align = "end" }: UserAvatarDropd
           type="button"
           aria-label="User Account Menu"
           className={cn(
-            "relative size-8 rounded-full flex items-center justify-center font-medium text-xs text-white bg-[#5F7C65] hover:ring-2 hover:ring-[#5F7C65]/40 transition-all select-none focus:outline-hidden",
+            "relative size-8 rounded-full flex items-center justify-center font-bold text-xs text-white bg-gradient-to-br from-[#5F7C65] to-[#2D583F] hover:ring-2 hover:ring-[#5F7C65]/40 transition-all select-none focus:outline-hidden overflow-hidden shrink-0 shadow-2xs cursor-pointer",
             className
           )}
         >
-          {image ? (
+          {effectiveImage ? (
             <img
-              src={image}
-              alt={name}
+              src={effectiveImage}
+              alt={effectiveName}
               className="size-full rounded-full object-cover"
             />
           ) : (
-            <span>{initials}</span>
+            <span className="tracking-wider text-[11px] font-bold">{initials}</span>
           )}
         </button>
       </DropdownMenu.Trigger>
@@ -88,36 +151,63 @@ export function UserAvatarDropdown({ className, align = "end" }: UserAvatarDropd
         <DropdownMenu.Content
           align={align}
           sideOffset={8}
-          className="z-50 min-w-56 overflow-hidden rounded-xl border border-stone-200/80 dark:border-stone-800 bg-white/95 dark:bg-stone-900/95 backdrop-blur-md p-1.5 shadow-xl animate-in fade-in-50 zoom-in-95 data-[side=bottom]:slide-in-from-top-2"
+          className="z-50 min-w-64 overflow-hidden rounded-2xl border border-stone-200/80 dark:border-stone-800 bg-white/95 dark:bg-stone-900/95 backdrop-blur-md p-2 shadow-xl animate-in fade-in-50 zoom-in-95 data-[side=bottom]:slide-in-from-top-2"
         >
-          {/* User Header */}
-          <div className="flex flex-col px-3 py-2 border-b border-stone-100 dark:border-stone-800/80 mb-1">
-            <span className="text-sm font-semibold text-stone-900 dark:text-stone-100 truncate">
-              {name}
-            </span>
-            <span className="text-xs text-stone-500 dark:text-stone-400 truncate">
-              {email}
-            </span>
+          {/* User Header with Meta Business info & Avatar */}
+          <div className="flex items-center gap-3 px-2 py-2.5 border-b border-stone-100 dark:border-stone-800/80 mb-1">
+            <div className="size-10 rounded-full bg-gradient-to-br from-[#5F7C65] to-[#2D583F] text-white flex items-center justify-center font-bold text-sm overflow-hidden shrink-0 shadow-xs border border-stone-200 dark:border-stone-700">
+              {effectiveImage ? (
+                <img
+                  src={effectiveImage}
+                  alt={effectiveName}
+                  className="size-full object-cover"
+                />
+              ) : (
+                <span className="tracking-wider">{initials}</span>
+              )}
+            </div>
+
+            <div className="flex flex-col min-w-0">
+              <div className="flex items-center gap-1.5">
+                <span className="text-sm font-semibold text-stone-900 dark:text-stone-100 truncate">
+                  {effectiveName}
+                </span>
+                {effectiveVerified && (
+                  <span title="Verified Business" className="inline-flex shrink-0">
+                    <BadgeCheck className="size-3.5 text-sky-600" />
+                  </span>
+                )}
+              </div>
+              {effectivePhone && (
+                <span className="text-[11px] font-mono text-stone-500 dark:text-stone-400 flex items-center gap-1">
+                  <Phone className="size-2.5 text-[#5F7C65]" />
+                  <span>{effectivePhone}</span>
+                </span>
+              )}
+              <span className="text-[11px] text-stone-400 dark:text-stone-500 truncate mt-0.5">
+                {user.email}
+              </span>
+            </div>
           </div>
 
-          {/* Links */}
+          {/* Navigation Links */}
           <DropdownMenu.Item asChild>
             <Link
               href="/protected/profile"
               className="flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-stone-700 dark:text-stone-300 rounded-lg hover:bg-stone-100 dark:hover:bg-stone-800/70 hover:text-stone-900 dark:hover:text-stone-100 transition-colors cursor-pointer outline-hidden"
             >
               <User className="size-4 text-stone-500" />
-              <span>Profile Settings</span>
+              <span>WhatsApp Profile &amp; Avatar</span>
             </Link>
           </DropdownMenu.Item>
 
           <DropdownMenu.Item asChild>
             <Link
-              href="/protected/billing"
+              href="/protected/profile"
               className="flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-stone-700 dark:text-stone-300 rounded-lg hover:bg-stone-100 dark:hover:bg-stone-800/70 hover:text-stone-900 dark:hover:text-stone-100 transition-colors cursor-pointer outline-hidden"
             >
-              <CreditCard className="size-4 text-stone-500" />
-              <span>Billing & Subscription</span>
+              <BarChart3 className="size-4 text-stone-500" />
+              <span>Message Delivery Insights</span>
             </Link>
           </DropdownMenu.Item>
 
@@ -127,7 +217,17 @@ export function UserAvatarDropdown({ className, align = "end" }: UserAvatarDropd
               className="flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-stone-700 dark:text-stone-300 rounded-lg hover:bg-stone-100 dark:hover:bg-stone-800/70 hover:text-stone-900 dark:hover:text-stone-100 transition-colors cursor-pointer outline-hidden"
             >
               <Settings className="size-4 text-stone-500" />
-              <span>WhatsApp Setup</span>
+              <span>WhatsApp Setup &amp; Cloud API</span>
+            </Link>
+          </DropdownMenu.Item>
+
+          <DropdownMenu.Item asChild>
+            <Link
+              href="/protected/billing"
+              className="flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-stone-700 dark:text-stone-300 rounded-lg hover:bg-stone-100 dark:hover:bg-stone-800/70 hover:text-stone-900 dark:hover:text-stone-100 transition-colors cursor-pointer outline-hidden"
+            >
+              <CreditCard className="size-4 text-stone-500" />
+              <span>Billing &amp; Capacity</span>
             </Link>
           </DropdownMenu.Item>
 

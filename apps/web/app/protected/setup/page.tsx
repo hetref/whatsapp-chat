@@ -527,12 +527,10 @@ export default function SetupPage() {
 
     // To complete embedded signup for a new account, we MUST have code (or user already has access token in settings)
     if (!payload.code && !settingsRef.current?.has_access_token && !settingsRef.current?.access_token) {
-      console.log("[Embedded Signup] Stored WABA and Phone metadata, waiting for Meta authorization code...", payload);
       return;
     }
 
     if (isSubmittingRef.current) {
-      console.log("[Embedded Signup] Submission already in progress, stored parameters:", params);
       return;
     }
     isSubmittingRef.current = true;
@@ -541,8 +539,6 @@ export default function SetupPage() {
       setConnectingEmbedded(true);
       setEmbeddedStep("Connecting WhatsApp credentials to your account...");
       setEmbeddedError(null);
-
-      console.log("[Embedded Signup] Sending payload to backend:", payload);
 
       const response = await fetch("/api/settings/embedded-signup", {
         method: "POST",
@@ -630,7 +626,6 @@ export default function SetupPage() {
     }
 
     if (code) {
-      console.log("[SetupPage] Detected OAuth code in URL:", code);
       const redirectUri = `${window.location.origin}/protected/setup`;
 
       // If loaded inside a popup window
@@ -658,7 +653,6 @@ export default function SetupPage() {
     const handleMessage = async (event: MessageEvent) => {
       // 1. Check for our OAuth popup postMessage
       if (event.data?.type === "META_AUTH_CODE" && event.data?.code) {
-        console.log("[SetupPage] Received META_AUTH_CODE from popup:", event.data.code);
         await completeEmbeddedSignup({
           code: event.data.code,
           redirect_uri: event.data.redirect_uri,
@@ -687,8 +681,6 @@ export default function SetupPage() {
         const data = typeof event.data === "string" ? JSON.parse(event.data) : event.data;
 
         if (data?.type === "WA_EMBEDDED_SIGNUP") {
-          console.log("[Embedded Signup postMessage]:", data);
-
           if (typeof data.event === "string" && data.event.startsWith("FINISH")) {
             const { phone_number_id, waba_id } = data.data || {};
             await completeEmbeddedSignup({
@@ -710,7 +702,6 @@ export default function SetupPage() {
 
     const handleStorage = async (e: StorageEvent) => {
       if (e.key === "meta_whatsapp_code" && e.newValue) {
-        console.log("[SetupPage] Detected code via storage event:", e.newValue);
         localStorage.removeItem("meta_whatsapp_code");
         const redirectUri = `${window.location.origin}/protected/setup`;
         await completeEmbeddedSignup({ code: e.newValue, redirect_uri: redirectUri });
@@ -743,15 +734,12 @@ export default function SetupPage() {
       try {
         window.FB.login(
           (response) => {
-            console.log("[Embedded Signup] FB.login response:", response);
             if (response.authResponse?.code) {
-              console.log("[Embedded Signup] Received auth code from FB.login");
               void completeEmbeddedSignup({
                 code: response.authResponse.code,
                 redirect_uri: redirectUri,
               });
             } else if (response.status === "not_authorized" || !response.authResponse) {
-              console.log("[Embedded Signup] Login closed or cancelled by user");
               setConnectingEmbedded(false);
             }
           },
@@ -924,12 +912,6 @@ export default function SetupPage() {
 
       if (!phoneNumberId.trim()) {
         setAccessTokenError("Phone Number ID is required");
-        setSavingAccessToken(false);
-        return;
-      }
-
-      if (!businessAccountId.trim()) {
-        setAccessTokenError("Business Account ID is required");
         setSavingAccessToken(false);
         return;
       }
@@ -1875,7 +1857,9 @@ export default function SetupPage() {
 
                         <div className="space-y-1.5">
                           <div className="flex items-center justify-between">
-                            <Label htmlFor="business-account-id" className="text-xs font-medium text-stone-700 dark:text-stone-300">Business Account ID *</Label>
+                            <Label htmlFor="business-account-id" className="text-xs font-medium text-stone-700 dark:text-stone-300">
+                              Business Account ID (WABA) <span className="text-[10px] text-stone-400 font-normal">(Auto-detected if blank)</span>
+                            </Label>
                             {settings?.has_business_account_id && (
                               <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full bg-[#5F7C65]/10 text-[#2D583F] dark:text-[#8EAE95]">
                                 Configured
@@ -1885,13 +1869,13 @@ export default function SetupPage() {
                           <Input
                             id="business-account-id"
                             type="text"
-                            placeholder="Enter your WhatsApp Business Account ID"
+                            placeholder="Auto-detected from Meta (or enter WABA ID)"
                             value={businessAccountId}
                             onChange={(e) => setBusinessAccountId(e.target.value)}
                             className="font-mono text-sm rounded-xl border-stone-300 dark:border-stone-700 focus-visible:ring-[#5F7C65]"
                           />
                           <p className="text-[11px] text-stone-500 dark:text-stone-400">
-                            Your WhatsApp Business Account (WABA) ID
+                            Your WhatsApp Business Account (WABA) ID. Automatically discovered from Meta if left blank.
                           </p>
                         </div>
 

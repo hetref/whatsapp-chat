@@ -117,7 +117,6 @@ export async function POST(request: NextRequest) {
     }
 
     const apiVersion = settings.apiVersion || 'v23.0';
-    console.log(`[Register Phone] Registering phone number ${settings.phoneNumberId} with Meta Cloud API using PIN...`);
 
     const registerRes = await fetch(
       `https://graph.facebook.com/${apiVersion}/${settings.phoneNumberId}/register`,
@@ -135,7 +134,6 @@ export async function POST(request: NextRequest) {
     );
 
     const result = await registerRes.json();
-    console.log('[Register Phone] Meta registration response:', result);
 
     if (!registerRes.ok || result.error) {
       const err = result.error || {};
@@ -241,7 +239,6 @@ export async function DELETE() {
     }
 
     const apiVersion = settings.apiVersion || 'v23.0';
-    console.log(`[Deregister Phone] Attempting to deregister phone number ${settings.phoneNumberId} with Meta Cloud API...`);
 
     const deregisterRes = await fetch(
       `https://graph.facebook.com/${apiVersion}/${settings.phoneNumberId}/deregister`,
@@ -255,7 +252,6 @@ export async function DELETE() {
     );
 
     const result = await deregisterRes.json();
-    console.log('[Deregister Phone] Meta deregistration response:', result);
 
     if (!deregisterRes.ok || result.error) {
       const err = result.error || {};

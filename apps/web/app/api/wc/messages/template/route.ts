@@ -109,13 +109,6 @@ export async function POST(request: NextRequest) {
             }
         };
 
-        console.log('[WC API] Sending template message:', {
-            to: cleanPhoneNumber,
-            templateName: template.name,
-            language: template.language,
-            componentsCount: template.components?.length || 0,
-            userId
-        });
 
         // Send message via WhatsApp Cloud API
         const whatsappResponse = await fetch(whatsappApiUrl, {
@@ -148,7 +141,6 @@ export async function POST(request: NextRequest) {
         const messageId = responseData.messages?.[0]?.id;
         const timestamp = new Date();
 
-        console.log('[WC API] Template message sent successfully:', messageId);
 
         // Generate display content for database
         let displayContent = `Template: ${template.name}`;

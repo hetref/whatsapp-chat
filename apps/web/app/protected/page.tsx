@@ -212,8 +212,6 @@ export default function ChatPage() {
     if (!user) return;
 
     const fetchUsers = async () => {
-      console.log('Fetching user conversations...');
-
       try {
         const response = await fetch('/api/conversations', {
           headers: user?.id ? { 'x-user-id': user.id } : undefined,
@@ -221,8 +219,6 @@ export default function ChatPage() {
         const result = await response.json();
 
         if (response.ok && result.conversations) {
-          console.log(`Fetched ${result.conversations.length} user conversations`);
-
           // Transform data to match ChatUser interface
           const transformedUsers: ChatUser[] = result.conversations.map((conv: ConversationApi) => ({
             id: conv.id,
@@ -288,7 +284,6 @@ export default function ChatPage() {
           const data = JSON.parse(event.data);
 
           if (data.type === 'status_update' && data.messageId) {
-            console.log('[SSE] Real-time message status update:', data);
             setMessages((prev) =>
               prev.map((msg) =>
                 msg.id === data.messageId
@@ -304,7 +299,6 @@ export default function ChatPage() {
               )
             );
           } else if (data.type === 'reaction_update' && data.messageId) {
-            console.log('[SSE] Real-time reaction update:', data);
             setMessages((prev) =>
               prev.map((msg) =>
                 msg.id === data.messageId
@@ -316,7 +310,6 @@ export default function ChatPage() {
               )
             );
           } else if (data.type === 'new_message' && data.message) {
-            console.log('[SSE] Real-time new message:', data.message);
             if (data.message.message_type === 'reaction' || data.message.content === '[reaction]') {
               return;
             }
@@ -371,15 +364,11 @@ export default function ChatPage() {
     }
 
     const fetchBroadcastMessages = async () => {
-      console.log(`Fetching broadcast messages for group ${broadcastGroupId}`);
-
       try {
         const response = await fetch(`/api/groups/${broadcastGroupId}/messages`);
         const result = await response.json();
 
         if (response.ok && result.success) {
-          console.log(`Fetched ${result.messages?.length || 0} broadcast messages`);
-
           // Preserve optimistic messages during polling updates
           setMessages((prevMessages) => {
             const optimisticMessages = prevMessages.filter(msg => msg.isOptimistic);
@@ -441,8 +430,6 @@ export default function ChatPage() {
 
   // Handle user selection and mark messages as read
   const handleUserSelect = async (selectedUser: ChatUser) => {
-    console.log('User selected:', selectedUser);
-
     // Clear broadcast group state when selecting an individual user
     setBroadcastGroupId(null);
     setBroadcastGroupName(null);
@@ -470,8 +457,7 @@ export default function ChatPage() {
         });
 
         if (response.ok) {
-          const result = await response.json();
-          console.log(`Marked ${result.markedCount} messages as read`);
+          await response.json();
         } else {
           console.error('Failed to mark messages as read');
           // Revert unread count if API fails
@@ -502,8 +488,6 @@ export default function ChatPage() {
   const refreshUsers = useCallback(async () => {
     if (!user) return;
 
-    console.log('Refreshing user conversations...');
-
     try {
       const response = await fetch('/api/conversations', {
         headers: user?.id ? { 'x-user-id': user.id } : undefined,
@@ -532,7 +516,6 @@ export default function ChatPage() {
           const updated = transformedUsers.find(u => u.id === prev.id);
           return updated ? { ...prev, ...updated } : prev;
         });
-        console.log(`Refreshed ${transformedUsers.length} user conversations`);
       } else {
         console.error('Error refreshing users:', result.error);
       }
@@ -560,8 +543,6 @@ export default function ChatPage() {
         throw new Error(result.message || result.error || 'Failed to update name');
       }
 
-      console.log('Name updated successfully:', result);
-
       // Refresh users list to show updated name
       await refreshUsers();
 
@@ -572,8 +553,6 @@ export default function ChatPage() {
   }, [refreshUsers]);
 
   const handleBroadcastToGroup = useCallback((groupId: string, groupName: string) => {
-    console.log('Broadcasting to group:', groupName);
-
     // Clear individual user state
     setSelectedUser(null);
     setMessages([]);
@@ -646,8 +625,6 @@ export default function ChatPage() {
     setMessages((prev) => [...prev, optimisticMessage]);
 
     try {
-      console.log(`Broadcasting message to group ${broadcastGroupId}`);
-
       const response = await fetch(`/api/groups/${broadcastGroupId}/broadcast`, {
         method: 'POST',
         headers: {
@@ -661,8 +638,6 @@ export default function ChatPage() {
       if (!response.ok) {
         throw new Error(result.error || 'Failed to send broadcast');
       }
-
-      console.log('Broadcast sent successfully:', result);
 
       // Remove optimistic message and refresh to get real messages
       setMessages((prev) => prev.filter(m => m.id !== optimisticId));
@@ -724,8 +699,6 @@ export default function ChatPage() {
     setMessages((prev) => [...prev, optimisticMessage]);
 
     try {
-      console.log(`Sending message to ${selectedUser.id}: ${content}`);
-
       const recipientPhone =
         selectedUser.phone_number ||
         (selectedUser as unknown as { phoneNumber?: string }).phoneNumber ||
@@ -750,8 +723,6 @@ export default function ChatPage() {
         const errorMsg = result.details?.message || result.error || result.message || 'Failed to send message';
         throw new Error(errorMsg);
       }
-
-      console.log('Message sent successfully:', result);
 
       // Replace optimistic message with real message from API response
       setMessages((prev) => prev.map(m =>
@@ -848,8 +819,8 @@ export default function ChatPage() {
     return (
       <div className="h-full flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600 mx-auto mb-4"></div>
-          <p>Loading...</p>
+          <div className="animate-spin rounded-full h-10 w-10 border-2 border-stone-300 dark:border-stone-700 border-t-[#5F7C65] dark:border-t-[#8EAE95] mx-auto mb-3.5"></div>
+          <p className="text-xs text-stone-500 dark:text-stone-400">Loading conversations...</p>
         </div>
       </div>
     );
@@ -858,33 +829,34 @@ export default function ChatPage() {
   // Show setup required message if setup is not complete
   if (isSetupComplete === false) {
     return (
-      <div className="h-full flex items-center justify-center p-4">
-        <div className="max-w-md w-full text-center space-y-6">
-          <div className="flex justify-center">
-            <div className="bg-amber-100 dark:bg-amber-900/30 p-4 rounded-full">
-              <AlertCircle className="h-12 w-12 text-amber-600 dark:text-amber-400" />
+      <div className="h-full flex items-center justify-center p-6 bg-[#FAF8F5]/50 dark:bg-[#0C0F0D]">
+        <div className="max-w-md w-full rounded-3xl border border-stone-200/80 dark:border-stone-800/80 bg-white/80 dark:bg-[#131915]/80 backdrop-blur-md p-2 shadow-sm">
+          <div className="rounded-[calc(1.5rem-0.25rem)] bg-[#FAF8F5]/80 dark:bg-[#18201B]/90 p-8 text-center space-y-6 border border-stone-200/60 dark:border-stone-800/60">
+            <div className="flex justify-center">
+              <div className="bg-amber-500/10 border border-amber-500/20 p-4 rounded-2xl">
+                <AlertCircle className="h-10 w-10 text-amber-600 dark:text-amber-400" />
+              </div>
             </div>
-          </div>
 
-          <div className="space-y-2">
-            <h2 className="text-2xl font-bold">Setup Required</h2>
-            <p className="text-muted-foreground">
-              Please complete the WhatsApp setup to access the chat interface.
-              You need to configure either the Access Token or Webhook to continue.
-            </p>
-          </div>
+            <div className="space-y-2">
+              <h2 className="text-xl font-semibold tracking-[-0.025em] text-stone-900 dark:text-stone-100">Setup Required</h2>
+              <p className="text-sm text-stone-600 dark:text-stone-400 leading-relaxed">
+                Please complete your WhatsApp Cloud API setup to access the live chat interface. Configure either the Access Token or Webhook to continue.
+              </p>
+            </div>
 
-          <div className="space-y-3">
-            <Link href="/protected/setup">
-              <Button className="w-full" size="lg">
-                <Settings className="mr-2 h-5 w-5" />
-                Go to Setup
-              </Button>
-            </Link>
+            <div className="space-y-3 pt-2">
+              <Link href="/protected/setup" className="block">
+                <Button className="w-full bg-[#5F7C65] hover:bg-[#526D57] text-white rounded-xl shadow-[inset_0_1px_2px_0_rgba(255,255,255,0.2)]" size="lg">
+                  <Settings className="mr-2 h-4 w-4" />
+                  Configure Setup
+                </Button>
+              </Link>
 
-            <p className="text-xs text-muted-foreground">
-              This will only take a few minutes
-            </p>
+              <p className="text-xs text-stone-500 dark:text-stone-400">
+                Setup typically takes less than 2 minutes
+              </p>
+            </div>
           </div>
         </div>
       </div>
@@ -892,12 +864,12 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="h-full flex bg-background">
+    <div className="h-full flex bg-[#FAF8F5]/30 dark:bg-[#0C0F0D] overflow-hidden">
       {/* Desktop Layout */}
       {!isMobile && (
         <>
           {/* User List - Desktop */}
-          <div className="w-1/3 border-r border-border">
+          <div className="w-[340px] md:w-[360px] lg:w-[380px] xl:w-[410px] shrink-0 border-r border-stone-200/80 dark:border-stone-800/80 h-full flex flex-col bg-[#FAF8F5]/30 dark:bg-[#0C0F0D]">
             <UserList
               users={users}
               selectedUser={selectedUser}
@@ -909,7 +881,7 @@ export default function ChatPage() {
           </div>
 
           {/* Chat Window - Desktop */}
-          <div className="flex-1">
+          <div className="flex-1 h-full min-w-0 flex flex-col bg-[#FAF8F5]/20 dark:bg-[#0C0F0D]">
             <ChatWindow
               selectedUser={selectedUser}
               messages={messages}
@@ -938,7 +910,7 @@ export default function ChatPage() {
         <>
           {!showChat ? (
             // User List - Mobile
-            <div className="w-full">
+            <div className="w-full h-full flex flex-col">
               <UserList
                 users={users}
                 selectedUser={selectedUser}
@@ -950,7 +922,7 @@ export default function ChatPage() {
             </div>
           ) : (
             // Chat Window - Mobile
-            <div className="w-full">
+            <div className="w-full h-full flex flex-col">
               <ChatWindow
                 selectedUser={selectedUser}
                 messages={messages}

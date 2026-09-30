@@ -423,9 +423,6 @@ export function TemplateSelector({ isOpen, onClose, onSendTemplate, selectedUser
     setError(null);
 
     try {
-      if (whatsappAccessToken) {
-        console.log('[TemplateSelector] Using WhatsApp access token for template send:', whatsappAccessToken);
-      }
       await onSendTemplate(selectedTemplate.name, selectedTemplate, variables, mediaUrl || undefined);
 
       // Reset state and close

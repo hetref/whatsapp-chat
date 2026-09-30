@@ -60,7 +60,6 @@ export async function GET(req: NextRequest) {
           },
         },
       });
-      console.log(`✅ Auto-created user in database: ${userId}`);
       if (!user) throw new Error(`Failed to create user ${userId}`);
     }
 
@@ -196,7 +195,6 @@ export async function GET(req: NextRequest) {
     if (hasAccess && user.planTier !== subscriptionPlanTier) {
       const { applyPlanLimits } = await import('@/lib/plan-limits');
       await applyPlanLimits(userId, subscriptionPlanTier);
-      console.log(`🔄 Restored plan limits to ${subscriptionPlanTier} for user ${userId} (was ${user.planTier})`);
     }
 
     const planInfo = await getUserPlanInfo(userId);

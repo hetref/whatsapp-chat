@@ -57,7 +57,6 @@ async function getUserSettings(userId) {
     const isPhoneIdInvalidOrMissing = !settings.phoneNumberId || !String(settings.phoneNumberId).trim() || (settings.businessAccountId && settings.phoneNumberId === settings.businessAccountId);
     if (settings.accessToken && settings.businessAccountId && isPhoneIdInvalidOrMissing) {
         try {
-            console.log(`[API getUserSettings] Auto-discovering phone numbers for WABA ${settings.businessAccountId}...`);
             const phoneRes = await fetch(
                 `https://graph.facebook.com/${apiVersion}/${settings.businessAccountId}/phone_numbers?fields=id,display_phone_number,verified_name,code_verification_status,quality_rating`,
                 {
@@ -65,7 +64,6 @@ async function getUserSettings(userId) {
                 }
             );
             const phoneData = await phoneRes.json();
-            console.log('[API getUserSettings] Meta phone numbers response:', JSON.stringify(phoneData));
             if (phoneData.data && phoneData.data.length > 0) {
                 const firstPhone = phoneData.data[0];
                 await prisma.userSettings.update({
@@ -78,7 +76,6 @@ async function getUserSettings(userId) {
                     },
                 });
                 settings.phoneNumberId = firstPhone.id;
-                console.log('[API getUserSettings] Successfully linked phone number to user:', firstPhone.id);
             }
         } catch (err) {
             console.warn('[API getUserSettings] Failed to auto-discover phone number:', err);
@@ -246,7 +243,6 @@ function upsertReactionList({ reactions, emoji, from, timestamp }) {
 }
 
 async function sendTextMessage({ to, message, accessToken, phoneNumberId, apiVersion }) {
-    console.log(`[sendTextMessage] Sending text to ${to} using phone ID ${phoneNumberId}...`);
     const response = await fetch(`https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`, {
         method: 'POST',
         headers: {
@@ -284,7 +280,6 @@ async function sendTextMessage({ to, message, accessToken, phoneNumberId, apiVer
 }
 
 async function sendReactionMessage({ to, messageId, emoji, accessToken, phoneNumberId, apiVersion }) {
-    console.log(`[sendReactionMessage] Sending reaction ${emoji} to msg ${messageId} using phone ID ${phoneNumberId}...`);
     const response = await fetch(`https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`, {
         method: 'POST',
         headers: {
@@ -495,7 +490,6 @@ async function sendTemplateMessage({
             },
         };
 
-        console.log(`[sendTemplateMessage] Sending template "${templateName}" (${testLocale}) to ${to} using phone ID ${phoneNumberId}...`);
         const response = await fetch(`https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`, {
             method: 'POST',
             headers: {
@@ -541,7 +535,6 @@ async function sendTemplateMessage({
         }
 
         console.error('\n==================== [META WHATSAPP API ERROR] ====================');
-        console.error(`Recipient: +${to}`);
         console.error(`Template: "${templateName}" (locale tested: ${testLocale})`);
         console.error(`HTTP Status: ${response.status}`);
         console.error(`Meta Code: ${metaCode ?? 'N/A'}, Subcode: ${metaSubcode ?? 'N/A'}`);
@@ -562,7 +555,6 @@ async function sendTemplateMessage({
         lastError = err;
 
         if (isLanguageMismatch) {
-            console.log(`[sendTemplateMessage] Template "${templateName}" not found in locale "${testLocale}". Trying next candidate...`);
             continue;
         }
 
@@ -587,7 +579,6 @@ async function sendMediaMessage({ to, media, mediaType, caption, accessToken, ph
             : mediaPayload,
     };
 
-    console.log(`[sendMediaMessage] Sending media (${mediaType}) to ${to} using phone ID ${phoneNumberId}...`);
     const response = await fetch(`https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`, {
         method: 'POST',
         headers: {
@@ -2017,8 +2008,6 @@ router.post('/send-template', async (req, res, next) => {
             res.status(400).json({ error: 'WhatsApp Access Token not configured. Please complete setup.' });
             return;
         }
-
-        console.log('[API /send-template] Using WhatsApp access token for template send:', settings.accessToken);
 
         const components = Array.isArray(templateData?.components) ? templateData.components : [];
         const headerComponent = components.find((c) => c.type === 'HEADER');

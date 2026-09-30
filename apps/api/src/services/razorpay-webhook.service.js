@@ -256,6 +256,5 @@ export async function processRazorpayWebhook(rawBody, signature) {
         return { event, handled: true };
     }
 
-    console.log('Received unsupported webhook event:', event);
     return { event, handled: false };
 }

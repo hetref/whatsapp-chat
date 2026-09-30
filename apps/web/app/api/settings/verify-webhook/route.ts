@@ -29,8 +29,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log(`Setting webhook_verified to ${verified} for user:`, userId);
-
     // Update webhook_verified status
     const settings = await prisma.userSettings.update({
       where: { id: userId },
@@ -39,9 +37,6 @@ export async function POST(request: NextRequest) {
         updatedAt: new Date(),
       }
     });
-
-
-    console.log('Webhook verification status updated successfully');
 
     return NextResponse.json({
       success: true,

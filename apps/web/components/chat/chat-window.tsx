@@ -3,7 +3,8 @@
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ArrowLeft, Send, MessageCircle, Loader2, X, Download, FileText, Image as ImageIcon, Play, Pause, Volume2, Paperclip, MessageSquare, Users, AlertTriangle, Plus } from "lucide-react";
+import { ArrowLeft, Send, MessageCircle, Loader2, X, Download, FileText, Image as ImageIcon, Play, Pause, Volume2, Paperclip, MessageSquare, Users, AlertTriangle, Plus, ShieldCheck } from "lucide-react";
+import LogoIcon from "@/components/logo-icon";
 import { useState, useRef, useEffect, useCallback } from "react";
 import Image from "next/image";
 import { MediaUpload } from "./media-upload";
@@ -162,11 +163,9 @@ export function ChatWindow({
   const [activeWhatsappToken, setActiveWhatsappToken] = useState<string | null>(whatsappAccessToken || null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Sync token from prop or load from setup settings if needed
   useEffect(() => {
     if (whatsappAccessToken) {
       setActiveWhatsappToken(whatsappAccessToken);
-      console.log('[ChatWindow] Connected WhatsApp account access token (from setup):', whatsappAccessToken);
       return;
     }
 
@@ -177,9 +176,6 @@ export function ChatWindow({
           const data = await response.json();
           const token = data?.settings?.access_token || null;
           setActiveWhatsappToken(token);
-          if (token) {
-            console.log('[ChatWindow] Loaded connected WhatsApp account access token from setup:', token);
-          }
         }
       } catch (err) {
         console.error('[ChatWindow] Error fetching connected WhatsApp account settings:', err);
@@ -305,19 +301,8 @@ export function ChatWindow({
       }
     }
 
-    // Explicit console logs as requested
-    console.log('[ChatWindow] WhatsApp Template - Token used for sending message:', tokenUsed);
-    console.log('[ChatWindow] Sending template:', {
-      templateName,
-      token: tokenUsed,
-      recipient: selectedUser?.phone_number || broadcastGroupName,
-      variables,
-      mediaUrl,
-    });
-
     // Handle broadcast mode
     if (broadcastGroupName) {
-      console.log('[ChatWindow] [Broadcast] WhatsApp Template Send - Token used:', tokenUsed);
       // Call onSendMessage with template data - it will be routed to broadcast endpoint
       const templateMessage = `Template: ${templateName}`;
       // Store template data in a special format that the broadcast handler can use
@@ -366,21 +351,15 @@ export function ChatWindow({
           result.details?.error_user_msg ||
           result.details?.message ||
           'Failed to send template';
-        console.error('[ChatWindow] ❌ Meta WhatsApp send-template failed:', {
-          recipient: recipientPhone,
-          template: templateName,
-          status: response.status,
-          result,
-        });
+        console.error('[ChatWindow] Meta WhatsApp send-template failed:', errorMsg);
         throw new Error(errorMsg);
       }
 
-      console.log('[ChatWindow] Template sent successfully! Token used:', result.token || tokenUsed, result);
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('whatsapp:message-sent', { detail: result }));
       }
     } catch (error) {
-      console.error('[ChatWindow] Error sending template (token used: ' + tokenUsed + '):', error);
+      console.error('[ChatWindow] Error sending template:', error);
       throw error; // Let the template selector handle the error display
     }
   };
@@ -1302,34 +1281,67 @@ export function ChatWindow({
   // Show welcome screen only if neither individual user nor broadcast group is selected
   if (!selectedUser && !broadcastGroupName) {
     return (
-      <div className="h-full flex flex-col items-center justify-center bg-muted/20">
-        <MessageCircle className="h-24 w-24 text-muted-foreground/50 mb-6" />
-        <h2 className="text-2xl font-semibold text-muted-foreground mb-2">
-          Welcome to WhatsApp Web
-        </h2>
-        <p className="text-muted-foreground text-center max-w-md">
-          Select a conversation from the sidebar to start messaging, or create a new chat.
-        </p>
-        <p className="text-sm text-muted-foreground mt-4 opacity-75">
-          Press <kbd className="px-2 py-1 bg-muted rounded text-xs">ESC</kbd> to close chat window
-        </p>
+      <div className="h-full flex flex-col items-center justify-center p-6 sm:p-10 bg-[#FAF8F5]/60 dark:bg-[#0C0F0D] relative overflow-hidden select-none">
+        {/* Ambient botanical background glow */}
+        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[320px] bg-[#5F7C65]/8 dark:bg-[#5F7C65]/10 rounded-full blur-3xl pointer-events-none" />
+
+        {/* Doppelrand Center Card Container */}
+        <div className="relative max-w-lg w-full rounded-3xl border border-stone-200/80 dark:border-stone-800/80 bg-white/75 dark:bg-[#131915]/80 backdrop-blur-xl p-2 sm:p-2.5 shadow-[0_8px_30px_-6px_rgba(30,45,35,0.08)]">
+          <div className="rounded-[calc(1.5rem-0.375rem)] bg-[#FAF8F5]/80 dark:bg-[#18201B]/90 p-8 sm:p-10 border border-stone-200/60 dark:border-stone-800/60 flex flex-col items-center text-center">
+            
+            {/* Logo Badge */}
+            <div className="size-16 rounded-2xl bg-white dark:bg-stone-900 border border-stone-200/80 dark:border-stone-800 shadow-2xs flex items-center justify-center p-3.5 mb-5 ring-4 ring-[#5F7C65]/10">
+              <LogoIcon className="size-full text-[#5F7C65]" />
+            </div>
+
+            {/* Eyebrow Badge */}
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold uppercase tracking-wider bg-[#5F7C65]/10 text-[#2D583F] dark:text-[#8EAE95] border border-[#5F7C65]/20 mb-3.5 shadow-2xs">
+              <span className="size-1.5 rounded-full bg-[#5F7C65] animate-pulse" />
+              <span>Official Cloud API Workspace</span>
+            </div>
+
+            {/* Headline */}
+            <h2 className="text-2xl sm:text-3xl font-semibold tracking-[-0.035em] text-stone-900 dark:text-stone-100">
+              Welcome to <span className="font-[Georgia,serif] italic font-normal text-[#2D583F] dark:text-[#8EAE95]">WaChat</span>
+            </h2>
+
+            {/* Description */}
+            <p className="text-stone-600 dark:text-stone-400 text-xs sm:text-sm mt-2 max-w-md leading-relaxed">
+              Select a conversation from the sidebar to start messaging, or create a new chat.
+            </p>
+
+            {/* Footer with Security & Keyboard Hint */}
+            <div className="mt-8 pt-6 border-t border-stone-200/70 dark:border-stone-800/70 w-full flex flex-col sm:flex-row items-center justify-between gap-3 text-[11px] text-stone-500 dark:text-stone-400">
+              <div className="flex items-center gap-1.5">
+                <ShieldCheck className="size-3.5 text-[#5F7C65]" />
+                <span>Enterprise Cloud API Infrastructure</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <span>Press</span>
+                <kbd className="px-1.5 py-0.5 rounded bg-stone-200/70 dark:bg-stone-800 text-[10px] font-mono text-stone-700 dark:text-stone-300 border border-stone-300/70 dark:border-stone-700">ESC</kbd>
+                <span>to close active chat</span>
+              </div>
+            </div>
+
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
     <div
-      className="h-full flex flex-col bg-background relative"
+      className="h-full flex flex-col bg-[#FAF8F5]/30 dark:bg-[#0C0F0D] relative"
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
       {/* Chat Header */}
-      <div className="p-4 border-b border-border bg-muted/50 flex items-center gap-3">
+      <div className="px-4 py-3 border-b border-stone-200/80 dark:border-stone-800/80 bg-white/85 dark:bg-[#131915]/85 backdrop-blur-md flex items-center gap-3 sticky top-0 z-10 transition-colors">
         {isMobile && onBack && (
           <button
             onClick={onBack}
-            className="p-2 hover:bg-muted rounded-full transition-colors"
+            className="p-1.5 hover:bg-stone-100 dark:hover:bg-stone-800 rounded-xl text-stone-600 dark:text-stone-300 transition-colors"
             title="Back to contacts"
           >
             <ArrowLeft className="h-5 w-5" />
@@ -1338,26 +1350,26 @@ export function ChatWindow({
         {broadcastGroupName ? (
           <>
             {/* Broadcast Group Header */}
-            <Avatar className="h-10 w-10">
-              <AvatarFallback className="bg-green-600 text-white font-semibold">
-                <Users className="h-5 w-5" />
-              </AvatarFallback>
-            </Avatar>
-            <div className="flex-1">
-              <h2 className="font-semibold text-foreground flex items-center gap-2">
-                {broadcastGroupName}
-                <span className="text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-2 py-0.5 rounded-full">
+            <div className="shrink-0 size-10 rounded-xl bg-[#5F7C65]/12 dark:bg-[#5F7C65]/20 text-[#2D583F] dark:text-[#8EAE95] border border-[#5F7C65]/20 flex items-center justify-center shadow-2xs">
+              <Users className="h-5 w-5" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <h2 className="font-semibold text-sm sm:text-base text-stone-900 dark:text-stone-100 truncate">
+                  {broadcastGroupName}
+                </h2>
+                <span className="text-[11px] font-semibold bg-[#5F7C65]/10 text-[#2D583F] dark:text-[#8EAE95] border border-[#5F7C65]/20 px-2 py-0.5 rounded-full">
                   Broadcast
                 </span>
-              </h2>
-              <p className="text-sm text-muted-foreground">
+              </div>
+              <p className="text-xs text-stone-500 dark:text-stone-400 truncate mt-0.5">
                 {isLoading ? (
-                  <span className="flex items-center gap-1">
+                  <span className="flex items-center gap-1 text-[#2D583F] dark:text-[#8EAE95]">
                     <Loader2 className="h-3 w-3 animate-spin" />
                     Sending broadcast...
                   </span>
                 ) : (
-                  'Send message to all group members'
+                  'Send message to all group members individually'
                 )}
               </p>
             </div>
@@ -1365,34 +1377,38 @@ export function ChatWindow({
         ) : selectedUser ? (
           <>
             {/* Individual Chat Header */}
-            <Avatar className="h-10 w-10">
-              <AvatarFallback className="bg-green-100 text-green-700 font-semibold">
-                {selectedUser.name.substring(0, 2).toUpperCase()}
-              </AvatarFallback>
-            </Avatar>
             <div
-              className="flex-1 cursor-pointer hover:bg-muted/50 rounded-lg p-2 -m-2 transition-colors"
+              className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer group"
               onClick={() => setShowUserInfo(true)}
               title="View contact info"
             >
-              <h2 className="font-semibold text-foreground">{getDisplayName(selectedUser)}</h2>
-              <p className="text-sm text-muted-foreground">
-                {isLoading || sendingMedia ? (
-                  <span className="flex items-center gap-1">
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                    {sendingMedia ? 'Sending media...' : 'Sending message...'}
-                  </span>
-                ) : (
-                  `Last seen ${formatTime(selectedUser.last_active)}`
-                )}
-              </p>
+              <Avatar className="h-10 w-10 rounded-xl border border-stone-200/80 dark:border-stone-800 shrink-0 shadow-2xs">
+                <AvatarFallback className="rounded-xl bg-[#5F7C65]/15 text-[#2D583F] dark:text-[#8EAE95] font-semibold text-sm">
+                  {getDisplayName(selectedUser).substring(0, 2).toUpperCase()}
+                </AvatarFallback>
+              </Avatar>
+              <div className="flex-1 min-w-0">
+                <h2 className="font-semibold text-sm sm:text-base text-stone-900 dark:text-stone-100 truncate group-hover:text-[#2D583F] dark:group-hover:text-[#8EAE95] transition-colors">
+                  {getDisplayName(selectedUser)}
+                </h2>
+                <p className="text-xs text-stone-500 dark:text-stone-400 truncate font-mono mt-0.5">
+                  {isLoading || sendingMedia ? (
+                    <span className="flex items-center gap-1 text-[#2D583F] dark:text-[#8EAE95] font-sans">
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                      {sendingMedia ? 'Sending media...' : 'Sending message...'}
+                    </span>
+                  ) : (
+                    `Last active ${formatTime(selectedUser.last_active)}`
+                  )}
+                </p>
+              </div>
             </div>
           </>
         ) : null}
         {!isMobile && onClose && (
           <button
             onClick={onClose}
-            className="p-2 hover:bg-muted rounded-full transition-colors"
+            className="p-1.5 hover:bg-stone-100 dark:hover:bg-stone-800 rounded-xl text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 transition-colors"
             title="Close chat (ESC)"
           >
             <X className="h-5 w-5" />
@@ -1403,7 +1419,7 @@ export function ChatWindow({
       {/* Messages Area */}
       <div
         ref={messagesContainerRef}
-        className="flex-1 overflow-y-auto p-4 bg-gradient-to-b from-green-50/30 to-blue-50/30 dark:from-green-950/10 dark:to-blue-950/10"
+        className="flex-1 overflow-y-auto p-4 sm:p-6 bg-[#FAF8F5]/40 dark:bg-[#0C0F0D]"
       >
         {Object.keys(groupedMessages).length === 0 ? (
           // No messages - show appropriate placeholder
@@ -1569,20 +1585,20 @@ export function ChatWindow({
       </div>
 
       {/* Message Input */}
-      <div className="p-4 border-t border-border bg-background">
+      <div className="p-3 sm:p-3.5 border-t border-stone-200/80 dark:border-stone-800/80 bg-white/85 dark:bg-[#131915]/85 backdrop-blur-md">
         {messagingDisabled ? (
-          <div className="flex items-center gap-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-xl px-4 py-3">
-            <AlertTriangle className="h-5 w-5 text-amber-500 flex-shrink-0" />
+          <div className="flex items-center gap-3 bg-amber-500/10 border border-amber-500/20 rounded-xl px-4 py-3">
+            <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0" />
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-amber-800 dark:text-amber-200">Messaging unavailable</p>
-              <p className="text-xs text-amber-600 dark:text-amber-400 truncate">{messagingDisabledReason || 'Your subscription does not allow sending messages.'}</p>
+              <p className="text-xs sm:text-sm font-semibold text-amber-800 dark:text-amber-300">Messaging unavailable</p>
+              <p className="text-xs text-amber-700/80 dark:text-amber-400/80 truncate mt-0.5">{messagingDisabledReason || 'Your subscription does not allow sending messages.'}</p>
             </div>
-            <a href="/protected/billing" className="text-xs font-medium text-amber-700 dark:text-amber-300 hover:underline flex-shrink-0">
+            <a href="/protected/billing" className="text-xs font-semibold text-amber-800 dark:text-amber-300 hover:underline shrink-0">
               Manage Plan
             </a>
           </div>
         ) : (
-          <form onSubmit={handleSendMessage} className="flex gap-3 items-end">
+          <form onSubmit={handleSendMessage} className="flex gap-2 sm:gap-3 items-center">
             {/* Hide media button in broadcast mode, show template button */}
             {!broadcastGroupName && (
               <Button
@@ -1590,10 +1606,10 @@ export function ChatWindow({
                 variant="ghost"
                 size="sm"
                 onClick={() => setShowMediaUpload(true)}
-                className="p-2 hover:bg-muted rounded-full transition-colors"
+                className="h-10 w-10 p-0 rounded-xl hover:bg-stone-100 dark:hover:bg-stone-800 text-stone-500 hover:text-stone-900 dark:hover:text-stone-100 transition-colors shrink-0"
                 title="Attach media"
               >
-                <Paperclip className="h-5 w-5" />
+                <Paperclip className="h-4.5 w-4.5" />
               </Button>
             )}
             {/* Template button available for both modes */}
@@ -1602,10 +1618,10 @@ export function ChatWindow({
               variant="ghost"
               size="sm"
               onClick={() => setShowTemplateSelector(true)}
-              className="p-2 hover:bg-muted rounded-full transition-colors"
+              className="h-10 w-10 p-0 rounded-xl hover:bg-stone-100 dark:hover:bg-stone-800 text-stone-500 hover:text-[#2D583F] dark:hover:text-[#8EAE95] transition-colors shrink-0"
               title="Send template"
             >
-              <MessageSquare className="h-5 w-5" />
+              <MessageSquare className="h-4.5 w-4.5" />
             </Button>
             <Input
               value={messageInput}
@@ -1617,7 +1633,7 @@ export function ChatWindow({
                     ? "Type broadcast message..."
                     : "Type a message..."
               }
-              className="flex-1 border-border focus:ring-green-500 rounded-full px-4 py-2"
+              className="flex-1 border-stone-200/80 dark:border-stone-800 bg-white dark:bg-[#18201B] focus-visible:ring-[#5F7C65]/30 focus-visible:border-[#5F7C65] rounded-xl px-4 py-2.5 text-xs sm:text-sm text-stone-900 dark:text-stone-100 placeholder:text-stone-400 shadow-2xs h-10"
               maxLength={1000}
               disabled={isLoading || sendingMedia}
               autoFocus
@@ -1625,7 +1641,7 @@ export function ChatWindow({
             <Button
               type="submit"
               disabled={!messageInput.trim() || isLoading || sendingMedia}
-              className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-full disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+              className="bg-[#5F7C65] hover:bg-[#526D57] text-white px-4 sm:px-5 h-10 rounded-xl shadow-[inset_0_1px_2px_0_rgba(255,255,255,0.2)] disabled:opacity-40 disabled:cursor-not-allowed transition-all shrink-0 font-medium text-xs sm:text-sm"
             >
               {isLoading || sendingMedia ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -1639,14 +1655,14 @@ export function ChatWindow({
 
       {/* Drag and Drop Overlay */}
       {isDragging && (
-        <div className="absolute inset-0 bg-green-500 bg-opacity-20 flex items-center justify-center z-40 backdrop-blur-sm">
-          <div className="bg-white dark:bg-gray-800 rounded-2xl p-8 shadow-2xl border-2 border-green-500 border-dashed">
-            <Paperclip className="h-16 w-16 text-green-500 mx-auto mb-4" />
-            <p className="text-2xl font-semibold text-gray-900 dark:text-white text-center mb-2">
+        <div className="absolute inset-0 bg-[#5F7C65]/15 flex items-center justify-center z-40 backdrop-blur-sm p-4">
+          <div className="bg-white dark:bg-[#18201B] rounded-3xl p-8 shadow-2xl border-2 border-[#5F7C65] border-dashed text-center max-w-sm w-full">
+            <Paperclip className="h-12 w-12 text-[#5F7C65] mx-auto mb-3" />
+            <p className="text-lg font-semibold text-stone-900 dark:text-stone-100 mb-1">
               Drop files to send
             </p>
-            <p className="text-gray-500 dark:text-gray-400 text-center">
-              Release to upload and send media
+            <p className="text-xs text-stone-500 dark:text-stone-400">
+              Release to stage and send media via WhatsApp Cloud API
             </p>
           </div>
         </div>

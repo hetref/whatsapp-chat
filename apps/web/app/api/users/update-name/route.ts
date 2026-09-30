@@ -37,8 +37,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log(`Updating custom name for contact ${contactId} to "${customName}"`);
-
     // Verify the contact belongs to this user, then update
     const updatedContact = await prisma.contact.updateMany({
       where: {
@@ -61,8 +59,6 @@ export async function POST(request: NextRequest) {
     const contact = await prisma.contact.findUnique({
       where: { id: contactId }
     });
-
-    console.log('Contact name updated successfully:', contact);
 
     return NextResponse.json({
       success: true,
