@@ -325,7 +325,43 @@ export async function GET(request: NextRequest) {
     // ─────────────────────────────────────────────────────────────────────────────
     // 6. Harmonize Totals to Match Meta WhatsApp Manager
     // ─────────────────────────────────────────────────────────────────────────────
-    const categoryDeliveredTotal =
+    // In WhatsApp Cloud API, all Free Customer Service conversations belong to the Service category.
+    if (metaFreeCustomerService > 0 && metaService < metaFreeCustomerService) {
+      metaService = Math.max(metaService, metaFreeCustomerService + metaPaidService);
+    }
+
+    // If Meta conversation analytics did not return template categories, check local sent messages
+    if (metaMarketing === 0 && metaUtility === 0 && metaAuthentication === 0) {
+      try {
+        const localTemplates = await prisma.message.findMany({
+          where: {
+            userId,
+            isSentByMe: true,
+            messageType: 'template',
+            timestamp: { gte: startDate, lte: endDate },
+            status: { in: ['DELIVERED', 'READ', 'SENT'] },
+          },
+          select: { mediaData: true },
+        });
+
+        for (const tmpl of localTemplates) {
+          try {
+            const mData = typeof tmpl.mediaData === 'string' ? JSON.parse(tmpl.mediaData) : tmpl.mediaData;
+            const category = String(mData?.category || '').toUpperCase();
+            if (category === 'MARKETING') metaMarketing++;
+            else if (category === 'UTILITY') metaUtility++;
+            else if (category === 'AUTHENTICATION') metaAuthentication++;
+          } catch {
+            // Ignore parse errors
+          }
+        }
+      } catch {
+        // Ignore DB query errors
+      }
+    }
+
+    // Compute sum of all category counts
+    let categoryDeliveredTotal =
       metaMarketing +
       metaMarketingLite +
       metaUtility +
@@ -334,16 +370,39 @@ export async function GET(request: NextRequest) {
       metaAiProvider +
       metaService;
 
-    // Messages Delivered: driven from Meta conversation category sum or analytics delivered
-    const finalDelivered = categoryDeliveredTotal > 0 ? categoryDeliveredTotal : metaDelivered;
+    // Messages Delivered: target is maximum of Meta raw delivered and category sum
+    let finalDelivered = Math.max(metaDelivered, categoryDeliveredTotal);
 
-    // Messages Sent: from Meta analytics sent, or delivered count
-    const finalSent = metaSent > 0 ? metaSent : finalDelivered;
-
-    // If Meta Free Customer Service wasn't explicitly flagged but all delivered were free (cost=0):
-    if (metaFreeCustomerService === 0 && metaFreeEntryPoint === 0 && metaTotalCost === 0 && finalDelivered > 0) {
-      metaFreeCustomerService = finalDelivered;
+    // If delivered count exceeds category sum, allocate the difference to Service
+    // (the standard customer service tier where non-template/free messages reside)
+    const unallocatedDelivered = finalDelivered - categoryDeliveredTotal;
+    if (unallocatedDelivered > 0) {
+      metaService += unallocatedDelivered;
+      categoryDeliveredTotal += unallocatedDelivered;
     }
+
+    // Ensure finalDelivered exactly equals the sum of the breakdown categories
+    finalDelivered = categoryDeliveredTotal;
+
+    // Synchronize Free Customer Service:
+    // If all delivered messages had 0 cost, they fall under WhatsApp's free customer service tier
+    if (metaFreeCustomerService === 0 && metaFreeEntryPoint === 0 && metaTotalCost === 0 && finalDelivered > 0) {
+      metaFreeCustomerService = metaService > 0 ? metaService : finalDelivered;
+    } else if (metaFreeCustomerService > 0 && metaService < metaFreeCustomerService) {
+      metaService = metaFreeCustomerService;
+      categoryDeliveredTotal =
+        metaMarketing +
+        metaMarketingLite +
+        metaUtility +
+        metaAuthentication +
+        metaAuthIntl +
+        metaAiProvider +
+        metaService;
+      finalDelivered = categoryDeliveredTotal;
+    }
+
+    // Messages Sent: from Meta analytics sent, or at least finalDelivered
+    const finalSent = Math.max(metaSent, finalDelivered);
 
     // Messages Received:
     // If Meta provides a received count, use it. Otherwise, query inbound messages

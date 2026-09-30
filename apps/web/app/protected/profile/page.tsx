@@ -1476,220 +1476,290 @@ export default function ProfilePage() {
                   </div>
 
                   {/* Card 2: Messages Delivered */}
-                  <div className="rounded-2xl border border-stone-200/80 dark:border-stone-800/80 bg-white/80 dark:bg-stone-900/70 p-5 shadow-xs space-y-4 flex flex-col justify-between">
-                    <div>
-                      <div className="flex items-center justify-between pb-3 border-b border-stone-100 dark:border-stone-800">
-                        <div className="flex items-center gap-2">
-                          <span className="size-2 rounded-full bg-emerald-500" />
-                          <h4 className="text-sm font-semibold text-stone-900 dark:text-stone-100 flex items-center gap-1.5">
-                            Messages Delivered
-                            <HelpCircle className="size-3 text-stone-400" />
-                          </h4>
+                  {(() => {
+                    const deliveredMarketing = insightsData?.messagesDelivered?.marketing ?? 0;
+                    const deliveredMarketingLite = insightsData?.messagesDelivered?.marketingLite ?? 0;
+                    const deliveredUtility = insightsData?.messagesDelivered?.utility ?? 0;
+                    const deliveredAuth = insightsData?.messagesDelivered?.authentication ?? 0;
+                    const deliveredAuthIntl = insightsData?.messagesDelivered?.authenticationInternational ?? 0;
+                    const deliveredAiProvider = insightsData?.messagesDelivered?.aiProvider ?? 0;
+                    let deliveredService = insightsData?.messagesDelivered?.service ?? 0;
+
+                    // In WhatsApp Cloud API, all Free Customer Service conversations belong to the Service category.
+                    const freeCustomerServiceCount = insightsData?.freeMessagesDelivered?.freeCustomerService ?? 0;
+                    if (freeCustomerServiceCount > deliveredService) {
+                      deliveredService = freeCustomerServiceCount;
+                    }
+
+                    // Ensure the category breakdown always matches the delivered total
+                    const categorySum =
+                      deliveredMarketing +
+                      deliveredMarketingLite +
+                      deliveredUtility +
+                      deliveredAuth +
+                      deliveredAuthIntl +
+                      deliveredAiProvider +
+                      deliveredService;
+
+                    const rawTotal = insightsData?.messagesDelivered?.total ?? 0;
+                    if (rawTotal > categorySum) {
+                      deliveredService += (rawTotal - categorySum);
+                    }
+
+                    const finalTotal =
+                      deliveredMarketing +
+                      deliveredMarketingLite +
+                      deliveredUtility +
+                      deliveredAuth +
+                      deliveredAuthIntl +
+                      deliveredAiProvider +
+                      deliveredService;
+
+                    return (
+                      <div className="rounded-2xl border border-stone-200/80 dark:border-stone-800/80 bg-white/80 dark:bg-stone-900/70 p-5 shadow-xs space-y-4 flex flex-col justify-between">
+                        <div>
+                          <div className="flex items-center justify-between pb-3 border-b border-stone-100 dark:border-stone-800">
+                            <div className="flex items-center gap-2">
+                              <span className="size-2 rounded-full bg-emerald-500" />
+                              <h4 className="text-sm font-semibold text-stone-900 dark:text-stone-100 flex items-center gap-1.5">
+                                Messages Delivered
+                                <HelpCircle className="size-3 text-stone-400" />
+                              </h4>
+                            </div>
+                            <span className="text-xs font-mono font-bold text-stone-800 dark:text-stone-200">
+                              {finalTotal}
+                            </span>
+                          </div>
+
+                          <div className="space-y-2 pt-3 text-xs">
+                            <div className="flex items-center justify-between">
+                              <span className="text-stone-600 dark:text-stone-400 flex items-center gap-1.5">
+                                <span className="text-sky-400 font-mono">---</span> Marketing
+                              </span>
+                              <span className="font-mono font-semibold text-stone-900 dark:text-stone-100">
+                                {deliveredMarketing}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center justify-between">
+                              <span className="text-stone-600 dark:text-stone-400 flex items-center gap-1.5">
+                                <span className="text-amber-400 font-mono">---</span> Marketing - lite
+                              </span>
+                              <span className="font-mono font-semibold text-stone-900 dark:text-stone-100">
+                                {deliveredMarketingLite}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center justify-between">
+                              <span className="text-stone-600 dark:text-stone-400 flex items-center gap-1.5">
+                                <span className="text-rose-400 font-mono">---</span> Utility
+                              </span>
+                              <span className="font-mono font-semibold text-stone-900 dark:text-stone-100">
+                                {deliveredUtility}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center justify-between">
+                              <span className="text-stone-600 dark:text-stone-400 flex items-center gap-1.5">
+                                <span className="text-stone-400 font-mono">---</span> Authentication
+                              </span>
+                              <span className="font-mono font-semibold text-stone-900 dark:text-stone-100">
+                                {deliveredAuth}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center justify-between">
+                              <span className="text-stone-600 dark:text-stone-400 flex items-center gap-1.5">
+                                <span className="text-stone-400 font-mono">---</span> Authentication - international
+                              </span>
+                              <span className="font-mono font-semibold text-stone-900 dark:text-stone-100">
+                                {deliveredAuthIntl}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center justify-between">
+                              <span className="text-stone-600 dark:text-stone-400 flex items-center gap-1.5">
+                                <span className="text-teal-400 font-mono">---</span> AI Provider
+                              </span>
+                              <span className="font-mono font-semibold text-stone-900 dark:text-stone-100">
+                                {deliveredAiProvider}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center justify-between">
+                              <span className="text-stone-600 dark:text-stone-400 flex items-center gap-1.5">
+                                <span className="text-emerald-400 font-mono">---</span> Service
+                              </span>
+                              <span className="font-mono font-semibold text-stone-900 dark:text-stone-100">
+                                {deliveredService}
+                              </span>
+                            </div>
+                          </div>
                         </div>
-                        <span className="text-xs font-mono font-bold text-stone-800 dark:text-stone-200">
-                          {insightsData?.messagesDelivered?.total ?? 0}
-                        </span>
                       </div>
-
-                      <div className="space-y-2 pt-3 text-xs">
-                        <div className="flex items-center justify-between">
-                          <span className="text-stone-600 dark:text-stone-400 flex items-center gap-1.5">
-                            <span className="text-sky-400 font-mono">---</span> Marketing
-                          </span>
-                          <span className="font-mono font-semibold text-stone-900 dark:text-stone-100">
-                            {insightsData?.messagesDelivered?.marketing ?? 0}
-                          </span>
-                        </div>
-
-                        <div className="flex items-center justify-between">
-                          <span className="text-stone-600 dark:text-stone-400 flex items-center gap-1.5">
-                            <span className="text-amber-400 font-mono">---</span> Marketing - lite
-                          </span>
-                          <span className="font-mono font-semibold text-stone-900 dark:text-stone-100">
-                            {insightsData?.messagesDelivered?.marketingLite ?? 0}
-                          </span>
-                        </div>
-
-                        <div className="flex items-center justify-between">
-                          <span className="text-stone-600 dark:text-stone-400 flex items-center gap-1.5">
-                            <span className="text-rose-400 font-mono">---</span> Utility
-                          </span>
-                          <span className="font-mono font-semibold text-stone-900 dark:text-stone-100">
-                            {insightsData?.messagesDelivered?.utility ?? 0}
-                          </span>
-                        </div>
-
-                        <div className="flex items-center justify-between">
-                          <span className="text-stone-600 dark:text-stone-400 flex items-center gap-1.5">
-                            <span className="text-stone-400 font-mono">---</span> Authentication
-                          </span>
-                          <span className="font-mono font-semibold text-stone-900 dark:text-stone-100">
-                            {insightsData?.messagesDelivered?.authentication ?? 0}
-                          </span>
-                        </div>
-
-                        <div className="flex items-center justify-between">
-                          <span className="text-stone-600 dark:text-stone-400 flex items-center gap-1.5">
-                            <span className="text-stone-400 font-mono">---</span> Authentication - international
-                          </span>
-                          <span className="font-mono font-semibold text-stone-900 dark:text-stone-100">
-                            {insightsData?.messagesDelivered?.authenticationInternational ?? 0}
-                          </span>
-                        </div>
-
-                        <div className="flex items-center justify-between">
-                          <span className="text-stone-600 dark:text-stone-400 flex items-center gap-1.5">
-                            <span className="text-teal-400 font-mono">---</span> AI Provider
-                          </span>
-                          <span className="font-mono font-semibold text-stone-900 dark:text-stone-100">
-                            {insightsData?.messagesDelivered?.aiProvider ?? 0}
-                          </span>
-                        </div>
-
-                        <div className="flex items-center justify-between">
-                          <span className="text-stone-600 dark:text-stone-400 flex items-center gap-1.5">
-                            <span className="text-emerald-400 font-mono">---</span> Service
-                          </span>
-                          <span className="font-mono font-semibold text-stone-900 dark:text-stone-100">
-                            {insightsData?.messagesDelivered?.service ?? 0}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+                    );
+                  })()}
 
                   {/* Card 3: Free Messages Delivered */}
-                  <div className="rounded-2xl border border-stone-200/80 dark:border-stone-800/80 bg-white/80 dark:bg-stone-900/70 p-5 shadow-xs space-y-4 flex flex-col justify-between">
-                    <div>
-                      <div className="flex items-center justify-between pb-3 border-b border-stone-100 dark:border-stone-800">
-                        <div className="flex items-center gap-2">
-                          <span className="size-2 rounded-full bg-sky-500" />
-                          <h4 className="text-sm font-semibold text-stone-900 dark:text-stone-100 flex items-center gap-1.5">
-                            Free Messages Delivered
-                            <HelpCircle className="size-3 text-stone-400" />
-                          </h4>
+                  {(() => {
+                    const freeCustService = insightsData?.freeMessagesDelivered?.freeCustomerService ?? 0;
+                    const freeEntryPoint = insightsData?.freeMessagesDelivered?.freeEntryPoint ?? 0;
+                    const freeTotal = Math.max(insightsData?.freeMessagesDelivered?.total ?? 0, freeCustService + freeEntryPoint);
+
+                    return (
+                      <div className="rounded-2xl border border-stone-200/80 dark:border-stone-800/80 bg-white/80 dark:bg-stone-900/70 p-5 shadow-xs space-y-4 flex flex-col justify-between">
+                        <div>
+                          <div className="flex items-center justify-between pb-3 border-b border-stone-100 dark:border-stone-800">
+                            <div className="flex items-center gap-2">
+                              <span className="size-2 rounded-full bg-sky-500" />
+                              <h4 className="text-sm font-semibold text-stone-900 dark:text-stone-100 flex items-center gap-1.5">
+                                Free Messages Delivered
+                                <HelpCircle className="size-3 text-stone-400" />
+                              </h4>
+                            </div>
+                            <span className="text-xs font-mono font-bold text-stone-800 dark:text-stone-200">
+                              {freeTotal}
+                            </span>
+                          </div>
+
+                          <div className="space-y-2.5 pt-3 text-xs">
+                            <div className="flex items-center justify-between">
+                              <span className="text-stone-600 dark:text-stone-400 flex items-center gap-1.5">
+                                <span className="text-sky-400 font-mono">---</span>
+                                Free customer service
+                                <HelpCircle className="size-3 text-stone-400" />
+                              </span>
+                              <span className="font-mono font-semibold text-stone-900 dark:text-stone-100">
+                                {freeCustService}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center justify-between">
+                              <span className="text-stone-600 dark:text-stone-400 flex items-center gap-1.5">
+                                <span className="text-indigo-400 font-mono">---</span>
+                                Free entry point
+                                <HelpCircle className="size-3 text-stone-400" />
+                              </span>
+                              <span className="font-mono font-semibold text-stone-900 dark:text-stone-100">
+                                {freeEntryPoint}
+                              </span>
+                            </div>
+                          </div>
                         </div>
-                        <span className="text-xs font-mono font-bold text-stone-800 dark:text-stone-200">
-                          {insightsData?.freeMessagesDelivered?.total ?? 0}
-                        </span>
+
+                        <div className="p-3 rounded-xl bg-sky-50 dark:bg-sky-950/30 border border-sky-100 dark:border-sky-900/40 text-[11px] text-sky-800 dark:text-sky-300">
+                          WhatsApp grants 1,000 free service tier conversations per business account each month.
+                        </div>
                       </div>
-
-                      <div className="space-y-2.5 pt-3 text-xs">
-                        <div className="flex items-center justify-between">
-                          <span className="text-stone-600 dark:text-stone-400 flex items-center gap-1.5">
-                            <span className="text-sky-400 font-mono">---</span>
-                            Free customer service
-                            <HelpCircle className="size-3 text-stone-400" />
-                          </span>
-                          <span className="font-mono font-semibold text-stone-900 dark:text-stone-100">
-                            {insightsData?.freeMessagesDelivered?.freeCustomerService ?? 0}
-                          </span>
-                        </div>
-
-                        <div className="flex items-center justify-between">
-                          <span className="text-stone-600 dark:text-stone-400 flex items-center gap-1.5">
-                            <span className="text-indigo-400 font-mono">---</span>
-                            Free entry point
-                            <HelpCircle className="size-3 text-stone-400" />
-                          </span>
-                          <span className="font-mono font-semibold text-stone-900 dark:text-stone-100">
-                            {insightsData?.freeMessagesDelivered?.freeEntryPoint ?? 0}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="p-3 rounded-xl bg-sky-50 dark:bg-sky-950/30 border border-sky-100 dark:border-sky-900/40 text-[11px] text-sky-800 dark:text-sky-300">
-                      WhatsApp grants 1,000 free service tier conversations per business account each month.
-                    </div>
-                  </div>
+                    );
+                  })()}
 
                   {/* Card 4: Paid Messages Delivered */}
-                  <div className="rounded-2xl border border-stone-200/80 dark:border-stone-800/80 bg-white/80 dark:bg-stone-900/70 p-5 shadow-xs space-y-4 flex flex-col justify-between">
-                    <div>
-                      <div className="flex items-center justify-between pb-3 border-b border-stone-100 dark:border-stone-800">
-                        <div className="flex items-center gap-2">
-                          <span className="size-2 rounded-full bg-purple-500" />
-                          <h4 className="text-sm font-semibold text-stone-900 dark:text-stone-100 flex items-center gap-1.5">
-                            Paid Messages Delivered
-                            <HelpCircle className="size-3 text-stone-400" />
-                          </h4>
+                  {(() => {
+                    const paidMarketing = insightsData?.paidMessagesDelivered?.marketing ?? 0;
+                    const paidMarketingLite = insightsData?.paidMessagesDelivered?.marketingLite ?? 0;
+                    const paidUtility = insightsData?.paidMessagesDelivered?.utility ?? 0;
+                    const paidAuth = insightsData?.paidMessagesDelivered?.authentication ?? 0;
+                    const paidAuthIntl = insightsData?.paidMessagesDelivered?.authenticationInternational ?? 0;
+                    const paidAiProvider = insightsData?.paidMessagesDelivered?.aiProvider ?? 0;
+                    const paidService = insightsData?.paidMessagesDelivered?.service ?? 0;
+                    const paidTotal =
+                      paidMarketing +
+                      paidMarketingLite +
+                      paidUtility +
+                      paidAuth +
+                      paidAuthIntl +
+                      paidAiProvider +
+                      paidService;
+
+                    return (
+                      <div className="rounded-2xl border border-stone-200/80 dark:border-stone-800/80 bg-white/80 dark:bg-stone-900/70 p-5 shadow-xs space-y-4 flex flex-col justify-between">
+                        <div>
+                          <div className="flex items-center justify-between pb-3 border-b border-stone-100 dark:border-stone-800">
+                            <div className="flex items-center gap-2">
+                              <span className="size-2 rounded-full bg-purple-500" />
+                              <h4 className="text-sm font-semibold text-stone-900 dark:text-stone-100 flex items-center gap-1.5">
+                                Paid Messages Delivered
+                                <HelpCircle className="size-3 text-stone-400" />
+                              </h4>
+                            </div>
+                            <span className="text-xs font-mono font-bold text-stone-800 dark:text-stone-200">
+                              {paidTotal}
+                            </span>
+                          </div>
+
+                          <div className="space-y-2 pt-3 text-xs">
+                            <div className="flex items-center justify-between">
+                              <span className="text-stone-600 dark:text-stone-400 flex items-center gap-1.5">
+                                <span className="text-sky-400 font-mono">---</span> Marketing
+                              </span>
+                              <span className="font-mono font-semibold text-stone-900 dark:text-stone-100">
+                                {paidMarketing}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center justify-between">
+                              <span className="text-stone-600 dark:text-stone-400 flex items-center gap-1.5">
+                                <span className="text-amber-400 font-mono">---</span> Marketing - lite
+                              </span>
+                              <span className="font-mono font-semibold text-stone-900 dark:text-stone-100">
+                                {paidMarketingLite}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center justify-between">
+                              <span className="text-stone-600 dark:text-stone-400 flex items-center gap-1.5">
+                                <span className="text-rose-400 font-mono">---</span> Utility
+                              </span>
+                              <span className="font-mono font-semibold text-stone-900 dark:text-stone-100">
+                                {paidUtility}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center justify-between">
+                              <span className="text-stone-600 dark:text-stone-400 flex items-center gap-1.5">
+                                <span className="text-stone-400 font-mono">---</span> Authentication
+                              </span>
+                              <span className="font-mono font-semibold text-stone-900 dark:text-stone-100">
+                                {paidAuth}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center justify-between">
+                              <span className="text-stone-600 dark:text-stone-400 flex items-center gap-1.5">
+                                <span className="text-stone-400 font-mono">---</span> Authentication - international
+                              </span>
+                              <span className="font-mono font-semibold text-stone-900 dark:text-stone-100">
+                                {paidAuthIntl}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center justify-between">
+                              <span className="text-stone-600 dark:text-stone-400 flex items-center gap-1.5">
+                                <span className="text-teal-400 font-mono">---</span> AI Provider
+                              </span>
+                              <span className="font-mono font-semibold text-stone-900 dark:text-stone-100">
+                                {paidAiProvider}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center justify-between">
+                              <span className="text-stone-600 dark:text-stone-400 flex items-center gap-1.5">
+                                <span className="text-emerald-400 font-mono">---</span> Service
+                              </span>
+                              <span className="font-mono font-semibold text-stone-900 dark:text-stone-100">
+                                {paidService}
+                              </span>
+                            </div>
+                          </div>
                         </div>
-                        <span className="text-xs font-mono font-bold text-stone-800 dark:text-stone-200">
-                          {insightsData?.paidMessagesDelivered?.total ?? 0}
-                        </span>
+
+                        <div className="p-3 rounded-xl bg-purple-50 dark:bg-purple-950/30 border border-purple-100 dark:border-purple-900/40 text-[11px] text-purple-800 dark:text-purple-300">
+                          Paid messages are billed based on Meta's conversation-based pricing model by country.
+                        </div>
                       </div>
-
-                      <div className="space-y-2 pt-3 text-xs">
-                        <div className="flex items-center justify-between">
-                          <span className="text-stone-600 dark:text-stone-400 flex items-center gap-1.5">
-                            <span className="text-sky-400 font-mono">---</span> Marketing
-                          </span>
-                          <span className="font-mono font-semibold text-stone-900 dark:text-stone-100">
-                            {insightsData?.paidMessagesDelivered?.marketing ?? 0}
-                          </span>
-                        </div>
-
-                        <div className="flex items-center justify-between">
-                          <span className="text-stone-600 dark:text-stone-400 flex items-center gap-1.5">
-                            <span className="text-amber-400 font-mono">---</span> Marketing - lite
-                          </span>
-                          <span className="font-mono font-semibold text-stone-900 dark:text-stone-100">
-                            {insightsData?.paidMessagesDelivered?.marketingLite ?? 0}
-                          </span>
-                        </div>
-
-                        <div className="flex items-center justify-between">
-                          <span className="text-stone-600 dark:text-stone-400 flex items-center gap-1.5">
-                            <span className="text-rose-400 font-mono">---</span> Utility
-                          </span>
-                          <span className="font-mono font-semibold text-stone-900 dark:text-stone-100">
-                            {insightsData?.paidMessagesDelivered?.utility ?? 0}
-                          </span>
-                        </div>
-
-                        <div className="flex items-center justify-between">
-                          <span className="text-stone-600 dark:text-stone-400 flex items-center gap-1.5">
-                            <span className="text-stone-400 font-mono">---</span> Authentication
-                          </span>
-                          <span className="font-mono font-semibold text-stone-900 dark:text-stone-100">
-                            {insightsData?.paidMessagesDelivered?.authentication ?? 0}
-                          </span>
-                        </div>
-
-                        <div className="flex items-center justify-between">
-                          <span className="text-stone-600 dark:text-stone-400 flex items-center gap-1.5">
-                            <span className="text-stone-400 font-mono">---</span> Authentication - international
-                          </span>
-                          <span className="font-mono font-semibold text-stone-900 dark:text-stone-100">
-                            {insightsData?.paidMessagesDelivered?.authenticationInternational ?? 0}
-                          </span>
-                        </div>
-
-                        <div className="flex items-center justify-between">
-                          <span className="text-stone-600 dark:text-stone-400 flex items-center gap-1.5">
-                            <span className="text-teal-400 font-mono">---</span> AI Provider
-                          </span>
-                          <span className="font-mono font-semibold text-stone-900 dark:text-stone-100">
-                            {insightsData?.paidMessagesDelivered?.aiProvider ?? 0}
-                          </span>
-                        </div>
-
-                        <div className="flex items-center justify-between">
-                          <span className="text-stone-600 dark:text-stone-400 flex items-center gap-1.5">
-                            <span className="text-emerald-400 font-mono">---</span> Service
-                          </span>
-                          <span className="font-mono font-semibold text-stone-900 dark:text-stone-100">
-                            {insightsData?.paidMessagesDelivered?.service ?? 0}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="p-3 rounded-xl bg-purple-50 dark:bg-purple-950/30 border border-purple-100 dark:border-purple-900/40 text-[11px] text-purple-800 dark:text-purple-300">
-                      Paid messages are billed based on Meta's conversation-based pricing model by country.
-                    </div>
-                  </div>
+                    );
+                  })()}
 
                   {/* Card 5: Approximate Total Charges */}
                   <div className="rounded-2xl border border-stone-200/80 dark:border-stone-800/80 bg-white/80 dark:bg-stone-900/70 p-5 shadow-xs space-y-4 flex flex-col justify-between">
