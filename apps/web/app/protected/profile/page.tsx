@@ -199,6 +199,7 @@ export default function ProfilePage() {
   const [website2, setWebsite2] = useState("");
   const [vertical, setVertical] = useState("PROF_SERVICES");
   const [profilePictureUrl, setProfilePictureUrl] = useState<string | null>(null);
+  const [avatarImageError, setAvatarImageError] = useState(false);
 
   // Delivery Insights States
   const [insightsRange, setInsightsRange] = useState<"7d" | "30d" | "90d">("30d");
@@ -503,7 +504,11 @@ export default function ProfilePage() {
 
   const effectiveDisplayName = displayNameInput.trim() || metaProfile?.verified_name || user.name || "WhatsApp Business";
   const displayPhone = metaProfile?.display_phone_number || "Not configured";
-  const activeAvatarUrl = profilePictureUrl || metaProfile?.profile_picture_url || user.image;
+  const rawAvatarUrl = profilePictureUrl || metaProfile?.profile_picture_url || user.image;
+  const activeAvatarUrl =
+    rawAvatarUrl && typeof rawAvatarUrl === "string" && rawAvatarUrl.trim().length > 0 && rawAvatarUrl !== "null" && rawAvatarUrl !== "undefined"
+      ? rawAvatarUrl.trim()
+      : null;
 
   // Meta display name approval review states
   const isNamePendingReview = Boolean(
@@ -619,10 +624,11 @@ export default function ProfilePage() {
                     className="size-20 sm:size-22 rounded-2xl bg-gradient-to-br from-[#5F7C65] to-[#2D583F] text-white flex items-center justify-center font-bold text-2xl shadow-md border-2 border-white dark:border-stone-800 ring-4 ring-[#5F7C65]/20 overflow-hidden cursor-pointer relative"
                     title="Click to change WhatsApp Business profile picture on Meta"
                   >
-                    {activeAvatarUrl ? (
+                    {activeAvatarUrl && !avatarImageError ? (
                       <img
                         src={activeAvatarUrl}
-                        alt={effectiveDisplayName}
+                        alt=""
+                        onError={() => setAvatarImageError(true)}
                         className="size-full object-cover"
                       />
                     ) : (
@@ -969,10 +975,11 @@ export default function ProfilePage() {
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                           <div className="flex items-center gap-4">
                             <div className="relative size-16 rounded-2xl bg-gradient-to-br from-[#5F7C65] to-[#2D583F] text-white flex items-center justify-center font-bold text-xl shadow-sm border border-stone-200 dark:border-stone-700 overflow-hidden shrink-0">
-                              {activeAvatarUrl ? (
+                              {activeAvatarUrl && !avatarImageError ? (
                                 <img
                                   src={activeAvatarUrl}
-                                  alt={effectiveDisplayName}
+                                  alt=""
+                                  onError={() => setAvatarImageError(true)}
                                   className="size-full object-cover"
                                 />
                               ) : (
@@ -1385,10 +1392,11 @@ export default function ProfilePage() {
                       
                       {/* Avatar */}
                       <div className="size-24 rounded-full bg-gradient-to-br from-[#5F7C65] to-[#2D583F] text-white flex items-center justify-center font-bold text-3xl shadow-md border-4 border-white dark:border-stone-800 ring-2 ring-stone-200 dark:ring-stone-700 overflow-hidden">
-                        {activeAvatarUrl ? (
+                        {activeAvatarUrl && !avatarImageError ? (
                           <img
                             src={activeAvatarUrl}
-                            alt={effectiveDisplayName}
+                            alt=""
+                            onError={() => setAvatarImageError(true)}
                             className="size-full object-cover"
                           />
                         ) : (

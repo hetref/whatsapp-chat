@@ -35,6 +35,10 @@ export function UserAvatarDropdown({
   const { data: session, isPending } = authClient.useSession();
   const [internalMeta, setInternalMeta] = useState<MetaSummary | null>(null);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [imageError, setImageError] = useState(false);
+  const [imageLoaded, setImageLoaded] = useState(false);
+  const [dropdownImageError, setDropdownImageError] = useState(false);
+  const [dropdownImageLoaded, setDropdownImageLoaded] = useState(false);
   const router = useRouter();
 
   // Load Meta WhatsApp Business Profile if props not explicitly provided
@@ -83,12 +87,20 @@ export function UserAvatarDropdown({
     metaName || internalMeta?.verified_name || user.name || "WhatsApp Business";
   const effectivePhone =
     metaPhone || internalMeta?.display_phone_number || "";
-  const effectiveImage =
+
+  const rawImage =
     metaImage !== undefined
       ? metaImage
       : internalMeta?.profile_picture_url !== undefined
       ? internalMeta.profile_picture_url
       : user.image;
+
+  // Clean empty strings or invalid strings
+  const effectiveImage =
+    rawImage && typeof rawImage === "string" && rawImage.trim().length > 0 && rawImage !== "null" && rawImage !== "undefined"
+      ? rawImage.trim()
+      : null;
+
   const effectiveVerified =
     isVerified !== undefined
       ? isVerified
@@ -135,14 +147,22 @@ export function UserAvatarDropdown({
             className
           )}
         >
-          {effectiveImage ? (
+          {/* Always display clean initials as base */}
+          <span className="tracking-wider text-[11px] font-bold select-none">{initials}</span>
+
+          {/* Smoothly overlay image only if present and not broken */}
+          {effectiveImage && !imageError && (
             <img
               src={effectiveImage}
-              alt={effectiveName}
-              className="size-full rounded-full object-cover"
+              alt=""
+              aria-hidden="true"
+              onLoad={() => setImageLoaded(true)}
+              onError={() => setImageError(true)}
+              className={cn(
+                "absolute inset-0 size-full rounded-full object-cover transition-opacity duration-200",
+                imageLoaded ? "opacity-100" : "opacity-0"
+              )}
             />
-          ) : (
-            <span className="tracking-wider text-[11px] font-bold">{initials}</span>
           )}
         </button>
       </DropdownMenu.Trigger>
@@ -155,15 +175,20 @@ export function UserAvatarDropdown({
         >
           {/* User Header with Meta Business info & Avatar */}
           <div className="flex items-center gap-3 px-2 py-2.5 border-b border-stone-100 dark:border-stone-800/80 mb-1">
-            <div className="size-10 rounded-full bg-gradient-to-br from-[#5F7C65] to-[#2D583F] text-white flex items-center justify-center font-bold text-sm overflow-hidden shrink-0 shadow-xs border border-stone-200 dark:border-stone-700">
-              {effectiveImage ? (
+            <div className="relative size-10 rounded-full bg-gradient-to-br from-[#5F7C65] to-[#2D583F] text-white flex items-center justify-center font-bold text-sm overflow-hidden shrink-0 shadow-xs border border-stone-200 dark:border-stone-700">
+              <span className="tracking-wider select-none">{initials}</span>
+              {effectiveImage && !dropdownImageError && (
                 <img
                   src={effectiveImage}
-                  alt={effectiveName}
-                  className="size-full object-cover"
+                  alt=""
+                  aria-hidden="true"
+                  onLoad={() => setDropdownImageLoaded(true)}
+                  onError={() => setDropdownImageError(true)}
+                  className={cn(
+                    "absolute inset-0 size-full object-cover transition-opacity duration-200",
+                    dropdownImageLoaded ? "opacity-100" : "opacity-0"
+                  )}
                 />
-              ) : (
-                <span className="tracking-wider">{initials}</span>
               )}
             </div>
 
