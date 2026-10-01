@@ -55,6 +55,7 @@ import {
   Calendar,
   DollarSign,
   ArrowUpRight,
+  Clock,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -67,6 +68,11 @@ interface WhatsAppBusinessProfileData {
   code_verification_status: string;
   status: string;
   name_status?: string;
+  new_display_name?: string | null;
+  new_name_status?: string | null;
+  has_pending_name_change?: boolean;
+  pending_display_name?: string | null;
+  decision_reasons?: string[] | string | null;
   account_mode?: string;
   is_official_business_account: boolean;
   about: string;
@@ -240,8 +246,8 @@ export default function ProfilePage() {
         setMetaConnected(true);
         setMetaProfile(data.data);
 
-        // Pre-fill editable fields
-        setDisplayNameInput(data.data.verified_name || data.data.user?.name || "");
+        // Pre-fill editable fields (prefer pending requested name if in review, otherwise active verified name)
+        setDisplayNameInput(data.data.new_display_name || data.data.verified_name || data.data.user?.name || "");
         setAbout(data.data.about || "");
         setDescription(data.data.description || "");
         setAddress(data.data.address || "");
@@ -328,8 +334,13 @@ export default function ProfilePage() {
 
       if (data.displayNameNotice) {
         setProfileMessage({
+          type: data.displayNameStatus === "ERROR" ? "error" : "warning",
+          text: data.displayNameNotice,
+        });
+      } else if (data.hasPendingReview) {
+        setProfileMessage({
           type: "warning",
-          text: `WhatsApp profile updated on Meta! Note on display name: ${data.displayNameNotice}`,
+          text: "WhatsApp profile updated! Business display name has been submitted to Meta and is currently in approval (pending stage).",
         });
       } else {
         setProfileMessage({
@@ -494,6 +505,29 @@ export default function ProfilePage() {
   const displayPhone = metaProfile?.display_phone_number || "Not configured";
   const activeAvatarUrl = profilePictureUrl || metaProfile?.profile_picture_url || user.image;
 
+  // Meta display name approval review states
+  const isNamePendingReview = Boolean(
+    metaProfile?.has_pending_name_change ||
+    metaProfile?.new_name_status === "PENDING_REVIEW" ||
+    metaProfile?.name_status === "PENDING_REVIEW" ||
+    (metaProfile?.new_display_name && metaProfile.new_display_name.trim() !== (metaProfile.verified_name || "").trim())
+  );
+
+  const isNameDeclined = Boolean(
+    metaProfile?.new_name_status === "DECLINED" ||
+    metaProfile?.name_status === "DECLINED"
+  );
+
+  const isNameApproved = Boolean(
+    metaProfile?.name_status === "APPROVED" && !isNamePendingReview && !isNameDeclined
+  );
+
+  // The pending requested name from Meta or recent form submission
+  const pendingDisplayName =
+    metaProfile?.new_display_name ||
+    metaProfile?.pending_display_name ||
+    (isNamePendingReview ? (displayNameInput.trim() !== (metaProfile?.verified_name || "").trim() ? displayNameInput.trim() : null) : null);
+
   // Extract initials (up to 2 characters) for fallback display
   const userInitials =
     effectiveDisplayName
@@ -651,6 +685,24 @@ export default function ProfilePage() {
                         )}
                       >
                         Quality: {metaProfile.quality_rating}
+                      </span>
+                    )}
+                    {metaConnected && isNamePendingReview && (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-semibold font-mono uppercase px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/30">
+                        <Clock className="size-3 animate-pulse text-amber-600" />
+                        Name Review Pending
+                      </span>
+                    )}
+                    {metaConnected && isNameDeclined && (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-semibold font-mono uppercase px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-700 dark:text-rose-400 border border-rose-500/30">
+                        <AlertCircle className="size-3 text-rose-600" />
+                        Name Declined
+                      </span>
+                    )}
+                    {metaConnected && isNameApproved && (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-semibold font-mono uppercase px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30">
+                        <BadgeCheck className="size-3 text-emerald-600" />
+                        Name Approved
                       </span>
                     )}
                   </div>
@@ -966,15 +1018,43 @@ export default function ProfilePage() {
                       {/* Edit Profile Form */}
                       <form onSubmit={handleSaveToMeta} className="space-y-5">
                         {/* Display Name (Editable!) */}
-                        <div className="space-y-1.5">
-                          <div className="flex items-center justify-between">
-                            <Label className="text-xs font-semibold text-stone-700 dark:text-stone-300">
-                              Business Display Name
-                            </Label>
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between flex-wrap gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <Label className="text-xs font-semibold text-stone-700 dark:text-stone-300">
+                                Business Display Name
+                              </Label>
+                              {isNamePendingReview ? (
+                                <Badge
+                                  variant="outline"
+                                  className="bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/30 gap-1 text-[10px] font-semibold uppercase tracking-wider py-0"
+                                >
+                                  <Clock className="size-2.5 animate-pulse text-amber-600" />
+                                  Pending Meta Review
+                                </Badge>
+                              ) : isNameDeclined ? (
+                                <Badge
+                                  variant="outline"
+                                  className="bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/30 gap-1 text-[10px] font-semibold uppercase tracking-wider py-0"
+                                >
+                                  <AlertCircle className="size-2.5 text-rose-600" />
+                                  Meta Declined
+                                </Badge>
+                              ) : isNameApproved ? (
+                                <Badge
+                                  variant="outline"
+                                  className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30 gap-1 text-[10px] font-semibold uppercase tracking-wider py-0"
+                                >
+                                  <BadgeCheck className="size-2.5 text-emerald-600" />
+                                  Meta Approved
+                                </Badge>
+                              ) : null}
+                            </div>
                             <span className="text-[11px] text-stone-400 font-mono">
                               {displayNameInput.length}/75
                             </span>
                           </div>
+
                           <div className="relative">
                             <Input
                               value={displayNameInput}
@@ -985,9 +1065,138 @@ export default function ProfilePage() {
                             />
                             <Building2 className="size-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                           </div>
+
                           <p className="text-[11px] text-stone-500 dark:text-stone-400">
-                            Your customer-facing WhatsApp business name. Updates your workspace profile and submits display name to Meta.
+                            Your customer-facing WhatsApp business name. Updates your workspace profile and submits display name to Meta for verification.
                           </p>
+
+                          {/* Approval State Details: Pending Review Details Card */}
+                          {isNamePendingReview && (
+                            <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 dark:bg-amber-950/20 p-4 space-y-3 shadow-2xs mt-2">
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="flex items-start gap-2.5">
+                                  <div className="size-8 rounded-lg bg-amber-500/15 border border-amber-500/25 text-amber-700 dark:text-amber-400 flex items-center justify-center shrink-0 mt-0.5">
+                                    <Clock className="size-4 animate-pulse text-amber-600" />
+                                  </div>
+                                  <div>
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <h4 className="text-xs font-bold text-amber-950 dark:text-amber-200 uppercase tracking-wider">
+                                        Meta Display Name Approval in Progress
+                                      </h4>
+                                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-800 dark:text-amber-300 font-semibold border border-amber-500/30">
+                                        {metaProfile?.new_name_status || "PENDING_REVIEW"}
+                                      </span>
+                                    </div>
+                                    <p className="text-[11px] text-amber-900/80 dark:text-amber-300/80 mt-1 leading-relaxed">
+                                      You submitted a business display name update to Meta. While under review, WhatsApp continues to display your currently active verified name to customers.
+                                    </p>
+                                  </div>
+                                </div>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => loadWhatsAppProfile(true)}
+                                  disabled={syncingMeta}
+                                  className="h-7 text-xs border-amber-500/30 text-amber-800 dark:text-amber-300 hover:bg-amber-500/10 shrink-0 gap-1.5 shadow-2xs cursor-pointer"
+                                  title="Check latest approval status from Meta"
+                                >
+                                  <RefreshCw className={cn("size-3", syncingMeta && "animate-spin text-amber-600")} />
+                                  <span>Check Status</span>
+                                </Button>
+                              </div>
+
+                              {/* Comparison Grid: Current Active vs Requested Pending */}
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                                <div className="p-3 rounded-lg bg-white/90 dark:bg-stone-900/90 border border-amber-500/20 shadow-2xs space-y-1">
+                                  <span className="text-[10px] font-semibold uppercase tracking-wider text-stone-500 dark:text-stone-400">
+                                    Current Active Verified Name
+                                  </span>
+                                  <p className="text-xs font-semibold text-stone-800 dark:text-stone-200 flex items-center gap-1.5 truncate">
+                                    <BadgeCheck className="size-3.5 text-emerald-600 shrink-0" />
+                                    <span className="truncate">{metaProfile?.verified_name || "None yet"}</span>
+                                  </p>
+                                </div>
+
+                                <div className="p-3 rounded-lg bg-amber-500/10 dark:bg-amber-950/40 border border-amber-500/30 shadow-2xs space-y-1">
+                                  <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-800 dark:text-amber-300">
+                                    Requested Name (In Meta Review)
+                                  </span>
+                                  <p className="text-xs font-bold text-amber-900 dark:text-amber-100 flex items-center gap-1.5 truncate">
+                                    <Clock className="size-3.5 text-amber-600 shrink-0 animate-pulse" />
+                                    <span className="truncate">{pendingDisplayName || displayNameInput}</span>
+                                  </p>
+                                </div>
+                              </div>
+
+                              {/* Footer note */}
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px] text-amber-900/80 dark:text-amber-400/80 pt-1.5 border-t border-amber-500/20">
+                                <span className="flex items-center gap-1">
+                                  <Info className="size-3 shrink-0" />
+                                  Meta display name reviews typically complete within 24 to 48 hours.
+                                </span>
+                                <a
+                                  href="https://www.facebook.com/business/help/529606724263085"
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center gap-1 font-semibold hover:underline shrink-0 text-[#2D583F] dark:text-[#8EAE95]"
+                                >
+                                  <span>Display Name Guidelines</span>
+                                  <ExternalLink className="size-2.5" />
+                                </a>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Approval State Details: Declined Alert Card */}
+                          {isNameDeclined && (
+                            <div className="rounded-xl border border-rose-500/30 bg-rose-500/5 dark:bg-rose-950/20 p-4 space-y-2.5 shadow-2xs mt-2">
+                              <div className="flex items-start gap-2.5">
+                                <div className="size-8 rounded-lg bg-rose-500/15 border border-rose-500/25 text-rose-700 dark:text-rose-400 flex items-center justify-center shrink-0 mt-0.5">
+                                  <AlertCircle className="size-4 text-rose-600" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <h4 className="text-xs font-bold text-rose-950 dark:text-rose-200 uppercase tracking-wider">
+                                      Meta Display Name Change Declined
+                                    </h4>
+                                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-800 dark:text-rose-300 font-semibold border border-rose-500/30">
+                                      DECLINED
+                                    </span>
+                                  </div>
+                                  <p className="text-[11px] text-rose-900/80 dark:text-rose-300/80 mt-1 leading-relaxed">
+                                    Meta could not approve the requested display name. Your active business name remains <strong>{metaProfile?.verified_name}</strong>. Ensure your name matches your brand identity and complies with Meta's display name policy before submitting again.
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="flex items-center justify-end text-[11px] pt-1.5 border-t border-rose-500/20">
+                                <a
+                                  href="https://www.facebook.com/business/help/529606724263085"
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center gap-1 font-semibold text-rose-700 dark:text-rose-400 hover:underline"
+                                >
+                                  <span>Read Meta Display Name Guidelines</span>
+                                  <ExternalLink className="size-2.5" />
+                                </a>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Approval State Details: Approved Confirmation */}
+                          {isNameApproved && (
+                            <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 dark:bg-emerald-950/20 px-3.5 py-2.5 flex items-center justify-between gap-2 shadow-2xs mt-2">
+                              <div className="flex items-center gap-2">
+                                <BadgeCheck className="size-4 text-emerald-600 shrink-0" />
+                                <span className="text-xs text-emerald-900 dark:text-emerald-200">
+                                  Display name is <strong>approved</strong> by Meta and active across all WhatsApp clients.
+                                </span>
+                              </div>
+                              <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 border border-emerald-500/25">
+                                APPROVED
+                              </span>
+                            </div>
+                          )}
                         </div>
 
                         {/* Category (Vertical) */}
@@ -1200,6 +1409,12 @@ export default function ProfilePage() {
                         <p className="text-xs text-stone-500 dark:text-stone-400 font-mono mt-0.5">
                           {displayPhone}
                         </p>
+                        {isNamePendingReview && (
+                          <div className="inline-flex items-center gap-1 text-[10px] font-medium text-amber-800 dark:text-amber-300 bg-amber-500/10 px-2 py-0.5 rounded-full mt-1.5 border border-amber-500/25">
+                            <Clock className="size-2.5 animate-pulse text-amber-600 shrink-0" />
+                            <span className="truncate max-w-[200px]">Review pending: {pendingDisplayName || displayNameInput}</span>
+                          </div>
+                        )}
                       </div>
 
                       {/* Mockup Action Buttons */}
@@ -1983,10 +2198,31 @@ export default function ProfilePage() {
                   {/* Parameter: Name Approval Status */}
                   <div className="p-4 rounded-xl border border-stone-200/80 dark:border-stone-800 bg-white dark:bg-stone-900 space-y-1">
                     <span className="text-[11px] font-semibold uppercase tracking-wider text-stone-400">Name Approval Status</span>
-                    <p className="text-xs font-semibold text-stone-800 dark:text-stone-200 flex items-center gap-1.5">
-                      <BadgeCheck className="size-3.5 text-sky-600" />
-                      <span>{metaProfile?.name_status || "APPROVED"}</span>
-                    </p>
+                    <div className="space-y-1">
+                      <p className="text-xs font-semibold text-stone-800 dark:text-stone-200 flex items-center gap-1.5">
+                        {isNamePendingReview ? (
+                          <>
+                            <Clock className="size-3.5 text-amber-600 animate-pulse" />
+                            <span className="text-amber-700 dark:text-amber-400 font-mono">PENDING_REVIEW</span>
+                          </>
+                        ) : isNameDeclined ? (
+                          <>
+                            <AlertCircle className="size-3.5 text-rose-600" />
+                            <span className="text-rose-700 dark:text-rose-400 font-mono">DECLINED</span>
+                          </>
+                        ) : (
+                          <>
+                            <BadgeCheck className="size-3.5 text-emerald-600" />
+                            <span className="text-emerald-700 dark:text-emerald-400 font-mono">{metaProfile?.name_status || "APPROVED"}</span>
+                          </>
+                        )}
+                      </p>
+                      {isNamePendingReview && (
+                        <p className="text-[10px] text-stone-500 dark:text-stone-400 font-mono truncate">
+                          Requested: {pendingDisplayName || displayNameInput}
+                        </p>
+                      )}
+                    </div>
                   </div>
 
                   {/* Parameter: Account Mode */}

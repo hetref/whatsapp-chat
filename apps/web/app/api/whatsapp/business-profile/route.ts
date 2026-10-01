@@ -56,10 +56,10 @@ export async function GET() {
 
     const apiVersion = settings.apiVersion || 'v23.0';
 
-    // 1. Fetch phone number details (display name, phone number, verification status, quality rating)
+    // 1. Fetch phone number details (display name, phone number, verification status, quality rating, and review status)
     let phoneData: any = {};
     try {
-      const phoneUrl = `https://graph.facebook.com/${apiVersion}/${settings.phoneNumberId}?fields=id,display_phone_number,verified_name,code_verification_status,quality_rating,status,name_status,is_official_business_account,account_mode`;
+      const phoneUrl = `https://graph.facebook.com/${apiVersion}/${settings.phoneNumberId}?fields=id,display_phone_number,verified_name,code_verification_status,quality_rating,status,name_status,new_display_name,new_name_status,decision_reasons,is_official_business_account,account_mode`;
       const phoneRes = await fetch(phoneUrl, {
         headers: {
           Authorization: `Bearer ${settings.accessToken}`,
@@ -68,8 +68,19 @@ export async function GET() {
       if (phoneRes.ok) {
         phoneData = await phoneRes.json();
       } else {
-        const errJson = await phoneRes.json().catch(() => ({}));
-        console.warn('[WhatsApp Business Profile GET] Error querying phone details:', errJson);
+        // Fallback without decision_reasons in case older Meta Graph API versions return field errors
+        const fallbackUrl = `https://graph.facebook.com/${apiVersion}/${settings.phoneNumberId}?fields=id,display_phone_number,verified_name,code_verification_status,quality_rating,status,name_status,new_display_name,new_name_status,is_official_business_account,account_mode`;
+        const fallbackRes = await fetch(fallbackUrl, {
+          headers: {
+            Authorization: `Bearer ${settings.accessToken}`,
+          },
+        });
+        if (fallbackRes.ok) {
+          phoneData = await fallbackRes.json();
+        } else {
+          const errJson = await phoneRes.json().catch(() => ({}));
+          console.warn('[WhatsApp Business Profile GET] Error querying phone details:', errJson);
+        }
       }
     } catch (e) {
       console.warn('[WhatsApp Business Profile GET] Exception querying phone details:', e);
@@ -168,6 +179,17 @@ export async function GET() {
       }
     }
 
+    // Determine display name review status from Meta
+    const hasPendingNameChange = Boolean(
+      phoneData.new_display_name ||
+      phoneData.new_name_status === 'PENDING_REVIEW' ||
+      phoneData.name_status === 'PENDING_REVIEW'
+    );
+
+    const pendingDisplayName =
+      phoneData.new_display_name ||
+      (phoneData.name_status === 'PENDING_REVIEW' ? phoneData.verified_name : null);
+
     return NextResponse.json({
       success: true,
       connected: true,
@@ -180,6 +202,11 @@ export async function GET() {
         code_verification_status: phoneData.code_verification_status || 'UNKNOWN',
         status: phoneData.status || 'CONNECTED',
         name_status: phoneData.name_status || 'APPROVED',
+        new_display_name: phoneData.new_display_name || null,
+        new_name_status: phoneData.new_name_status || null,
+        decision_reasons: phoneData.decision_reasons || null,
+        has_pending_name_change: hasPendingNameChange,
+        pending_display_name: pendingDisplayName,
         account_mode: phoneData.account_mode || 'LIVE',
         is_official_business_account: Boolean(phoneData.is_official_business_account),
         about: profileData.about || '',
@@ -341,8 +368,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 2. If name/displayName was changed, sync to Prisma and attempt Meta display_name update
+    // 2. If name/displayName was changed, sync to Prisma and submit new_display_name to Meta
     let metaDisplayNameNotice: string | null = null;
+    let displayNameStatus: string | null = null;
+    let hasPendingReview = false;
+
     if (chosenName && chosenName.trim()) {
       const cleanName = chosenName.trim();
       try {
@@ -355,19 +385,30 @@ export async function POST(request: NextRequest) {
           data: { fullName: cleanName, updatedAt: new Date() },
         });
 
-        // Attempt display_name update on Meta phone number endpoint
-        const nameRes = await fetch(
-          `https://graph.facebook.com/${apiVersion}/${settings.phoneNumberId}?display_name=${encodeURIComponent(cleanName)}`,
-          {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${settings.accessToken}`,
-            },
-          }
-        );
+        // Submit new_display_name to Meta phone number endpoint.
+        // Meta review is automatically triggered when updating display name.
+        const nameUrl = `https://graph.facebook.com/${apiVersion}/${settings.phoneNumberId}?new_display_name=${encodeURIComponent(cleanName)}`;
+        const nameRes = await fetch(nameUrl, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${settings.accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            new_display_name: cleanName,
+            display_name: cleanName,
+          }),
+        });
+
         const nameData = await nameRes.json();
-        if (!nameRes.ok && nameData?.error) {
-          metaDisplayNameNotice = nameData.error.message;
+        if (nameRes.ok && (nameData?.success || !nameData?.error)) {
+          hasPendingReview = true;
+          displayNameStatus = 'PENDING_REVIEW';
+          metaDisplayNameNotice = `Display name "${cleanName}" submitted to Meta. Approval review is now pending (typically 24–48 hours).`;
+        } else if (nameData?.error) {
+          console.warn('[WhatsApp Business Profile POST] Meta display name error:', nameData.error);
+          metaDisplayNameNotice = nameData.error.message || 'Meta could not process the display name update.';
+          displayNameStatus = 'ERROR';
         }
       } catch (nameErr) {
         console.warn('[WhatsApp Business Profile POST] Error syncing name:', nameErr);
@@ -376,9 +417,13 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: 'WhatsApp Business Profile successfully updated on Meta!',
+      message: hasPendingReview
+        ? `WhatsApp Business profile updated. Display name "${chosenName?.trim()}" has been submitted to Meta and is in approval (pending stage).`
+        : 'WhatsApp Business Profile successfully updated on Meta!',
       metaData,
       displayNameNotice: metaDisplayNameNotice,
+      displayNameStatus,
+      hasPendingReview,
     });
   } catch (error: unknown) {
     console.error('[WhatsApp Business Profile POST] Server error:', error);
