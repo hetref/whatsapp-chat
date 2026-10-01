@@ -5,7 +5,26 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { X, Search, Send, Loader2, AlertCircle, FileText, Eye, ImageIcon, Check } from "lucide-react";
+import {
+  X,
+  Search,
+  Send,
+  Loader2,
+  AlertCircle,
+  FileText,
+  Eye,
+  EyeOff,
+  ImageIcon,
+  Check,
+  ArrowLeft,
+  Sparkles,
+  Smartphone,
+  ExternalLink,
+  Phone,
+  Link as LinkIcon,
+  MessageSquare,
+  RefreshCw,
+} from "lucide-react";
 import { MediaPickerDialog } from "@/components/media-picker-dialog";
 
 // Template types
@@ -61,16 +80,27 @@ interface ChatUser {
 interface TemplateSelectorProps {
   isOpen: boolean;
   onClose: () => void;
-  onSendTemplate: (templateName: string, templateData: WhatsAppTemplate, variables: {
-    header: Record<string, string>;
-    body: Record<string, string>;
-    footer: Record<string, string>;
-  }, mediaUrl?: string) => Promise<void>;
+  onSendTemplate: (
+    templateName: string,
+    templateData: WhatsAppTemplate,
+    variables: {
+      header: Record<string, string>;
+      body: Record<string, string>;
+      footer: Record<string, string>;
+    },
+    mediaUrl?: string
+  ) => Promise<void>;
   selectedUser: ChatUser;
   whatsappAccessToken?: string | null;
 }
 
-export function TemplateSelector({ isOpen, onClose, onSendTemplate, selectedUser, whatsappAccessToken }: TemplateSelectorProps) {
+export function TemplateSelector({
+  isOpen,
+  onClose,
+  onSendTemplate,
+  selectedUser,
+  whatsappAccessToken,
+}: TemplateSelectorProps) {
   const [templates, setTemplates] = useState<WhatsAppTemplate[]>([]);
   const [filteredTemplates, setFilteredTemplates] = useState<WhatsAppTemplate[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState<WhatsAppTemplate | null>(null);
@@ -81,7 +111,7 @@ export function TemplateSelector({ isOpen, onClose, onSendTemplate, selectedUser
   }>({
     header: {},
     body: {},
-    footer: {}
+    footer: {},
   });
   const [mediaUrl, setMediaUrl] = useState<string>("");
   const [searchTerm, setSearchTerm] = useState("");
@@ -126,9 +156,13 @@ export function TemplateSelector({ isOpen, onClose, onSendTemplate, selectedUser
   // Filter templates based on search
   useEffect(() => {
     if (searchTerm.trim()) {
-      const filtered = templates.filter(template =>
-        template.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        template.category.toLowerCase().includes(searchTerm.toLowerCase())
+      const query = searchTerm.toLowerCase();
+      const filtered = templates.filter(
+        (template) =>
+          template.name.toLowerCase().includes(query) ||
+          template.category.toLowerCase().includes(query) ||
+          (template.formatted_components.body?.text &&
+            template.formatted_components.body.text.toLowerCase().includes(query))
       );
       setFilteredTemplates(filtered);
     } else {
@@ -141,215 +175,212 @@ export function TemplateSelector({ isOpen, onClose, onSendTemplate, selectedUser
     setError(null);
 
     try {
-      const response = await fetch('/api/templates?status=APPROVED');
-      const result = await response.json();
+      const response = await fetch("/api/templates", {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+      const result = await response.json().catch(() => null);
 
       if (!response.ok) {
-        throw new Error(result.error || result.message || 'Failed to fetch templates');
+        throw new Error(result?.error || result?.message || "Failed to fetch templates");
       }
 
-      setTemplates(result.data || []);
-    } catch (error) {
-      console.error('Error fetching templates:', error);
-      setError(error instanceof Error ? error.message : 'Failed to fetch templates');
+      // Backend returns { success: true, data: [...] }
+      const rawList: WhatsAppTemplate[] =
+        result?.data && Array.isArray(result.data)
+          ? result.data
+          : result?.templates && Array.isArray(result.templates)
+            ? result.templates
+            : Array.isArray(result)
+              ? result
+              : [];
+
+      // Filter for approved templates (or those with empty status if not set)
+      const approvedOnly = rawList.filter((template) => {
+        const s = String(template.status || "").trim().toUpperCase();
+        return s === "APPROVED" || s === "";
+      });
+
+      const finalList = approvedOnly.length > 0 ? approvedOnly : rawList;
+
+      setTemplates(finalList);
+      setFilteredTemplates(finalList);
+    } catch (err) {
+      console.error("Error fetching templates:", err);
+      setError(err instanceof Error ? err.message : "Failed to load templates");
+      setTemplates([]);
+      setFilteredTemplates([]);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const extractVariables = (template: WhatsAppTemplate): {
-    header: string[];
-    body: string[];
-    footer: string[];
-    all: string[];
-  } => {
+  const extractVariables = (template: WhatsAppTemplate) => {
     const headerVariables: string[] = [];
     const bodyVariables: string[] = [];
     const footerVariables: string[] = [];
 
-    (template.components || []).forEach(component => {
-      if (component.text) {
-        // Extract variables like {{1}}, {{2}}, etc.
-        const matches = component.text.match(/\{\{(\d+)\}\}/g);
-        if (matches) {
-          const componentVariables = matches.map(match => match.replace(/[{}]/g, ''));
+    const variableRegex = /\{\{(\d+)\}\}/g;
 
-          switch (component.type) {
-            case 'HEADER':
-              componentVariables.forEach(variable => {
-                if (!headerVariables.includes(variable)) {
-                  headerVariables.push(variable);
-                }
-              });
-              break;
-            case 'BODY':
-              componentVariables.forEach(variable => {
-                if (!bodyVariables.includes(variable)) {
-                  bodyVariables.push(variable);
-                }
-              });
-              break;
-            case 'FOOTER':
-              componentVariables.forEach(variable => {
-                if (!footerVariables.includes(variable)) {
-                  footerVariables.push(variable);
-                }
-              });
-              break;
-          }
+    // Header variables
+    if (
+      template.formatted_components.header &&
+      template.formatted_components.header.text &&
+      template.formatted_components.header.format?.toUpperCase() === "TEXT"
+    ) {
+      let match;
+      while ((match = variableRegex.exec(template.formatted_components.header.text)) !== null) {
+        if (!headerVariables.includes(match[1])) {
+          headerVariables.push(match[1]);
         }
       }
-    });
+    }
 
-    // Sort variables numerically
-    headerVariables.sort((a, b) => parseInt(a) - parseInt(b));
-    bodyVariables.sort((a, b) => parseInt(a) - parseInt(b));
-    footerVariables.sort((a, b) => parseInt(a) - parseInt(b));
+    // Body variables
+    if (template.formatted_components.body && template.formatted_components.body.text) {
+      let match;
+      while ((match = variableRegex.exec(template.formatted_components.body.text)) !== null) {
+        if (!bodyVariables.includes(match[1])) {
+          bodyVariables.push(match[1]);
+        }
+      }
+    }
 
-    // Get all unique variables
-    const allVariables = [...new Set([...headerVariables, ...bodyVariables, ...footerVariables])]
-      .sort((a, b) => parseInt(a) - parseInt(b));
+    // Footer variables
+    if (template.formatted_components.footer && template.formatted_components.footer.text) {
+      let match;
+      while ((match = variableRegex.exec(template.formatted_components.footer.text)) !== null) {
+        if (!footerVariables.includes(match[1])) {
+          footerVariables.push(match[1]);
+        }
+      }
+    }
+
+    const allVariables = [...new Set([...headerVariables, ...bodyVariables, ...footerVariables])].sort(
+      (a, b) => Number.parseInt(a, 10) - Number.parseInt(b, 10)
+    );
 
     return {
       header: headerVariables,
       body: bodyVariables,
       footer: footerVariables,
-      all: allVariables
+      all: allVariables,
     };
   };
 
-  const renderTemplatePreview = (template: WhatsAppTemplate, vars: {
-    header: Record<string, string>;
-    body: Record<string, string>;
-    footer: Record<string, string>;
-  }, previewMediaUrl?: string) => {
+  const renderTemplatePreview = (
+    template: WhatsAppTemplate,
+    vars: {
+      header: Record<string, string>;
+      body: Record<string, string>;
+      footer: Record<string, string>;
+    },
+    previewMediaUrl?: string
+  ) => {
     const replaceVariables = (text: string, componentVars: Record<string, string>) => {
       let result = text;
       Object.entries(componentVars).forEach(([key, value]) => {
-        result = result.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), value || `{{${key}}}`);
+        result = result.replace(new RegExp(`\\{\\{${key}\\}\\}`, "g"), value || `{{${key}}}`);
       });
       return result;
     };
 
     return (
-      <div className="bg-gradient-to-br from-green-50 to-blue-50 dark:from-green-950/20 dark:to-blue-950/20 rounded-lg p-4">
-        <div className="max-w-sm mx-auto bg-white dark:bg-gray-800 rounded-2xl shadow-lg overflow-hidden">
-          <div className="bg-green-500 text-white p-4 rounded-2xl m-4">
-            {/* Header */}
-            {template.formatted_components.header && (
-              <div className="mb-3">
-                <div className="flex items-center gap-2 mb-1">
-                  <div className="w-2 h-2 rounded-full bg-white opacity-60"></div>
-                  <span className="text-xs opacity-75 font-medium uppercase tracking-wide">Header</span>
-                </div>
-                {template.formatted_components.header.format === 'IMAGE' ? (
-                  previewMediaUrl ? (
-                    <div className="bg-white bg-opacity-20 rounded-lg overflow-hidden mb-2">
-                      <img
-                        src={previewMediaUrl}
-                        alt="Header preview"
-                        className="w-full h-auto object-cover"
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).style.display = 'none';
-                          (e.target as HTMLImageElement).parentElement!.innerHTML = '<div class="p-3 text-center"><span class="text-sm">📷 Invalid Image URL</span></div>';
-                        }}
-                      />
-                    </div>
-                  ) : (
-                    <div className="bg-white bg-opacity-20 rounded-lg p-3 text-center mb-2">
-                      <span className="text-sm">📷 Header Image (URL Required)</span>
-                    </div>
-                  )
-                ) : template.formatted_components.header.format === 'VIDEO' ? (
-                  previewMediaUrl ? (
-                    <div className="bg-white bg-opacity-20 rounded-lg overflow-hidden mb-2">
-                      <video src={previewMediaUrl} className="w-full h-auto" controls />
-                    </div>
-                  ) : (
-                    <div className="bg-white bg-opacity-20 rounded-lg p-3 text-center mb-2">
-                      <span className="text-sm">🎥 Header Video (URL Required)</span>
-                    </div>
-                  )
-                ) : template.formatted_components.header.format === 'DOCUMENT' ? (
-                  <div className="bg-white bg-opacity-20 rounded-lg p-3 text-center mb-2">
-                    <span className="text-sm">📄 Header Document {previewMediaUrl ? '(URL Provided)' : '(URL Required)'}</span>
+      <div className="rounded-2xl border border-stone-200/80 dark:border-stone-800/80 bg-white/95 dark:bg-[#131915]/95 p-4 shadow-sm">
+        {/* Mock Phone Frame Header */}
+        <div className="flex items-center gap-2 pb-3 mb-3 border-b border-stone-200/80 dark:border-stone-800/80 text-xs">
+          <Smartphone className="size-4 text-[#5F7C65]" />
+          <span className="font-semibold text-stone-900 dark:text-stone-100">WhatsApp Preview</span>
+          <span className="ml-auto text-[10px] font-mono px-2 py-0.5 rounded-full bg-[#5F7C65]/10 text-[#2D583F] dark:text-[#8EAE95] font-medium">
+            Verified Business
+          </span>
+        </div>
+
+        {/* Chat Bubble in Botanical Evergreen */}
+        <div className="bg-[#2D583F] dark:bg-[#1E3E2B] text-white p-4 rounded-2xl rounded-tr-xs shadow-md border border-[#2D583F]/30 max-w-sm ml-auto">
+          {/* Header */}
+          {template.formatted_components.header && (
+            <div className="mb-2.5">
+              {template.formatted_components.header.format === "IMAGE" ? (
+                previewMediaUrl ? (
+                  <div className="rounded-xl overflow-hidden mb-2 border border-white/15">
+                    <img
+                      src={previewMediaUrl}
+                      alt="Header preview"
+                      className="w-full h-auto max-h-48 object-cover rounded-xl"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).style.display = "none";
+                        (e.target as HTMLImageElement).parentElement!.innerHTML =
+                          '<div class="p-3 text-center bg-black/20 rounded-xl text-xs">📷 Media preview unavailable</div>';
+                      }}
+                    />
                   </div>
-                ) : template.formatted_components.header.text ? (
-                  <p className="font-semibold text-sm mb-2">
-                    {replaceVariables(template.formatted_components.header.text, vars.header)}
-                  </p>
                 ) : (
-                  <p className="font-semibold text-sm mb-2">[Header Content]</p>
-                )}
-              </div>
-            )}
-
-            {/* Body */}
-            {template.formatted_components.body && (
-              <div className="mb-3">
-                {template.formatted_components.header && (
-                  <div className="flex items-center gap-2 mb-1">
-                    <div className="w-2 h-2 rounded-full bg-white opacity-60"></div>
-                    <span className="text-xs opacity-75 font-medium uppercase tracking-wide">Body</span>
+                  <div className="bg-black/20 rounded-xl p-3.5 text-center mb-2 border border-white/10 text-xs text-white/80">
+                    📷 Header Image (Select from library)
                   </div>
-                )}
-                <p className="text-sm leading-relaxed">
-                  {replaceVariables(template.formatted_components.body.text || '', vars.body)}
+                )
+              ) : template.formatted_components.header.format === "VIDEO" ? (
+                previewMediaUrl ? (
+                  <div className="rounded-xl overflow-hidden mb-2 border border-white/15">
+                    <video src={previewMediaUrl} className="w-full h-auto max-h-48 rounded-xl" controls />
+                  </div>
+                ) : (
+                  <div className="bg-black/20 rounded-xl p-3.5 text-center mb-2 border border-white/10 text-xs text-white/80">
+                    🎥 Header Video (Select from library)
+                  </div>
+                )
+              ) : template.formatted_components.header.format === "DOCUMENT" ? (
+                <div className="bg-black/20 rounded-xl p-3 text-center mb-2 border border-white/10 text-xs text-white/80">
+                  📄 Header Document {previewMediaUrl ? "(Document Attached)" : "(Select from library)"}
+                </div>
+              ) : template.formatted_components.header.text ? (
+                <p className="font-bold text-sm leading-snug">
+                  {replaceVariables(template.formatted_components.header.text, vars.header)}
                 </p>
-              </div>
-            )}
-
-            {/* Footer */}
-            {template.formatted_components.footer && (
-              <div className="mb-3">
-                <div className="flex items-center gap-2 mb-1">
-                  <div className="w-2 h-2 rounded-full bg-white opacity-60"></div>
-                  <span className="text-xs opacity-75 font-medium uppercase tracking-wide">Footer</span>
-                </div>
-                <p className="text-xs opacity-75">
-                  {replaceVariables(template.formatted_components.footer.text || '', vars.footer)}
-                </p>
-              </div>
-            )}
-
-            {/* Buttons */}
-            {template.formatted_components.buttons.length > 0 && (
-              <div className="mt-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="w-2 h-2 rounded-full bg-white opacity-60"></div>
-                  <span className="text-xs opacity-75 font-medium uppercase tracking-wide">Buttons</span>
-                </div>
-                <div className="space-y-1">
-                  {template.formatted_components.buttons.map((button, index) => (
-                    <div
-                      key={index}
-                      className="bg-white bg-opacity-20 rounded-lg p-2 text-center"
-                    >
-                      <div className="flex items-center justify-center gap-2">
-                        {button.type === 'URL' && <span>🔗</span>}
-                        {button.type === 'PHONE_NUMBER' && <span>📞</span>}
-                        {button.type === 'QUICK_REPLY' && <span>💬</span>}
-                        <span className="text-sm font-medium">{button.text}</span>
-                      </div>
-                      {button.url && (
-                        <div className="text-xs opacity-60 mt-1 truncate">
-                          {button.url}
-                        </div>
-                      )}
-                      {button.phone_number && (
-                        <div className="text-xs opacity-60 mt-1">
-                          {button.phone_number}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div className="text-xs opacity-75 text-right mt-3">
-              12:34 PM
+              ) : null}
             </div>
+          )}
+
+          {/* Body */}
+          {template.formatted_components.body && (
+            <div className="text-xs sm:text-sm leading-relaxed whitespace-pre-wrap break-words font-normal">
+              {replaceVariables(template.formatted_components.body.text || "", vars.body)}
+            </div>
+          )}
+
+          {/* Footer */}
+          {template.formatted_components.footer?.text && (
+            <div className="mt-2 pt-1 border-t border-white/10">
+              <p className="text-[11px] text-white/70 leading-tight">
+                {replaceVariables(template.formatted_components.footer.text || "", vars.footer)}
+              </p>
+            </div>
+          )}
+
+          {/* Buttons */}
+          {template.formatted_components.buttons && template.formatted_components.buttons.length > 0 && (
+            <div className="mt-3 pt-2 border-t border-white/15 space-y-1.5">
+              {template.formatted_components.buttons.map((button, index) => (
+                <div
+                  key={index}
+                  className="bg-black/20 hover:bg-black/30 border border-white/10 rounded-xl py-2 px-3 text-center text-xs font-medium flex items-center justify-center gap-1.5 transition-colors"
+                >
+                  {button.type === "URL" && <LinkIcon className="size-3" />}
+                  {button.type === "PHONE_NUMBER" && <Phone className="size-3" />}
+                  {button.type === "QUICK_REPLY" && <MessageSquare className="size-3" />}
+                  <span>{button.text}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Mock timestamp */}
+          <div className="flex items-center justify-end gap-1 mt-2 text-[10px] text-white/70 select-none">
+            <span>Just now</span>
+            <Check className="size-3 text-white/70" />
           </div>
         </div>
       </div>
@@ -360,17 +391,29 @@ export function TemplateSelector({ isOpen, onClose, onSendTemplate, selectedUser
     setSelectedTemplate(template);
     setShowPreview(false);
     setMediaUrl("");
+    setQuickRegisterSuccess(null);
+    setError(null);
 
     // Initialize variables
     const templateVars = extractVariables(template);
-    const initialVars: Record<string, string> = {};
-    templateVars.all.forEach(variable => {
-      initialVars[variable] = '';
+    const initialHeader: Record<string, string> = {};
+    const initialBody: Record<string, string> = {};
+    const initialFooter: Record<string, string> = {};
+
+    templateVars.header.forEach((v) => {
+      initialHeader[v] = "";
     });
+    templateVars.body.forEach((v) => {
+      initialBody[v] = "";
+    });
+    templateVars.footer.forEach((v) => {
+      initialFooter[v] = "";
+    });
+
     setVariables({
-      header: {},
-      body: {},
-      footer: {}
+      header: initialHeader,
+      body: initialBody,
+      footer: initialFooter,
     });
   };
 
@@ -378,12 +421,14 @@ export function TemplateSelector({ isOpen, onClose, onSendTemplate, selectedUser
     if (!selectedTemplate) return;
 
     // Check if template has media header
-    const headerComponent = selectedTemplate.components.find(c => c.type === 'HEADER');
-    const hasMediaHeader = headerComponent && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(headerComponent.format?.toUpperCase() || '');
+    const headerComponent = selectedTemplate.components.find((c) => c.type === "HEADER");
+    const hasMediaHeader =
+      headerComponent &&
+      ["IMAGE", "VIDEO", "DOCUMENT"].includes(headerComponent.format?.toUpperCase() || "");
 
     // Validate media URL if header is media type
     if (hasMediaHeader && !mediaUrl.trim()) {
-      setError(`Please provide a ${headerComponent?.format?.toLowerCase()} URL for the header`);
+      setError(`Please select a ${headerComponent?.format?.toLowerCase()} file for the header.`);
       return;
     }
 
@@ -391,9 +436,9 @@ export function TemplateSelector({ isOpen, onClose, onSendTemplate, selectedUser
     const templateVars = extractVariables(selectedTemplate);
     const missingVars: string[] = [];
 
-    // Check header variables (only for TEXT headers)
-    if (!hasMediaHeader) {
-      templateVars.header.forEach(variable => {
+    // Check header variables if text
+    if (headerComponent?.format?.toUpperCase() === "TEXT") {
+      templateVars.header.forEach((variable) => {
         if (!variables.header[variable]?.trim()) {
           missingVars.push(`Header {{${variable}}}`);
         }
@@ -401,21 +446,21 @@ export function TemplateSelector({ isOpen, onClose, onSendTemplate, selectedUser
     }
 
     // Check body variables
-    templateVars.body.forEach(variable => {
+    templateVars.body.forEach((variable) => {
       if (!variables.body[variable]?.trim()) {
         missingVars.push(`Body {{${variable}}}`);
       }
     });
 
     // Check footer variables
-    templateVars.footer.forEach(variable => {
+    templateVars.footer.forEach((variable) => {
       if (!variables.footer[variable]?.trim()) {
         missingVars.push(`Footer {{${variable}}}`);
       }
     });
 
     if (missingVars.length > 0) {
-      setError(`Please fill in all variables: ${missingVars.join(', ')}`);
+      setError(`Please complete all required variables: ${missingVars.join(", ")}`);
       return;
     }
 
@@ -430,14 +475,14 @@ export function TemplateSelector({ isOpen, onClose, onSendTemplate, selectedUser
       setVariables({
         header: {},
         body: {},
-        footer: {}
+        footer: {},
       });
       setMediaUrl("");
       setShowPreview(false);
       onClose();
-    } catch (error) {
-      console.error('Error sending template:', error);
-      setError(error instanceof Error ? error.message : 'Failed to send template');
+    } catch (err) {
+      console.error("Error sending template:", err);
+      setError(err instanceof Error ? err.message : "Failed to send template");
     } finally {
       setIsSending(false);
     }
@@ -448,182 +493,255 @@ export function TemplateSelector({ isOpen, onClose, onSendTemplate, selectedUser
     setVariables({
       header: {},
       body: {},
-      footer: {}
+      footer: {},
     });
     setMediaUrl("");
     setShowPreview(false);
-    setSearchTerm('');
+    setSearchTerm("");
     setError(null);
     onClose();
   };
 
   if (!isOpen) return null;
 
+  const recipientName =
+    selectedUser.custom_name ||
+    selectedUser.whatsapp_name ||
+    selectedUser.name ||
+    selectedUser.phone_number ||
+    "Recipient";
+
+  const totalVarsCount = selectedTemplate ? extractVariables(selectedTemplate).all.length : 0;
+
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-      <div className="bg-background rounded-lg shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
-        {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-border">
-          <div className="flex items-center gap-3">
-            <FileText className="h-6 w-6 text-green-600" />
-            <div>
-              <h2 className="text-xl font-semibold">Send Template Message</h2>
-              <p className="text-sm text-muted-foreground">
-                To: {selectedUser.custom_name || selectedUser.whatsapp_name || selectedUser.name}
-              </p>
-            </div>
-          </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleClose}
-            className="p-2 hover:bg-muted rounded-full"
-          >
-            <X className="h-5 w-5" />
-          </Button>
-        </div>
-
-        {/* Content */}
-        <div className="flex-1 overflow-y-scroll">
-          {!selectedTemplate ? (
-            /* Template Selection */
-            <div className="h-full flex flex-col">
-              {/* Search */}
-              <div className="p-6 border-b border-border">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
-                  <Input
-                    placeholder="Search templates by name or category..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-10"
-                  />
-                </div>
+    <div
+      className="fixed inset-0 bg-stone-950/60 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-200 select-none"
+      onClick={handleClose}
+    >
+      {/* Doppelrand Double-Bezel Modal */}
+      <div
+        className="relative max-w-4xl w-full rounded-3xl border border-stone-200/90 dark:border-stone-800/90 bg-white/95 dark:bg-[#131915]/95 backdrop-blur-xl p-2 sm:p-2.5 shadow-[0_20px_50px_-12px_rgba(0,0,0,0.25)] flex flex-col max-h-[88vh] overflow-hidden animate-in zoom-in-95 duration-200"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="rounded-[calc(1.5rem-0.375rem)] bg-[#FAF8F5]/80 dark:bg-[#18201B]/90 border border-stone-200/70 dark:border-stone-800/70 flex flex-col flex-1 min-h-0 overflow-hidden">
+          {/* Header */}
+          <div className="px-6 py-4.5 border-b border-stone-200/80 dark:border-stone-800/80 flex items-center justify-between bg-white/80 dark:bg-[#18201B]/80 backdrop-blur-md shrink-0">
+            <div className="flex items-center gap-3">
+              <div className="size-10 rounded-xl bg-[#5F7C65]/12 dark:bg-[#5F7C65]/20 text-[#2D583F] dark:text-[#8EAE95] border border-[#5F7C65]/20 flex items-center justify-center shadow-2xs shrink-0">
+                <FileText className="h-5 w-5" />
               </div>
+              <div>
+                <h2 className="text-base sm:text-lg font-semibold tracking-[-0.025em] text-stone-900 dark:text-stone-100">
+                  Send <span className="font-[Georgia,serif] italic font-normal text-[#2D583F] dark:text-[#8EAE95]">Template Message</span>
+                </h2>
+                <p className="text-xs text-stone-500 dark:text-stone-400 mt-0.5">
+                  Recipient: <span className="font-medium text-stone-700 dark:text-stone-300">{recipientName}</span>
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={handleClose}
+              className="p-1.5 rounded-xl hover:bg-stone-200/60 dark:hover:bg-stone-800/60 text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 transition-colors"
+              title="Close (ESC)"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
 
-              {/* Templates List */}
-              <div className="flex-1 overflow-y-scroll p-6">
-                {isLoading ? (
-                  <div className="flex items-center justify-center py-12">
-                    <Loader2 className="h-8 w-8 animate-spin text-green-600" />
-                    <span className="ml-3 text-muted-foreground">Loading templates...</span>
+          {/* Main Content Area - ZERO unwanted outer scrollbars */}
+          <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+            {!selectedTemplate ? (
+              /* Template Selection State */
+              <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+                {/* Search & Refresh Bar */}
+                <div className="p-4 sm:p-5 border-b border-stone-200/80 dark:border-stone-800/80 bg-white/60 dark:bg-[#18201B]/60 shrink-0 flex items-center gap-2">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-stone-400 h-4 w-4" />
+                    <Input
+                      placeholder="Search templates by name, category, or message text..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="pl-10 border-stone-200 dark:border-stone-800 bg-white dark:bg-[#131915] focus-visible:ring-[#5F7C65]/30 focus-visible:border-[#5F7C65] rounded-xl text-xs sm:text-sm h-10 shadow-2xs"
+                    />
                   </div>
-                ) : error ? (
-                  <div className="flex items-center justify-center py-12">
-                    <div className="text-center">
-                      <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
-                      <p className="text-red-600 font-medium mb-2">Failed to load templates</p>
-                      <p className="text-sm text-muted-foreground mb-4">{error}</p>
-                      <Button onClick={fetchTemplates} variant="outline" size="sm">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => fetchTemplates()}
+                    disabled={isLoading}
+                    className="h-10 px-3 rounded-xl border-stone-200 dark:border-stone-800 hover:bg-stone-100 dark:hover:bg-stone-800 shrink-0 text-stone-600 dark:text-stone-300"
+                    title="Refresh templates"
+                  >
+                    <RefreshCw className={`size-4 ${isLoading ? "animate-spin text-[#5F7C65]" : ""}`} />
+                  </Button>
+                </div>
+
+                {/* Templates Scrollable Grid - The ONLY scroll container here */}
+                <div className="flex-1 min-h-0 overflow-y-auto p-5 sm:p-6 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-stone-300 dark:[&::-webkit-scrollbar-thumb]:bg-stone-700">
+                  {isLoading ? (
+                    <div className="flex flex-col items-center justify-center py-16 text-center">
+                      <Loader2 className="h-8 w-8 animate-spin text-[#5F7C65] mb-3" />
+                      <p className="text-sm font-medium text-stone-600 dark:text-stone-300">
+                        Retrieving Meta WhatsApp templates...
+                      </p>
+                    </div>
+                  ) : error ? (
+                    <div className="flex flex-col items-center justify-center py-16 text-center max-w-md mx-auto">
+                      <AlertCircle className="h-10 w-10 text-red-500 mb-3" />
+                      <p className="text-sm font-semibold text-stone-900 dark:text-stone-100 mb-1">
+                        Failed to Load Templates
+                      </p>
+                      <p className="text-xs text-stone-500 dark:text-stone-400 mb-4">{error}</p>
+                      <Button
+                        onClick={fetchTemplates}
+                        variant="outline"
+                        size="sm"
+                        className="rounded-xl border-stone-200 dark:border-stone-800 hover:bg-stone-100 dark:hover:bg-stone-800"
+                      >
                         Try Again
                       </Button>
                     </div>
-                  </div>
-                ) : filteredTemplates.length === 0 ? (
-                  <div className="text-center py-12">
-                    <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                    <p className="text-muted-foreground">
-                      {searchTerm ? 'No templates found matching your search' : 'No approved templates available'}
-                    </p>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {filteredTemplates.map((template) => (
-                      <div
-                        key={template.id}
-                        className="bg-card border border-border rounded-lg p-4 hover:shadow-md transition-shadow cursor-pointer"
-                        onClick={() => handleTemplateSelect(template)}
+                  ) : filteredTemplates.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-16 text-center max-w-sm mx-auto">
+                      <FileText className="h-10 w-10 text-stone-400 mb-3" />
+                      <p className="text-sm font-semibold text-stone-800 dark:text-stone-200 mb-1">
+                        {searchTerm ? "No matching templates found" : "No approved templates available"}
+                      </p>
+                      <p className="text-xs text-stone-500 dark:text-stone-400 mb-4">
+                        {searchTerm
+                          ? "Try a different search keyword or category name."
+                          : "Create and submit WhatsApp templates in the Templates Studio to get them approved."}
+                      </p>
+                      <Link
+                        href="/protected/templates"
+                        className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#2D583F] dark:text-[#8EAE95] hover:underline"
                       >
-                        <div className="flex items-start justify-between mb-3">
-                          <div>
-                            <h3 className="font-medium text-sm">{template.name}</h3>
-                            <p className="text-xs text-muted-foreground">{template.category}</p>
+                        Manage Templates Studio →
+                      </Link>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {filteredTemplates.map((template) => {
+                        const templateVars = extractVariables(template);
+                        return (
+                          <div
+                            key={template.id}
+                            onClick={() => handleTemplateSelect(template)}
+                            className="rounded-2xl border border-stone-200/80 dark:border-stone-800/80 bg-white/90 dark:bg-[#18201B]/90 hover:border-[#5F7C65]/50 hover:shadow-[0_8px_20px_-4px_rgba(45,88,63,0.12)] p-4 transition-all duration-200 cursor-pointer group flex flex-col justify-between"
+                          >
+                            <div>
+                              <div className="flex items-start justify-between gap-2 mb-2">
+                                <h3 className="font-semibold text-sm text-stone-900 dark:text-stone-100 group-hover:text-[#2D583F] dark:group-hover:text-[#8EAE95] transition-colors truncate">
+                                  {template.name}
+                                </h3>
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[#5F7C65]/10 text-[#2D583F] dark:text-[#8EAE95] border border-[#5F7C65]/20 shrink-0 uppercase tracking-wider">
+                                  {template.category}
+                                </span>
+                              </div>
+
+                              <p className="text-xs text-stone-600 dark:text-stone-400 line-clamp-3 leading-relaxed mb-3">
+                                {template.formatted_components.body?.text || "No preview text"}
+                              </p>
+                            </div>
+
+                            <div className="flex items-center justify-between pt-2.5 border-t border-stone-200/70 dark:border-stone-800/70 text-[11px]">
+                              <span className="inline-flex items-center gap-1 text-[#2D583F] dark:text-[#8EAE95] font-semibold text-[10px] uppercase tracking-wider">
+                                <span className="size-1.5 rounded-full bg-[#5F7C65]" />
+                                {template.status}
+                              </span>
+                              <span className="font-mono text-stone-500 dark:text-stone-400 text-[11px]">
+                                {templateVars.all.length} {templateVars.all.length === 1 ? "variable" : "variables"}
+                              </span>
+                            </div>
                           </div>
-                          <span className="text-lg">{template.category_icon}</span>
-                        </div>
-
-                        <div className="text-xs text-muted-foreground mb-2">
-                          {template.formatted_components.body?.text?.substring(0, 100)}
-                          {template.formatted_components.body?.text && template.formatted_components.body.text.length > 100 ? '...' : ''}
-                        </div>
-
-                        <div className="flex items-center justify-between">
-                          <span className={`text-xs px-2 py-1 rounded ${template.status_color}`}>
-                            {template.status}
-                          </span>
-                          <span className="text-xs text-muted-foreground">
-                            {extractVariables(template).all.length} variables
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          ) : (
-            /* Template Configuration */
-            <div className="h-full flex">
-              {/* Configuration Panel */}
-              <div className={`${showPreview ? 'w-1/2' : 'w-full'} overflow-y-scroll p-6 border-r border-border`}>
-                <div className="mb-6">
-                  <div className="flex items-center justify-between mb-4">
+            ) : (
+              /* Template Configuration State */
+              <div className="flex-1 min-h-0 flex flex-col lg:flex-row overflow-hidden">
+                {/* Configuration Panel - The ONLY scroll container for config */}
+                <div
+                  className={`${
+                    showPreview ? "w-full lg:w-1/2" : "w-full"
+                  } flex-1 min-h-0 overflow-y-auto p-5 sm:p-6 border-stone-200/80 dark:border-stone-800/80 ${
+                    showPreview ? "lg:border-r" : ""
+                  } [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-stone-300 dark:[&::-webkit-scrollbar-thumb]:bg-stone-700`}
+                >
+                  <div className="flex items-center justify-between mb-5">
                     <div>
-                      <h3 className="text-lg font-semibold">{selectedTemplate.name}</h3>
-                      <p className="text-sm text-muted-foreground">{selectedTemplate.category}</p>
+                      <h3 className="text-base sm:text-lg font-semibold text-stone-900 dark:text-stone-100">
+                        {selectedTemplate.name}
+                      </h3>
+                      <p className="text-xs text-stone-500 dark:text-stone-400 mt-0.5">
+                        Category: {selectedTemplate.category} • Language: {selectedTemplate.language}
+                      </p>
                     </div>
                     <Button
                       variant="outline"
                       size="sm"
                       onClick={() => setSelectedTemplate(null)}
+                      className="rounded-xl border-stone-200 dark:border-stone-800 hover:bg-stone-100 dark:hover:bg-stone-800 text-xs gap-1.5"
                     >
+                      <ArrowLeft className="size-3.5" />
                       Back to Templates
                     </Button>
                   </div>
 
-                  {/* Media selection for IMAGE/VIDEO/DOCUMENT headers */}
+                  {/* Header Media Picker if required */}
                   {(() => {
                     const headerComp = selectedTemplate.formatted_components.header;
-                    const hasMediaHeader = headerComp && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(headerComp.format?.toUpperCase() || '');
+                    const hasMediaHeader =
+                      headerComp &&
+                      ["IMAGE", "VIDEO", "DOCUMENT"].includes(headerComp.format?.toUpperCase() || "");
 
                     if (hasMediaHeader) {
-                      const filterMap: Record<string, string> = { IMAGE: 'image', VIDEO: 'video', DOCUMENT: 'document' };
-                      const typeFilter = filterMap[headerComp.format?.toUpperCase() || ''] || undefined;
+                      const filterMap: Record<string, string> = {
+                        IMAGE: "image",
+                        VIDEO: "video",
+                        DOCUMENT: "document",
+                      };
+                      const typeFilter = filterMap[headerComp.format?.toUpperCase() || ""] || undefined;
 
                       return (
-                        <div className="space-y-3 mb-6">
-                          <h4 className="font-medium flex items-center gap-2">
-                            <div className="w-3 h-3 rounded-full bg-blue-500"></div>
-                            {headerComp.format} Header *
-                          </h4>
-                          <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 space-y-3">
-                            {mediaUrl ? (
-                              <div className="flex items-center gap-3 bg-white dark:bg-gray-800 rounded-lg p-3 border">
-                                <ImageIcon className="h-5 w-5 text-green-600 shrink-0" />
-                                <span className="text-sm truncate flex-1">{mediaUrl.split('/').pop()?.split('?')[0] || 'Selected media'}</span>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => setMediaUrl("")}
-                                  className="p-1 h-auto"
-                                >
-                                  <X className="h-4 w-4" />
-                                </Button>
-                              </div>
-                            ) : (
-                              <Button
-                                variant="outline"
-                                onClick={() => setMediaPickerOpen(true)}
-                                className="w-full gap-2"
-                              >
-                                <ImageIcon className="h-4 w-4" />
-                                Choose {headerComp.format?.toLowerCase()} from Media Library
-                              </Button>
-                            )}
-                            <p className="text-xs text-muted-foreground">
-                              Select a {headerComp.format?.toLowerCase()} from your media library or upload a new one
-                            </p>
+                        <div className="mb-6 rounded-2xl border border-stone-200/80 dark:border-stone-800/80 bg-white/90 dark:bg-[#131915]/90 p-4 space-y-3 shadow-2xs">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-semibold uppercase tracking-wider text-[#2D583F] dark:text-[#8EAE95] flex items-center gap-1.5">
+                              <ImageIcon className="size-3 text-[#5F7C65]" />
+                              Header Attachment ({headerComp.format}) *
+                            </span>
                           </div>
+
+                          {mediaUrl ? (
+                            <div className="flex items-center gap-3 bg-stone-50 dark:bg-[#18201B] rounded-xl p-3 border border-stone-200/80 dark:border-stone-800">
+                              <ImageIcon className="size-5 text-[#5F7C65] shrink-0" />
+                              <span className="text-xs font-mono truncate flex-1 text-stone-800 dark:text-stone-200">
+                                {mediaUrl.split("/").pop()?.split("?")[0] || "Selected Media"}
+                              </span>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setMediaUrl("")}
+                                className="p-1 h-auto text-stone-400 hover:text-stone-700 dark:hover:text-stone-200"
+                              >
+                                <X className="size-4" />
+                              </Button>
+                            </div>
+                          ) : (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() => setMediaPickerOpen(true)}
+                              className="w-full gap-2 rounded-xl border-dashed border-stone-300 dark:border-stone-700 hover:border-[#5F7C65] hover:bg-stone-50 dark:hover:bg-stone-800/50 py-4 text-xs font-medium"
+                            >
+                              <ImageIcon className="size-4 text-[#5F7C65]" />
+                              Select {headerComp.format?.toLowerCase()} from Media Library
+                            </Button>
+                          )}
+
                           <MediaPickerDialog
                             isOpen={mediaPickerOpen}
                             onClose={() => setMediaPickerOpen(false)}
@@ -632,8 +750,8 @@ export function TemplateSelector({ isOpen, onClose, onSendTemplate, selectedUser
                               setMediaPickerOpen(false);
                             }}
                             mediaTypeFilter={typeFilter}
-                            isTemplateImageHeader={headerComp.format?.toUpperCase() === 'IMAGE'}
-                            title={`Select ${headerComp.format?.toLowerCase()} for header`}
+                            isTemplateImageHeader={headerComp.format?.toUpperCase() === "IMAGE"}
+                            title={`Select ${headerComp.format?.toLowerCase()} for template header`}
                           />
                         </div>
                       );
@@ -641,38 +759,48 @@ export function TemplateSelector({ isOpen, onClose, onSendTemplate, selectedUser
                     return null;
                   })()}
 
-                  {/* Variables */}
-                  {extractVariables(selectedTemplate).all.length > 0 && (
-                    <div className="space-y-6">
-                      <h4 className="font-medium">Template Variables</h4>
+                  {/* Variables Form */}
+                  {totalVarsCount > 0 ? (
+                    <div className="space-y-5">
+                      <div className="flex items-center justify-between pb-2 border-b border-stone-200/70 dark:border-stone-800/70">
+                        <span className="text-xs font-semibold uppercase tracking-wider text-stone-600 dark:text-stone-300">
+                          Template Variables ({totalVarsCount})
+                        </span>
+                        <span className="text-[11px] text-stone-400">All fields required</span>
+                      </div>
 
-                      {/* Header Variables - Only show for TEXT headers */}
+                      {/* Header Variables */}
                       {(() => {
                         const headerComp = selectedTemplate.formatted_components.header;
-                        const isTextHeader = headerComp && headerComp.format?.toUpperCase() === 'TEXT';
+                        const isTextHeader = headerComp && headerComp.format?.toUpperCase() === "TEXT";
                         const headerVars = extractVariables(selectedTemplate).header;
 
                         if (isTextHeader && headerVars.length > 0) {
                           return (
                             <div className="space-y-3">
-                              <div className="flex items-center gap-2">
-                                <div className="w-3 h-3 rounded-full bg-blue-500"></div>
-                                <h5 className="text-sm font-medium text-blue-700 dark:text-blue-300">Header Variables</h5>
-                              </div>
-                              {headerVars.map((variable) => (
-                                <div key={`header-${variable}`}>
-                                  <Label htmlFor={`header-var-${variable}`}>
-                                    Header Variable {`{{${variable}}}`} *
+                              <h5 className="text-xs font-semibold text-[#2D583F] dark:text-[#8EAE95] uppercase tracking-wider">
+                                Header Variables
+                              </h5>
+                              {headerVars.map((v) => (
+                                <div key={`header-${v}`}>
+                                  <Label
+                                    htmlFor={`header-var-${v}`}
+                                    className="text-xs font-medium text-stone-700 dark:text-stone-300 flex items-center gap-1.5"
+                                  >
+                                    <span className="font-mono text-[#2D583F] dark:text-[#8EAE95] font-semibold">{`{{${v}}}`}</span>
+                                    <span>Header Variable {v} *</span>
                                   </Label>
                                   <Input
-                                    id={`header-var-${variable}`}
-                                    value={variables.header[variable] || ''}
-                                    onChange={(e) => setVariables(prev => ({
-                                      ...prev,
-                                      header: { ...prev.header, [variable]: e.target.value }
-                                    }))}
-                                    placeholder={`Enter value for header {{${variable}}}`}
-                                    className="mt-1"
+                                    id={`header-var-${v}`}
+                                    value={variables.header[v] || ""}
+                                    onChange={(e) =>
+                                      setVariables((prev) => ({
+                                        ...prev,
+                                        header: { ...prev.header, [v]: e.target.value },
+                                      }))
+                                    }
+                                    placeholder={`Enter value for header {{${v}}}`}
+                                    className="mt-1.5 border-stone-200 dark:border-stone-800 bg-white dark:bg-[#131915] focus-visible:ring-[#5F7C65]/30 focus-visible:border-[#5F7C65] rounded-xl text-xs sm:text-sm h-10 shadow-2xs"
                                   />
                                 </div>
                               ))}
@@ -685,24 +813,29 @@ export function TemplateSelector({ isOpen, onClose, onSendTemplate, selectedUser
                       {/* Body Variables */}
                       {extractVariables(selectedTemplate).body.length > 0 && (
                         <div className="space-y-3">
-                          <div className="flex items-center gap-2">
-                            <div className="w-3 h-3 rounded-full bg-green-500"></div>
-                            <h5 className="text-sm font-medium text-green-700 dark:text-green-300">Body Variables</h5>
-                          </div>
-                          {extractVariables(selectedTemplate).body.map((variable) => (
-                            <div key={`body-${variable}`}>
-                              <Label htmlFor={`body-var-${variable}`}>
-                                Body Variable {`{{${variable}}}`} *
+                          <h5 className="text-xs font-semibold text-[#2D583F] dark:text-[#8EAE95] uppercase tracking-wider">
+                            Body Variables
+                          </h5>
+                          {extractVariables(selectedTemplate).body.map((v) => (
+                            <div key={`body-${v}`}>
+                              <Label
+                                htmlFor={`body-var-${v}`}
+                                className="text-xs font-medium text-stone-700 dark:text-stone-300 flex items-center gap-1.5"
+                              >
+                                <span className="font-mono text-[#2D583F] dark:text-[#8EAE95] font-semibold">{`{{${v}}}`}</span>
+                                <span>Body Variable {v} *</span>
                               </Label>
                               <Input
-                                id={`body-var-${variable}`}
-                                value={variables.body[variable] || ''}
-                                onChange={(e) => setVariables(prev => ({
-                                  ...prev,
-                                  body: { ...prev.body, [variable]: e.target.value }
-                                }))}
-                                placeholder={`Enter value for body {{${variable}}}`}
-                                className="mt-1"
+                                id={`body-var-${v}`}
+                                value={variables.body[v] || ""}
+                                onChange={(e) =>
+                                  setVariables((prev) => ({
+                                    ...prev,
+                                    body: { ...prev.body, [v]: e.target.value },
+                                  }))
+                                }
+                                placeholder={`Enter value for body {{${v}}}`}
+                                className="mt-1.5 border-stone-200 dark:border-stone-800 bg-white dark:bg-[#131915] focus-visible:ring-[#5F7C65]/30 focus-visible:border-[#5F7C65] rounded-xl text-xs sm:text-sm h-10 shadow-2xs"
                               />
                             </div>
                           ))}
@@ -712,180 +845,169 @@ export function TemplateSelector({ isOpen, onClose, onSendTemplate, selectedUser
                       {/* Footer Variables */}
                       {extractVariables(selectedTemplate).footer.length > 0 && (
                         <div className="space-y-3">
-                          <div className="flex items-center gap-2">
-                            <div className="w-3 h-3 rounded-full bg-purple-500"></div>
-                            <h5 className="text-sm font-medium text-purple-700 dark:text-purple-300">Footer Variables</h5>
-                          </div>
-                          {extractVariables(selectedTemplate).footer.map((variable) => (
-                            <div key={`footer-${variable}`}>
-                              <Label htmlFor={`footer-var-${variable}`}>
-                                Footer Variable {`{{${variable}}}`} *
+                          <h5 className="text-xs font-semibold text-[#2D583F] dark:text-[#8EAE95] uppercase tracking-wider">
+                            Footer Variables
+                          </h5>
+                          {extractVariables(selectedTemplate).footer.map((v) => (
+                            <div key={`footer-${v}`}>
+                              <Label
+                                htmlFor={`footer-var-${v}`}
+                                className="text-xs font-medium text-stone-700 dark:text-stone-300 flex items-center gap-1.5"
+                              >
+                                <span className="font-mono text-[#2D583F] dark:text-[#8EAE95] font-semibold">{`{{${v}}}`}</span>
+                                <span>Footer Variable {v} *</span>
                               </Label>
                               <Input
-                                id={`footer-var-${variable}`}
-                                value={variables.footer[variable] || ''}
-                                onChange={(e) => setVariables(prev => ({
-                                  ...prev,
-                                  footer: { ...prev.footer, [variable]: e.target.value }
-                                }))}
-                                placeholder={`Enter value for footer {{${variable}}}`}
-                                className="mt-1"
+                                id={`footer-var-${v}`}
+                                value={variables.footer[v] || ""}
+                                onChange={(e) =>
+                                  setVariables((prev) => ({
+                                    ...prev,
+                                    footer: { ...prev.footer, [v]: e.target.value },
+                                  }))
+                                }
+                                placeholder={`Enter value for footer {{${v}}}`}
+                                className="mt-1.5 border-stone-200 dark:border-stone-800 bg-white dark:bg-[#131915] focus-visible:ring-[#5F7C65]/30 focus-visible:border-[#5F7C65] rounded-xl text-xs sm:text-sm h-10 shadow-2xs"
                               />
                             </div>
                           ))}
                         </div>
                       )}
                     </div>
+                  ) : (
+                    <div className="rounded-2xl border border-stone-200/80 dark:border-stone-800/80 bg-white/90 dark:bg-[#131915]/90 p-5 text-center shadow-2xs">
+                      <Sparkles className="size-6 text-[#5F7C65] mx-auto mb-2" />
+                      <p className="text-sm font-semibold text-stone-900 dark:text-stone-100">
+                        Static WhatsApp Template
+                      </p>
+                      <p className="text-xs text-stone-500 dark:text-stone-400 mt-1 max-w-sm mx-auto">
+                        This template contains zero dynamic variables and is ready to dispatch directly to{" "}
+                        <span className="font-semibold text-stone-700 dark:text-stone-300">{recipientName}</span>.
+                      </p>
+                    </div>
                   )}
 
-                  {/* Error Message */}
+                  {/* Diagnostic / Error Notice */}
                   {error && (
-                    <div className="mt-4 p-3.5 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/50 rounded-lg space-y-3">
+                    <div className="mt-4 p-4 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/50 rounded-2xl space-y-2.5">
                       <div className="flex items-center gap-2">
                         <AlertCircle className="h-4 w-4 text-red-600 dark:text-red-400 shrink-0" />
-                        <span className="text-sm font-semibold text-red-800 dark:text-red-200">
-                          {error.includes('existing WhatsApp account') || error.includes('Cannot create certificate')
-                            ? 'Cannot Create Certificate: Phone Number Active on Mobile WhatsApp'
-                            : error.includes('133010') || error.toLowerCase().includes('not registered')
-                              ? 'Phone Number Not Registered with WhatsApp Cloud API'
-                              : 'Error'}
+                        <span className="text-xs font-semibold text-red-800 dark:text-red-200">
+                          {error.includes("existing WhatsApp account") || error.includes("Cannot create certificate")
+                            ? "Action Required: Phone Number Registered on Mobile App"
+                            : error.includes("133010") || error.toLowerCase().includes("not registered")
+                              ? "One-Time Cloud API Registration Required"
+                              : "Delivery Error"}
                         </span>
                       </div>
-                      <p className="text-sm text-red-700 dark:text-red-300 leading-relaxed">{error}</p>
+                      <p className="text-xs text-red-700 dark:text-red-300 leading-relaxed">{error}</p>
 
-                      {(error.includes('existing WhatsApp account') || error.includes('Cannot create certificate')) ? (
-                        <div className="pt-2.5 border-t border-red-200 dark:border-red-900/40 space-y-2">
-                          <p className="text-xs font-semibold text-red-800 dark:text-red-200">
-                            Required action to enable this number for Cloud API:
-                          </p>
-                          <ol className="list-decimal list-inside space-y-1 text-xs text-red-700 dark:text-red-300">
-                            <li>Open <strong>WhatsApp</strong> on your mobile phone for this number.</li>
-                            <li>Go to <strong>Settings → Account → Delete my account</strong>.</li>
-                            <li>Wait <strong>3 minutes</strong>, then click &quot;Register Number Now&quot; below.</li>
-                          </ol>
-                          <div className="flex flex-wrap items-center gap-2 pt-1">
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-xs font-medium text-red-800 dark:text-red-200">PIN:</span>
-                              <Input
-                                value={quickRegisterPin}
-                                onChange={(e) => setQuickRegisterPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                                maxLength={6}
-                                className="w-24 h-8 text-xs font-mono text-center bg-background"
-                                placeholder="123456"
-                              />
-                            </div>
-                            <Button
-                              type="button"
-                              size="sm"
-                              onClick={handleQuickRegister}
-                              disabled={isQuickRegistering || quickRegisterPin.length !== 6}
-                              className="h-8 text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
-                            >
-                              {isQuickRegistering ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
-                              Retry Registration
-                            </Button>
-                            <Link
-                              href="/protected/setup"
-                              className="h-8 px-2.5 inline-flex items-center text-xs font-medium rounded-md border border-red-300 dark:border-red-800 hover:bg-red-100 dark:hover:bg-red-900/30 text-red-700 dark:text-red-300 transition-colors"
-                            >
-                              Open Setup Page
-                            </Link>
-                          </div>
-                        </div>
-                      ) : (error.includes('133010') || error.toLowerCase().includes('not registered')) && (
-                        <div className="pt-2.5 border-t border-red-200 dark:border-red-900/40 space-y-2">
-                          <p className="text-xs text-red-600 dark:text-red-400">
-                            Your phone number is verified in Meta Business, but Meta requires a one-time Cloud API registration with a 6-digit PIN before messages can be sent.
-                          </p>
-                          <div className="flex flex-wrap items-center gap-2 pt-1">
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-xs font-medium text-red-800 dark:text-red-200">PIN:</span>
-                              <Input
-                                value={quickRegisterPin}
-                                onChange={(e) => setQuickRegisterPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                                maxLength={6}
-                                className="w-24 h-8 text-xs font-mono text-center bg-background"
-                                placeholder="123456"
-                              />
-                            </div>
-                            <Button
-                              type="button"
-                              size="sm"
-                              onClick={handleQuickRegister}
-                              disabled={isQuickRegistering || quickRegisterPin.length !== 6}
-                              className="h-8 text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
-                            >
-                              {isQuickRegistering ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
-                              Register Number Now
-                            </Button>
-                            <Link
-                              href="/protected/setup"
-                              className="h-8 px-2.5 inline-flex items-center text-xs font-medium rounded-md border border-red-300 dark:border-red-800 hover:bg-red-100 dark:hover:bg-red-900/30 text-red-700 dark:text-red-300 transition-colors"
-                            >
-                              Open Setup Page
-                            </Link>
-                          </div>
+                      {(error.includes("133010") ||
+                        error.toLowerCase().includes("not registered") ||
+                        error.includes("existing WhatsApp account")) && (
+                        <div className="pt-2 border-t border-red-200/80 dark:border-red-900/40 flex flex-wrap items-center gap-2">
+                          <Input
+                            value={quickRegisterPin}
+                            onChange={(e) => setQuickRegisterPin(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                            maxLength={6}
+                            className="w-24 h-8 text-xs font-mono text-center bg-white dark:bg-stone-900 rounded-lg"
+                            placeholder="123456"
+                          />
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={handleQuickRegister}
+                            disabled={isQuickRegistering || quickRegisterPin.length !== 6}
+                            className="h-8 text-xs bg-[#5F7C65] hover:bg-[#526D57] text-white rounded-lg"
+                          >
+                            {isQuickRegistering ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
+                            Register PIN Now
+                          </Button>
+                          <Link
+                            href="/protected/setup"
+                            className="h-8 px-2.5 inline-flex items-center text-xs font-medium rounded-lg border border-red-300 dark:border-red-800 hover:bg-red-100/60 text-red-700 dark:text-red-300"
+                          >
+                            Setup Page
+                          </Link>
                         </div>
                       )}
                     </div>
                   )}
 
                   {quickRegisterSuccess && (
-                    <div className="mt-4 p-3 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/50 rounded-lg flex items-center gap-2 text-emerald-800 dark:text-emerald-200 text-xs font-medium">
-                      <Check className="h-4 w-4 text-emerald-600 shrink-0" />
+                    <div className="mt-4 p-3 bg-[#5F7C65]/10 border border-[#5F7C65]/20 rounded-xl flex items-center gap-2 text-[#2D583F] dark:text-[#8EAE95] text-xs font-medium">
+                      <Check className="h-4 w-4 shrink-0 text-[#5F7C65]" />
                       <span>{quickRegisterSuccess}</span>
                     </div>
                   )}
                 </div>
+
+                {/* Preview Panel - ONLY rendered if showPreview is active */}
+                {showPreview && (
+                  <div className="w-full lg:w-1/2 flex-1 min-h-0 overflow-y-auto p-5 sm:p-6 bg-[#FAF8F5]/60 dark:bg-[#0C0F0D]/60 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-stone-300 dark:[&::-webkit-scrollbar-thumb]:bg-stone-700">
+                    <h4 className="text-xs font-semibold uppercase tracking-wider text-stone-500 dark:text-stone-400 mb-3 flex items-center gap-1.5">
+                      <Eye className="size-3.5 text-[#5F7C65]" /> Live Interactivity Preview
+                    </h4>
+                    {renderTemplatePreview(selectedTemplate, variables, mediaUrl)}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Action Footer Bar */}
+          {selectedTemplate && (
+            <div className="px-5 py-4 border-t border-stone-200/80 dark:border-stone-800/80 bg-white/80 dark:bg-[#18201B]/80 backdrop-blur-md flex items-center justify-between gap-3 shrink-0">
+              <div className="text-xs text-stone-500 dark:text-stone-400 truncate">
+                <span className="font-semibold text-stone-900 dark:text-stone-100">{selectedTemplate.name}</span>
+                <span className="mx-1.5">•</span>
+                <span>{totalVarsCount} {totalVarsCount === 1 ? "variable" : "variables"}</span>
               </div>
 
-              {/* Preview Panel */}
-              {showPreview && (
-                <div className="w-1/2 overflow-y-scroll p-6">
-                  <h4 className="font-medium mb-4">Preview</h4>
-                  {renderTemplatePreview(selectedTemplate, variables, mediaUrl)}
-                </div>
-              )}
+              <div className="flex items-center gap-2.5 shrink-0">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setShowPreview(!showPreview)}
+                  className="rounded-xl border-stone-200 dark:border-stone-800 hover:bg-stone-100 dark:hover:bg-stone-800 text-xs sm:text-sm font-medium gap-1.5 h-10 px-3.5"
+                >
+                  {showPreview ? (
+                    <>
+                      <EyeOff className="size-4" />
+                      <span>Hide Preview</span>
+                    </>
+                  ) : (
+                    <>
+                      <Eye className="size-4" />
+                      <span>Show Preview</span>
+                    </>
+                  )}
+                </Button>
+
+                <Button
+                  onClick={handleSendTemplate}
+                  disabled={isSending}
+                  className="bg-[#5F7C65] hover:bg-[#526D57] text-white rounded-xl px-5 h-10 font-medium shadow-[inset_0_1px_2px_0_rgba(255,255,255,0.2)] active:scale-[0.98] transition-all text-xs sm:text-sm gap-2"
+                >
+                  {isSending ? (
+                    <>
+                      <Loader2 className="size-4 animate-spin" />
+                      <span>Sending...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Send className="size-4" />
+                      <span>Send Template</span>
+                    </>
+                  )}
+                </Button>
+              </div>
             </div>
           )}
         </div>
-
-        {/* Footer */}
-        {selectedTemplate && (
-          <div className="flex items-center justify-between p-6 border-t border-border bg-muted/50">
-            <div className="text-sm text-muted-foreground">
-              Template: {selectedTemplate.name} • {extractVariables(selectedTemplate).all.length} variables
-            </div>
-            <div className="flex gap-3">
-              <Button
-                variant="outline"
-                onClick={() => setShowPreview(!showPreview)}
-                className="gap-2"
-              >
-                <Eye className="h-4 w-4" />
-                {showPreview ? 'Hide Preview' : 'Show Preview'}
-              </Button>
-              <Button
-                onClick={handleSendTemplate}
-                disabled={isSending}
-                className="bg-green-600 hover:bg-green-700 text-white gap-2"
-              >
-                {isSending ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Sending...
-                  </>
-                ) : (
-                  <>
-                    <Send className="h-4 w-4" />
-                    Send Template
-                  </>
-                )}
-              </Button>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );
-} 
+}
+
+export default TemplateSelector;

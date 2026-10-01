@@ -369,17 +369,29 @@ export function ChatWindow({
     if (messages.length === 0) return;
 
     const cachedUrls: { [key: string]: string } = {};
+    const mediaToLoad: string[] = [];
+
     messages.forEach(message => {
       if (message.message_type && ['image', 'video', 'audio', 'document'].includes(message.message_type)) {
         const cachedUrl = getCachedMediaUrl(message.id);
         if (cachedUrl) {
           cachedUrls[message.id] = cachedUrl;
+        } else if (!mediaUrls[message.id]) {
+          mediaToLoad.push(message.id);
         }
       }
     });
 
     if (Object.keys(cachedUrls).length > 0) {
       setMediaUrls(prev => ({ ...prev, ...cachedUrls }));
+    }
+
+    // Auto-fetch presigned URLs for recent uncached media files (up to 8)
+    if (mediaToLoad.length > 0) {
+      const recent = mediaToLoad.slice(-8);
+      recent.forEach(id => {
+        processMediaUrl(id);
+      });
     }
   }, [messages, getCachedMediaUrl]);
   // Calculate unread messages
@@ -519,7 +531,22 @@ export function ChatWindow({
         }
 
         if (result.failureCount > 0) {
-          alert(`Failed to send ${result.failureCount} files. Please try again.`);
+          const firstErr = result.results?.find((r: { success: boolean; error?: string }) => !r.success)?.error;
+          alert(firstErr || `Failed to send ${result.failureCount} file(s). Please try again.`);
+        }
+
+        // Cache any returned media URLs and pre-load into state immediately
+        if (result.results && Array.isArray(result.results)) {
+          for (const item of result.results) {
+            if (item.success && item.messageId && item.mediaUrl) {
+              setMediaUrls(prev => ({ ...prev, [item.messageId]: item.mediaUrl }));
+              setCachedMediaUrl(item.messageId, item.mediaUrl);
+            }
+          }
+        }
+
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('whatsapp:message-sent', { detail: result }));
         }
       }
 
@@ -571,14 +598,13 @@ export function ChatWindow({
           });
         }
 
-        // Step 3: Confirm storage usage
+        // Step 3: Confirm storage usage without intrusive popups
         if (uploadedIds.length > 0) {
           await fetch('/api/media/confirm-upload', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ ids: uploadedIds }),
           });
-          alert(`Media saved to your library successfully!`);
         }
 
         // Step 4: Send message via server with S3 references
@@ -603,7 +629,22 @@ export function ChatWindow({
         }
 
         if (result.failureCount > 0) {
-          alert(`Failed to send ${result.failureCount} files. Please try again.`);
+          const firstErr = result.results?.find((r: { success: boolean; error?: string }) => !r.success)?.error;
+          alert(firstErr || `Failed to send ${result.failureCount} file(s). Please try again.`);
+        }
+
+        // Cache any returned media URLs and pre-load into state immediately
+        if (result.results && Array.isArray(result.results)) {
+          for (const item of result.results) {
+            if (item.success && item.messageId && item.mediaUrl) {
+              setMediaUrls(prev => ({ ...prev, [item.messageId]: item.mediaUrl }));
+              setCachedMediaUrl(item.messageId, item.mediaUrl);
+            }
+          }
+        }
+
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('whatsapp:message-sent', { detail: result }));
         }
       }
     } catch (error) {
@@ -770,11 +811,9 @@ export function ChatWindow({
       } else {
         const serverMessage = result?.error || result?.message || `Request failed (${response.status})`;
         console.error('Failed to generate media URL:', serverMessage);
-        alert(`Failed to process media: ${serverMessage}`);
       }
     } catch (error) {
       console.error('Error processing media URL:', error);
-      alert('Network error. Please try again.');
     } finally {
       setProcessingMedia(prev => {
         const newSet = new Set(prev);
@@ -802,9 +841,9 @@ export function ChatWindow({
       }
     }
 
-    const baseClasses = `w-fit max-w-full px-4 py-3 rounded-2xl shadow-sm ${isOwn
-      ? 'bg-green-500 text-white ml-auto'
-      : 'bg-white dark:bg-muted border border-border mr-auto'
+    const baseClasses = `w-fit max-w-full px-4 py-3 rounded-2xl shadow-2xs transition-all ${isOwn
+      ? 'bg-[#2D583F] dark:bg-[#1E3E2B] text-white rounded-tr-xs border border-[#2D583F]/30 ml-auto'
+      : 'bg-white dark:bg-[#18201B] text-stone-900 dark:text-stone-100 rounded-tl-xs border border-stone-200/80 dark:border-stone-800/80 shadow-[0_2px_8px_-2px_rgba(0,0,0,0.04)] mr-auto'
       }`;
 
     const isProcessing = processingMedia.has(message.id);
@@ -813,7 +852,7 @@ export function ChatWindow({
       const isBroadcast = Boolean(broadcastGroupName || message.broadcast_stats);
       return (
         <div className={`flex items-center gap-1.5 ${isOwn ? 'justify-end' : 'justify-start'} mt-1.5`}>
-          <span className={`text-[11px] leading-none select-none ${isOwn ? 'text-green-100/80' : 'text-muted-foreground'}`}>
+          <span className={`text-[11px] leading-none select-none font-mono ${isOwn ? 'text-white/70' : 'text-stone-500 dark:text-stone-400'}`}>
             {formatTime(message.timestamp)}
           </span>
           {isOwn && (
@@ -822,6 +861,7 @@ export function ChatWindow({
               isOptimistic={message.isOptimistic || message.id.startsWith('optimistic_')}
               isBroadcast={isBroadcast}
               broadcastStats={message.broadcast_stats}
+              timestamp={message.timestamp}
               readAt={message.read_at}
               deliveredAt={message.delivered_at}
               errorMessage={message.error_message}
@@ -916,22 +956,22 @@ export function ChatWindow({
         return (
           <div className={baseClasses}>
             {hasDocUrl ? (
-              <div className="flex items-center gap-4 p-3 bg-gray-50 dark:bg-gray-800 rounded-xl mb-2 min-w-[280px] max-w-[400px]">
-                <div className={`p-3 rounded-full ${isOwn ? 'bg-green-600' : 'bg-blue-500'}`}>
-                  <FileText className="h-6 w-6 text-white" />
+              <div className={`flex items-center gap-4 p-3 rounded-xl mb-2 min-w-[280px] max-w-[400px] ${isOwn ? 'bg-black/15 border border-white/10' : 'bg-stone-50 dark:bg-stone-800/80 border border-stone-200/80 dark:border-stone-800'}`}>
+                <div className={`p-3 rounded-xl shrink-0 ${isOwn ? 'bg-black/25 text-white' : 'bg-[#5F7C65]/15 text-[#2D583F] dark:text-[#8EAE95]'}`}>
+                  <FileText className="h-6 w-6 text-current" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold truncate text-gray-800 dark:text-gray-200">
+                  <p className={`text-sm font-semibold truncate ${isOwn ? 'text-white' : 'text-stone-900 dark:text-stone-100'}`}>
                     {mediaData?.filename || 'Document'}
                   </p>
-                  <p className="text-xs text-gray-500 mt-1">
+                  <p className={`text-xs mt-1 ${isOwn ? 'text-white/60' : 'text-stone-500 dark:text-stone-400'}`}>
                     {mediaData?.mime_type}
                   </p>
                 </div>
                 <Button
                   size="sm"
                   variant="ghost"
-                  className={`p-2 h-10 w-10 ${isOwn ? 'hover:bg-green-600' : 'hover:bg-gray-200'}`}
+                  className={`p-2 h-10 w-10 rounded-xl ${isOwn ? 'hover:bg-white/15 text-white' : 'hover:bg-stone-200/70 dark:hover:bg-stone-700/70 text-stone-700 dark:text-stone-300'}`}
                   onClick={() => downloadMedia(currentDocUrl, mediaData?.filename || 'document')}
                 >
                   <Download className="h-5 w-5" />
@@ -941,36 +981,36 @@ export function ChatWindow({
               <button
                 onClick={() => processMediaUrl(message.id)}
                 disabled={isProcessing}
-                className={`flex items-center gap-4 p-3 rounded-xl mb-2 min-w-[280px] max-w-[400px] w-full transition-all duration-200 active:scale-[0.98] disabled:pointer-events-none ${isOwn ? 'bg-white/[0.08] hover:bg-white/[0.14]' : 'bg-gray-50 hover:bg-gray-100 dark:bg-gray-800/80 dark:hover:bg-gray-750'}`}
+                className={`flex items-center gap-4 p-3 rounded-xl mb-2 min-w-[280px] max-w-[400px] w-full transition-all duration-200 active:scale-[0.98] disabled:pointer-events-none ${isOwn ? 'bg-white/[0.08] hover:bg-white/[0.14]' : 'bg-stone-50 hover:bg-stone-100 dark:bg-stone-800/80 dark:hover:bg-stone-750'}`}
               >
-                <div className={`p-3 rounded-full shrink-0 transition-transform duration-300 ${isProcessing ? 'animate-pulse' : ''} ${isOwn ? 'bg-green-600' : 'bg-blue-500'}`}>
+                <div className={`p-3 rounded-xl shrink-0 transition-transform duration-300 ${isProcessing ? 'animate-pulse' : ''} ${isOwn ? 'bg-black/25 text-white' : 'bg-[#5F7C65]/15 text-[#2D583F] dark:text-[#8EAE95]'}`}>
                   {isProcessing
                     ? <Loader2 className="h-6 w-6 text-white animate-spin" />
-                    : <FileText className="h-6 w-6 text-white" />
+                    : <FileText className="h-6 w-6 text-current" />
                   }
                 </div>
                 <div className="flex-1 min-w-0 text-left">
-                  <p className={`text-sm font-semibold truncate ${isOwn ? 'text-white/90' : 'text-gray-800 dark:text-gray-200'}`}>
+                  <p className={`text-sm font-semibold truncate ${isOwn ? 'text-white/90' : 'text-stone-800 dark:text-stone-200'}`}>
                     {mediaData?.filename || 'Document'}
                   </p>
-                  <p className={`text-xs mt-0.5 ${isOwn ? 'text-white/50' : 'text-gray-400 dark:text-gray-500'}`}>
+                  <p className={`text-xs mt-0.5 ${isOwn ? 'text-white/50' : 'text-stone-400 dark:text-stone-500'}`}>
                     {isProcessing ? 'Loading...' : isCachedUrlExpired(message.id) ? 'Tap to refresh' : 'Tap to load'}
                   </p>
                 </div>
                 {!isProcessing && (
-                  <Download className={`h-4 w-4 shrink-0 ${isOwn ? 'text-white/40' : 'text-gray-400'}`} />
+                  <Download className={`h-4 w-4 shrink-0 ${isOwn ? 'text-white/40' : 'text-stone-400'}`} />
                 )}
               </button>
             ) : (
-              <div className="flex items-center gap-4 p-3 bg-gray-50 dark:bg-gray-800 rounded-xl mb-2 min-w-[280px] max-w-[400px]">
-                <div className={`p-3 rounded-full ${isOwn ? 'bg-green-600/50' : 'bg-blue-500/50'}`}>
-                  <FileText className="h-6 w-6 text-white/70" />
+              <div className={`flex items-center gap-4 p-3 rounded-xl mb-2 min-w-[280px] max-w-[400px] ${isOwn ? 'bg-black/15 border border-white/10' : 'bg-stone-50 dark:bg-stone-800/80 border border-stone-200/80 dark:border-stone-800'}`}>
+                <div className={`p-3 rounded-xl ${isOwn ? 'bg-black/20 text-white/70' : 'bg-[#5F7C65]/10 text-[#2D583F]/70 dark:text-[#8EAE95]/70'}`}>
+                  <FileText className="h-6 w-6 text-current" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold truncate text-gray-800 dark:text-gray-200">
+                  <p className={`text-sm font-semibold truncate ${isOwn ? 'text-white' : 'text-stone-900 dark:text-stone-100'}`}>
                     {mediaData?.filename || 'Document'}
                   </p>
-                  <p className={`text-xs mt-0.5 ${isOwn ? 'text-white/30' : 'text-gray-300 dark:text-gray-600'}`}>Upload pending</p>
+                  <p className={`text-xs mt-0.5 ${isOwn ? 'text-white/30' : 'text-stone-400 dark:text-stone-600'}`}>Upload pending</p>
                 </div>
               </div>
             )}
@@ -988,11 +1028,11 @@ export function ChatWindow({
         return (
           <div className={baseClasses}>
             {hasAudioUrl ? (
-              <div className="flex items-center gap-4 p-4 bg-gray-50 dark:bg-gray-800 rounded-xl mb-2 min-w-[300px] max-w-[400px]">
+              <div className={`flex items-center gap-4 p-4 rounded-xl mb-2 min-w-[300px] max-w-[400px] ${isOwn ? 'bg-black/15 border border-white/10' : 'bg-stone-50 dark:bg-stone-800/80 border border-stone-200/80 dark:border-stone-800'}`}>
                 <Button
                   size="sm"
                   variant="ghost"
-                  className={`p-3 rounded-full ${isOwn ? 'bg-green-600 hover:bg-green-700' : 'bg-blue-500 hover:bg-blue-600'} text-white`}
+                  className={`p-3 rounded-full ${isOwn ? 'bg-black/25 hover:bg-black/35 text-white' : 'bg-[#5F7C65] hover:bg-[#526D57] text-white'}`}
                   onClick={() => handleAudioPlay(message.id, currentAudioUrl)}
                 >
                   {playingAudio === message.id ? (
@@ -1003,23 +1043,23 @@ export function ChatWindow({
                 </Button>
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-2">
-                    <Volume2 className="h-4 w-4 text-gray-600 dark:text-gray-400" />
-                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <Volume2 className={`h-4 w-4 ${isOwn ? 'text-white/80' : 'text-stone-600 dark:text-stone-400'}`} />
+                    <span className={`text-sm font-medium ${isOwn ? 'text-white' : 'text-stone-800 dark:text-stone-200'}`}>
                       {mediaData?.voice ? 'Voice Message' : 'Audio'}
                     </span>
                   </div>
                   <div className="relative">
-                    <div className="h-2 bg-gray-200 dark:bg-gray-600 rounded-full overflow-hidden">
+                    <div className={`h-2 rounded-full overflow-hidden ${isOwn ? 'bg-white/20' : 'bg-stone-200 dark:bg-stone-700'}`}>
                       <div
-                        className={`h-full transition-all duration-300 ${isOwn ? 'bg-green-300' : 'bg-blue-400'}`}
+                        className={`h-full transition-all duration-300 ${isOwn ? 'bg-[#8EAE95]' : 'bg-[#5F7C65]'}`}
                         style={{ width: `${progress}%` }}
                       />
                     </div>
                     <div className="flex justify-between mt-1">
-                      <span className="text-xs text-gray-500">
+                      <span className={`text-xs font-mono ${isOwn ? 'text-white/60' : 'text-stone-500'}`}>
                         {formatAudioDuration(currentTime)}
                       </span>
-                      <span className="text-xs text-gray-500">
+                      <span className={`text-xs font-mono ${isOwn ? 'text-white/60' : 'text-stone-500'}`}>
                         {duration > 0 ? formatAudioDuration(duration) : '--:--'}
                       </span>
                     </div>
@@ -1030,9 +1070,9 @@ export function ChatWindow({
               <button
                 onClick={() => processMediaUrl(message.id)}
                 disabled={isProcessing}
-                className={`flex items-center gap-4 p-4 rounded-xl mb-2 min-w-[300px] max-w-[400px] w-full transition-all duration-200 active:scale-[0.98] disabled:pointer-events-none ${isOwn ? 'bg-white/[0.08] hover:bg-white/[0.14]' : 'bg-gray-50 hover:bg-gray-100 dark:bg-gray-800/80 dark:hover:bg-gray-750'}`}
+                className={`flex items-center gap-4 p-4 rounded-xl mb-2 min-w-[300px] max-w-[400px] w-full transition-all duration-200 active:scale-[0.98] disabled:pointer-events-none ${isOwn ? 'bg-white/[0.08] hover:bg-white/[0.14]' : 'bg-stone-50 hover:bg-stone-100 dark:bg-stone-800/80 dark:hover:bg-stone-750'}`}
               >
-                <div className={`p-3 rounded-full shrink-0 transition-transform duration-300 ${isProcessing ? 'animate-pulse' : ''} ${isOwn ? 'bg-green-600' : 'bg-blue-500'}`}>
+                <div className={`p-3 rounded-full shrink-0 transition-transform duration-300 ${isProcessing ? 'animate-pulse' : ''} ${isOwn ? 'bg-black/25 text-white' : 'bg-[#5F7C65] text-white'}`}>
                   {isProcessing
                     ? <Loader2 className="h-5 w-5 text-white animate-spin" />
                     : <Play className="h-5 w-5 text-white" />
@@ -1040,29 +1080,29 @@ export function ChatWindow({
                 </div>
                 <div className="flex-1 text-left">
                   <div className="flex items-center gap-2">
-                    <Volume2 className="h-4 w-4 text-gray-600 dark:text-gray-400" />
-                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <Volume2 className={`h-4 w-4 ${isOwn ? 'text-white/80' : 'text-stone-600 dark:text-stone-400'}`} />
+                    <span className={`text-sm font-medium ${isOwn ? 'text-white' : 'text-stone-700 dark:text-stone-300'}`}>
                       {mediaData?.voice ? 'Voice Message' : 'Audio'}
                     </span>
                   </div>
-                  <p className={`text-xs mt-1.5 ${isOwn ? 'text-white/50' : 'text-gray-400 dark:text-gray-500'}`}>
+                  <p className={`text-xs mt-1.5 ${isOwn ? 'text-white/50' : 'text-stone-400 dark:text-stone-500'}`}>
                     {isProcessing ? 'Loading...' : isCachedUrlExpired(message.id) ? 'Tap to refresh' : 'Tap to load'}
                   </p>
                 </div>
               </button>
             ) : (
-              <div className="flex items-center gap-4 p-4 bg-gray-50 dark:bg-gray-800 rounded-xl mb-2 min-w-[300px] max-w-[400px]">
-                <div className={`p-3 rounded-full ${isOwn ? 'bg-green-600/50' : 'bg-blue-500/50'}`}>
-                  <Volume2 className="h-5 w-5 text-white/70" />
+              <div className={`flex items-center gap-4 p-4 rounded-xl mb-2 min-w-[300px] max-w-[400px] ${isOwn ? 'bg-black/15 border border-white/10' : 'bg-stone-50 dark:bg-stone-800/80 border border-stone-200/80 dark:border-stone-800'}`}>
+                <div className={`p-3 rounded-full ${isOwn ? 'bg-black/20 text-white/70' : 'bg-[#5F7C65]/10 text-[#2D583F]/70'}`}>
+                  <Volume2 className="h-5 w-5 text-current" />
                 </div>
                 <div className="flex-1">
                   <div className="flex items-center gap-2">
-                    <Volume2 className="h-4 w-4 text-gray-400" />
-                    <span className="text-sm font-medium text-gray-400 dark:text-gray-500">
+                    <Volume2 className={`h-4 w-4 ${isOwn ? 'text-white/40' : 'text-stone-400'}`} />
+                    <span className={`text-sm font-medium ${isOwn ? 'text-white/50' : 'text-stone-400 dark:text-stone-500'}`}>
                       {mediaData?.voice ? 'Voice Message' : 'Audio'}
                     </span>
                   </div>
-                  <p className={`text-xs mt-1 ${isOwn ? 'text-white/30' : 'text-gray-300 dark:text-gray-600'}`}>Upload pending</p>
+                  <p className={`text-xs mt-1 ${isOwn ? 'text-white/30' : 'text-stone-300 dark:text-stone-600'}`}>Upload pending</p>
                 </div>
               </div>
             )}
@@ -1215,8 +1255,8 @@ export function ChatWindow({
                           w-full px-3.5 py-2 rounded-xl text-center font-medium text-xs sm:text-sm
                           flex items-center justify-center gap-2 transition-all cursor-pointer select-none
                           ${isOwn
-                            ? 'bg-black/15 hover:bg-black/25 text-white active:bg-black/30'
-                            : 'bg-muted/80 hover:bg-muted text-foreground active:bg-muted/90 border border-border'
+                            ? 'bg-black/20 hover:bg-black/30 text-white border border-white/10 active:bg-black/40'
+                            : 'bg-stone-100 hover:bg-stone-200 text-stone-800 dark:bg-stone-800/80 dark:hover:bg-stone-800 dark:text-stone-200 border border-stone-200/80 dark:border-stone-800'
                           }
                         `}
                         onClick={() => {
@@ -1378,27 +1418,35 @@ export function ChatWindow({
           <>
             {/* Individual Chat Header */}
             <div
-              className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer group"
+              className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer group/header hover:bg-stone-100/70 dark:hover:bg-stone-800/50 rounded-2xl p-1 -m-1 transition-all duration-150"
               onClick={() => setShowUserInfo(true)}
-              title="View contact info"
+              title="Click to view contact information"
             >
-              <Avatar className="h-10 w-10 rounded-xl border border-stone-200/80 dark:border-stone-800 shrink-0 shadow-2xs">
+              <Avatar className="h-10 w-10 rounded-xl border border-stone-200/80 dark:border-stone-800 shrink-0 shadow-2xs ring-2 ring-[#5F7C65]/10">
                 <AvatarFallback className="rounded-xl bg-[#5F7C65]/15 text-[#2D583F] dark:text-[#8EAE95] font-semibold text-sm">
                   {getDisplayName(selectedUser).substring(0, 2).toUpperCase()}
                 </AvatarFallback>
               </Avatar>
               <div className="flex-1 min-w-0">
-                <h2 className="font-semibold text-sm sm:text-base text-stone-900 dark:text-stone-100 truncate group-hover:text-[#2D583F] dark:group-hover:text-[#8EAE95] transition-colors">
-                  {getDisplayName(selectedUser)}
-                </h2>
-                <p className="text-xs text-stone-500 dark:text-stone-400 truncate font-mono mt-0.5">
+                <div className="flex items-center gap-2">
+                  <h2 className="font-semibold text-sm sm:text-base text-stone-900 dark:text-stone-100 truncate group-hover/header:text-[#2D583F] dark:group-hover/header:text-[#8EAE95] transition-colors">
+                    {getDisplayName(selectedUser)}
+                  </h2>
+                  <span className="hidden sm:inline-flex items-center text-[10px] font-medium px-2 py-0.5 rounded-full bg-stone-100 dark:bg-stone-800 text-stone-500 dark:text-stone-400 opacity-0 group-hover/header:opacity-100 transition-opacity">
+                    View Info
+                  </span>
+                </div>
+                <p className="text-xs text-stone-500 dark:text-stone-400 truncate mt-0.5 flex items-center gap-1.5">
                   {isLoading || sendingMedia ? (
-                    <span className="flex items-center gap-1 text-[#2D583F] dark:text-[#8EAE95] font-sans">
+                    <span className="flex items-center gap-1 text-[#2D583F] dark:text-[#8EAE95]">
                       <Loader2 className="h-3 w-3 animate-spin" />
                       {sendingMedia ? 'Sending media...' : 'Sending message...'}
                     </span>
                   ) : (
-                    `Last active ${formatTime(selectedUser.last_active)}`
+                    <>
+                      <span className="size-1.5 rounded-full bg-[#5F7C65] animate-pulse shrink-0" />
+                      <span className="font-mono">Last active {formatTime(selectedUser.last_active)}</span>
+                    </>
                   )}
                 </p>
               </div>
@@ -1406,20 +1454,25 @@ export function ChatWindow({
           </>
         ) : null}
         {!isMobile && onClose && (
-          <button
-            onClick={onClose}
-            className="p-1.5 hover:bg-stone-100 dark:hover:bg-stone-800 rounded-xl text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 transition-colors"
-            title="Close chat (ESC)"
-          >
-            <X className="h-5 w-5" />
-          </button>
+          <div className="flex items-center gap-1.5">
+            <kbd className="hidden sm:inline-block px-1.5 py-0.5 text-[10px] font-mono rounded-md bg-stone-100 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 text-stone-400 select-none">
+              ESC
+            </kbd>
+            <button
+              onClick={onClose}
+              className="p-1.5 hover:bg-stone-100 dark:hover:bg-stone-800 rounded-xl text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 transition-colors"
+              title="Close chat (ESC)"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
         )}
       </div>
 
       {/* Messages Area */}
       <div
         ref={messagesContainerRef}
-        className="flex-1 overflow-y-auto p-4 sm:p-6 bg-[#FAF8F5]/40 dark:bg-[#0C0F0D]"
+        className="flex-1 overflow-y-auto p-4 sm:p-6 bg-[#FAF8F5]/50 dark:bg-[#0C0F0D] relative [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-stone-300 dark:[&::-webkit-scrollbar-thumb]:bg-stone-700"
       >
         {Object.keys(groupedMessages).length === 0 ? (
           // No messages - show appropriate placeholder
@@ -1449,7 +1502,7 @@ export function ChatWindow({
               <div key={date}>
                 {/* Date Separator */}
                 <div className="flex justify-center my-6">
-                  <span className="bg-background/80 text-muted-foreground text-xs px-4 py-2 rounded-full border shadow-sm">
+                  <span className="bg-white/85 dark:bg-[#18201B]/85 backdrop-blur-md text-stone-600 dark:text-stone-400 text-[11px] font-medium px-3.5 py-1 rounded-full border border-stone-200/70 dark:border-stone-800/70 shadow-2xs tracking-wide">
                     {formatDate(dayMessages[0].timestamp)}
                   </span>
                 </div>
@@ -1459,17 +1512,6 @@ export function ChatWindow({
                   {dayMessages.map((message, index) => {
                     // Use is_sent_by_me field instead of comparing IDs to determine message ownership
                     const isOwn = message.is_sent_by_me;
-
-                    // Debug logging to help identify the issue
-                    // if (!isOwn && message.content && !message.content.startsWith('[')) {
-                    //   console.log('Message alignment check:', {
-                    //     id: message.id,
-                    //     is_sent_by_me: message.is_sent_by_me,
-                    //     sender_id: message.sender_id,
-                    //     receiver_id: message.receiver_id,
-                    //     content: message.content.substring(0, 30)
-                    //   });
-                    // }
 
                     const globalIndex = messages.findIndex(m => m.id === message.id);
                     const isFirstUnread = globalIndex === firstUnreadIndex;
@@ -1484,13 +1526,13 @@ export function ChatWindow({
                         {isFirstUnread && hasUnreadMessages && (
                           <div
                             ref={unreadIndicatorRef}
-                            className="flex items-center justify-center my-4 animate-fade-in"
+                            className="flex items-center justify-center my-4 animate-in fade-in duration-200"
                           >
-                            <div className="flex-1 h-px bg-red-500"></div>
-                            <div className="px-3 py-1 bg-red-500 text-white text-xs font-medium rounded-full shadow-lg">
+                            <div className="flex-1 h-px bg-red-200 dark:bg-red-950/60"></div>
+                            <div className="px-3.5 py-1 bg-red-50 dark:bg-red-950/50 text-[#B91C1C] dark:text-red-300 border border-red-200 dark:border-red-900/40 text-[11px] font-semibold rounded-full shadow-2xs">
                               {unreadMessages.length} unread message{unreadMessages.length !== 1 ? 's' : ''}
                             </div>
-                            <div className="flex-1 h-px bg-red-500"></div>
+                            <div className="flex-1 h-px bg-red-200 dark:bg-red-950/60"></div>
                           </div>
                         )}
 
@@ -1511,16 +1553,16 @@ export function ChatWindow({
                                       key={`${message.id}-${reaction.emoji}`}
                                       type="button"
                                       onClick={() => handleReactionClick(message, reaction.emoji)}
-                                      className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full border shadow-2xs transition-all hover:scale-105 active:scale-95 cursor-pointer ${
+                                      className={`inline-flex items-center gap-1 px-2.5 py-0.5 text-xs rounded-full border shadow-2xs transition-all hover:scale-105 active:scale-95 cursor-pointer ${
                                         isMyReaction
-                                          ? 'bg-green-100 dark:bg-green-950/70 text-green-900 dark:text-green-300 border-green-300 dark:border-green-800 font-medium'
-                                          : 'bg-background text-foreground border-border hover:bg-muted/70'
+                                          ? 'bg-[#5F7C65]/15 text-[#2D583F] dark:text-[#8EAE95] border-[#5F7C65]/30 font-medium'
+                                          : 'bg-white/90 dark:bg-[#18201B]/90 text-stone-700 dark:text-stone-300 border-stone-200/80 dark:border-stone-800/80 hover:bg-stone-100 dark:hover:bg-stone-800'
                                       }`}
                                       title={`${senderNames} reacted with ${reaction.emoji}`}
                                     >
                                       <span className="text-sm leading-none">{reaction.emoji}</span>
                                       {reaction.count > 1 && (
-                                        <span className="text-[11px] font-medium text-muted-foreground">{reaction.count}</span>
+                                        <span className="text-[11px] font-medium font-mono text-stone-500 dark:text-stone-400">{reaction.count}</span>
                                       )}
                                     </button>
                                   );
@@ -1536,7 +1578,7 @@ export function ChatWindow({
                                     <button
                                       key={`${message.id}-${emoji}`}
                                       type="button"
-                                      className={`px-2 py-0.5 text-sm rounded-full border transition-colors ${isSelected ? 'bg-green-100 border-green-300' : 'bg-background border-border hover:bg-muted'}`}
+                                      className={`px-2 py-0.5 text-sm rounded-full border transition-all ${isSelected ? 'bg-[#5F7C65]/20 border-[#5F7C65]/40 shadow-2xs' : 'bg-white/90 dark:bg-[#18201B]/90 border-stone-200/80 dark:border-stone-800/80 hover:bg-stone-100 dark:hover:bg-stone-800'}`}
                                       onClick={() => handleReactionClick(message, emoji)}
                                       title={isSelected ? 'Remove reaction' : 'React'}
                                     >
@@ -1700,6 +1742,10 @@ export function ChatWindow({
           onClose={() => setShowUserInfo(false)}
           user={selectedUser}
           onUpdateName={handleUpdateName}
+          onOpenTemplateSelector={() => {
+            setShowUserInfo(false);
+            setShowTemplateSelector(true);
+          }}
         />
       )}
 

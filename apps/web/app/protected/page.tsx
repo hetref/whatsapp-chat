@@ -207,58 +207,60 @@ export default function ChatPage() {
     checkSetup();
   }, [user, isLoaded]); // Run when user or loading state changes
 
-  // Fetch users using API and set up polling for updates
-  useEffect(() => {
+  // Fetch users using API with useCallback so it can be called on message dispatch
+  const fetchUsers = useCallback(async () => {
     if (!user) return;
 
-    const fetchUsers = async () => {
-      try {
-        const response = await fetch('/api/conversations', {
-          headers: user?.id ? { 'x-user-id': user.id } : undefined,
+    try {
+      const response = await fetch('/api/conversations', {
+        headers: user?.id ? { 'x-user-id': user.id } : undefined,
+      });
+      const result = await response.json();
+
+      if (response.ok && result.conversations) {
+        // Transform data to match ChatUser interface
+        const transformedUsers: ChatUser[] = result.conversations.map((conv: ConversationApi) => ({
+          id: conv.id,
+          phone_number: conv.phone_number,
+          name: conv.name,
+          custom_name: conv.custom_name,
+          whatsapp_name: conv.whatsapp_name,
+          last_active: conv.last_active,
+          unread_count: conv.unread_count || 0,
+          last_message_time: conv.last_message_time,
+          last_message: conv.last_message,
+          last_message_type: conv.last_message_type,
+          last_message_sender: conv.last_message_sender
+        }));
+
+        setUsers(transformedUsers);
+        setSelectedUser((prev) => {
+          if (!prev) return null;
+          const updated = transformedUsers.find(u => u.id === prev.id);
+          return updated ? { ...prev, ...updated } : prev;
         });
-        const result = await response.json();
-
-        if (response.ok && result.conversations) {
-          // Transform data to match ChatUser interface
-          const transformedUsers: ChatUser[] = result.conversations.map((conv: ConversationApi) => ({
-            id: conv.id,
-            phone_number: conv.phone_number,
-            name: conv.name,
-            custom_name: conv.custom_name,
-            whatsapp_name: conv.whatsapp_name,
-            last_active: conv.last_active,
-            unread_count: conv.unread_count || 0,
-            last_message_time: conv.last_message_time,
-            last_message: conv.last_message,
-            last_message_type: conv.last_message_type,
-            last_message_sender: conv.last_message_sender
-          }));
-
-          setUsers(transformedUsers);
-          setSelectedUser((prev) => {
-            if (!prev) return null;
-            const updated = transformedUsers.find(u => u.id === prev.id);
-            return updated ? { ...prev, ...updated } : prev;
-          });
-        } else {
-          console.error('Error fetching conversations:', result.error);
-        }
-      } catch (error) {
-        console.error('Error fetching conversations:', error);
+      } else {
+        console.error('Error fetching conversations:', result.error);
       }
-    };
+    } catch (error) {
+      console.error('Error fetching conversations:', error);
+    }
+  }, [user]);
 
+  // Set up polling for user conversations
+  useEffect(() => {
+    if (!user) return;
 
     // Initial fetch
     fetchUsers();
 
-    // Set up polling for updates (since we removed realtime)
+    // Set up polling for updates
     const interval = setInterval(fetchUsers, 10000); // Poll every 10 seconds
 
     return () => {
       clearInterval(interval);
     };
-  }, [user]); // Poll for user conversations
+  }, [user, fetchUsers]);
 
   // Subscribe to messages for selected user with improved real-time handling
   useEffect(() => {
@@ -323,6 +325,7 @@ export default function ChatPage() {
                 },
               ];
             });
+            fetchUsers();
           }
         } catch {
           // ignore parse errors
@@ -341,6 +344,7 @@ export default function ChatPage() {
 
     const handleMessageSent = () => {
       refreshMessages();
+      fetchUsers();
     };
     window.addEventListener('whatsapp:message-sent', handleMessageSent);
 
@@ -351,7 +355,7 @@ export default function ChatPage() {
       }
       window.removeEventListener('whatsapp:message-sent', handleMessageSent);
     };
-  }, [selectedUser, user, refreshMessages]);
+  }, [selectedUser, user, refreshMessages, fetchUsers]);
 
   // Fetch broadcast messages when broadcast group is selected
   useEffect(() => {

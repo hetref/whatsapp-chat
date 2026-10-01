@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth-server';
 import { prisma } from '@/lib/prisma';
-import { generatePresignedUrl } from '@/lib/aws-s3';
+import { generatePresignedUrl, generatePresignedUrlByKey } from '@/lib/aws-s3';
 
 export const runtime = 'nodejs';
 
@@ -78,26 +78,23 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check that media has the required identifiers
-    if (!mediaData.id || !mediaData.mime_type) {
-      return NextResponse.json(
-        { error: 'Media data incomplete - missing id or mime_type' },
-        { status: 400 }
-      );
+    let presignedUrl: string | null = null;
+
+    // 1. Direct lookup by s3_key if available (most reliable for library and app uploads)
+    if (mediaData?.s3_key) {
+      presignedUrl = await generatePresignedUrlByKey(mediaData.s3_key, PRESIGNED_URL_EXPIRY);
     }
 
-    // Determine the S3 owner ID based on how the media was stored
-    // For outgoing messages (sent by user), the owner is the userId
-    // For incoming messages (received from contacts), the owner is the sender's phone number
-    const ownerIdForS3 = mediaData.s3_owner_id || message.userId;
-
-    // Generate new pre-signed URL (30 minutes expiry)
-    const presignedUrl = await generatePresignedUrl(
-      ownerIdForS3,
-      mediaData.id,
-      mediaData.mime_type,
-      PRESIGNED_URL_EXPIRY
-    );
+    // 2. Fallback to owner/id reconstruction
+    if (!presignedUrl && mediaData?.id && mediaData?.mime_type) {
+      const ownerIdForS3 = mediaData.s3_owner_id || message.userId;
+      presignedUrl = await generatePresignedUrl(
+        ownerIdForS3,
+        mediaData.id,
+        mediaData.mime_type,
+        PRESIGNED_URL_EXPIRY
+      );
+    }
 
     if (!presignedUrl) {
       console.error('Failed to generate pre-signed URL');

@@ -2321,16 +2321,24 @@ router.post('/send-media', upload.array('files', 10), async (req, res, next) => 
         }
 
         const apiVersion = settings.apiVersion || 'v23.0';
+        let contact = null;
+        if (contactId) {
+            contact = await prisma.contact.findFirst({
+                where: { id: contactId, userId },
+            });
+        }
         const cleanPhone = cleanPhoneNumber(to);
-        const contact = await getOrCreateContact(userId, cleanPhone);
+        if (!contact) {
+            contact = await getOrCreateContact(userId, cleanPhone);
+        }
         const results = [];
 
         for (const file of files) {
-            const s3Key = String(file.s3Key || '').trim();
-            const mimeType = String(file.mimeType || '').toLowerCase().trim();
+            let s3Key = String(file.s3Key || '').trim();
+            let mimeType = String(file.mimeType || '').toLowerCase().trim();
             const caption = String(file.caption || '').trim();
-            const fileName = String(file.fileName || '').trim() || 'attachment';
-            const mediaId = String(file.mediaId || extractMediaIdFromS3Key(s3Key));
+            let fileName = String(file.fileName || '').trim() || 'attachment';
+            let mediaId = String(file.mediaId || extractMediaIdFromS3Key(s3Key));
 
             if (!s3Key || !mimeType || !mediaId) {
                 results.push({
@@ -2350,10 +2358,23 @@ router.post('/send-media', upload.array('files', 10), async (req, res, next) => 
                 continue;
             }
 
-            const ownedMedia = await prisma.mediaFile.findFirst({
-                where: { userId, s3Key },
+            let ownedMedia = await prisma.mediaFile.findFirst({
+                where: {
+                    userId,
+                    OR: [
+                        { s3Key },
+                        ...(mediaId ? [{ id: mediaId }] : []),
+                    ],
+                },
                 select: { id: true, s3Key: true, mimeType: true, fileName: true },
             });
+
+            if (!ownedMedia) {
+                const userPrefix = getUserMediaPrefix(userId);
+                if (s3Key.startsWith(userPrefix) || s3Key.startsWith(`${userId}/`)) {
+                    ownedMedia = { id: mediaId, s3Key, mimeType, fileName };
+                }
+            }
 
             if (!ownedMedia) {
                 results.push({
@@ -2363,6 +2384,10 @@ router.post('/send-media', upload.array('files', 10), async (req, res, next) => 
                 });
                 continue;
             }
+
+            if (ownedMedia.s3Key) s3Key = ownedMedia.s3Key;
+            if (ownedMedia.mimeType) mimeType = ownedMedia.mimeType.toLowerCase().trim();
+            if (ownedMedia.fileName && fileName === 'attachment') fileName = ownedMedia.fileName;
 
             const exists = await checkS3ObjectExists(s3Key);
             if (!exists) {
@@ -2389,6 +2414,9 @@ router.post('/send-media', upload.array('files', 10), async (req, res, next) => 
                     filename: fileName,
                 });
 
+                const messageId = messageResponse?.messages?.[0]?.id || `wamid_${Date.now()}_${randomUUID().slice(0, 8)}`;
+                const timestamp = new Date();
+
                 const mediaPayload = {
                     type: mediaType,
                     id: mediaId,
@@ -2412,30 +2440,48 @@ router.post('/send-media', upload.array('files', 10), async (req, res, next) => 
                         isRead: false,
                         status: 'SENT',
                         messageType: mediaType,
-                        mediaData: JSON.stringify(mediaPayload),
+                        mediaData: mediaPayload,
                     },
                 });
+
+                // Update contact lastActive for accurate conversation ordering
+                await prisma.contact.update({
+                    where: { id: contact.id },
+                    data: { lastActive: timestamp },
+                }).catch(() => {});
+
+                const messageObj = {
+                    id: createdMessage.id,
+                    sender_id: userId,
+                    receiver_id: contact.phoneNumber,
+                    content: createdMessage.content,
+                    timestamp: timestamp.toISOString(),
+                    is_sent_by_me: true,
+                    is_read: false,
+                    status: 'sent',
+                    message_type: mediaType,
+                    media_data: mediaPayload,
+                };
 
                 // Broadcast to real-time streams
                 chatEventBus.publishNewMessage({
                     userId,
                     contactId: contact.id,
-                    message: {
-                        id: createdMessage.id,
-                        sender_id: userId,
-                        receiver_id: contact.phoneNumber,
-                        content: createdMessage.content,
-                        timestamp: timestamp.toISOString(),
-                        is_sent_by_me: true,
-                        is_read: false,
-                        status: 'sent',
-                        message_type: mediaType,
-                        media_data: createdMessage.mediaData,
-                    },
+                    message: messageObj,
                 });
 
-                results.push({ success: true, filename: fileName, messageId, mediaType, s3Key, status: 'sent' });
+                results.push({
+                    success: true,
+                    filename: fileName,
+                    messageId,
+                    mediaType,
+                    s3Key,
+                    mediaUrl,
+                    status: 'sent',
+                    message: messageObj,
+                });
             } catch (error) {
+                console.error('[send-media] Error dispatching/storing media message:', error);
                 results.push({
                     success: false,
                     filename: fileName,
