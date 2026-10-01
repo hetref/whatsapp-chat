@@ -1033,10 +1033,16 @@ export default function SetupPage() {
     return visiblePart + maskedPart;
   };
 
-  const webhookUrl =
+  const origin =
     typeof window !== "undefined"
-      ? `${window.location.origin}/api/webhook`
-      : "https://www.wachat.tech/api/webhook";
+      ? window.location.origin
+      : "https://www.wachat.tech";
+
+  const webhookUrl = settings?.webhook_token
+    ? `${origin}/api/webhook/${settings.webhook_token}`
+    : loading
+      ? ""
+      : `${origin}/api/webhook`;
 
   // Connected check: Access token is added and either phone number ID or business account ID is present
   const isConnected = !!(
@@ -1482,12 +1488,12 @@ export default function SetupPage() {
                     <div className="space-y-1.5">
                       <div className="flex items-center justify-between text-[11px] text-stone-500 dark:text-stone-400">
                         <span>Callback URL:</span>
-                        <span>Verify Token: <strong className="font-mono text-stone-700 dark:text-stone-300">VAsDSKmdFNSDMvsdDOpk</strong></span>
+                        <span>Verify Token: <strong className="font-mono text-stone-700 dark:text-stone-300">{settings?.verify_token || "VAsDSKmdFNSDMvsdDOpk"}</strong></span>
                       </div>
                       <div className="flex items-center gap-2">
                         <div className="flex-1 min-w-0 bg-stone-100/80 dark:bg-stone-800/60 px-2.5 py-1 rounded-lg border border-stone-200/60 dark:border-stone-700/60">
                           <p className="text-xs text-stone-600 dark:text-stone-300 truncate font-mono">
-                            {webhookUrl}
+                            {webhookUrl || "Generating unique webhook URL..."}
                           </p>
                         </div>
                         <Button
@@ -1496,6 +1502,7 @@ export default function SetupPage() {
                           size="icon"
                           className="size-7 rounded-lg text-stone-500 hover:text-stone-900 dark:hover:text-stone-100 hover:bg-stone-200/60 dark:hover:bg-stone-800 transition-colors shrink-0"
                           onClick={() => copyToClipboard(webhookUrl, "webhook")}
+                          disabled={!webhookUrl}
                           title="Copy Webhook URL"
                         >
                           {copiedWebhookUrl ? (
@@ -1587,24 +1594,24 @@ export default function SetupPage() {
           <div className="space-y-6">
             {/* Choose Setup Method Tabs */}
             <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-              <div className="flex justify-center mb-6">
-                <TabsList className="grid w-full max-w-md grid-cols-2 p-1 bg-stone-200/60 dark:bg-stone-800/60 rounded-xl border border-stone-300/40 dark:border-stone-700/40">
+              <div className="flex justify-center mb-8">
+                <TabsList className="inline-flex h-auto min-h-12 w-full max-w-md sm:max-w-lg items-center justify-center rounded-2xl bg-stone-200/70 dark:bg-stone-900/80 p-1.5 border border-stone-300/50 dark:border-stone-800/80 shadow-xs backdrop-blur-md">
                   <TabsTrigger
                     value="embedded"
-                    className="flex items-center justify-center gap-2 py-2 rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-stone-900 data-[state=active]:text-stone-900 dark:data-[state=active]:text-stone-100 data-[state=active]:shadow-2xs font-medium text-xs sm:text-sm text-stone-600 dark:text-stone-400"
+                    className="flex-1 inline-flex items-center justify-center gap-2.5 py-2.5 px-4 rounded-xl font-medium text-xs sm:text-sm transition-all duration-200 data-[state=active]:bg-white dark:data-[state=active]:bg-[#18201B] data-[state=active]:text-stone-900 dark:data-[state=active]:text-stone-100 data-[state=active]:shadow-xs data-[state=active]:border data-[state=active]:border-stone-200/80 dark:data-[state=active]:border-stone-700/60 text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-200 cursor-pointer"
                   >
-                    <Zap className="h-4 w-4 text-[#5F7C65]" />
-                    <span>1-Click Connect</span>
-                    <span className="ml-1 text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded-full bg-[#5F7C65]/12 text-[#2D583F] dark:text-[#8EAE95]">
+                    <Zap className="h-4 w-4 text-[#5F7C65] shrink-0" />
+                    <span className="font-semibold">1-Click Connect</span>
+                    <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[#5F7C65]/12 text-[#2D583F] dark:text-[#8EAE95] border border-[#5F7C65]/20">
                       Recommended
                     </span>
                   </TabsTrigger>
                   <TabsTrigger
                     value="manual"
-                    className="flex items-center justify-center gap-2 py-2 rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-stone-900 data-[state=active]:text-stone-900 dark:data-[state=active]:text-stone-100 data-[state=active]:shadow-2xs font-medium text-xs sm:text-sm text-stone-600 dark:text-stone-400"
+                    className="flex-1 inline-flex items-center justify-center gap-2.5 py-2.5 px-4 rounded-xl font-medium text-xs sm:text-sm transition-all duration-200 data-[state=active]:bg-white dark:data-[state=active]:bg-[#18201B] data-[state=active]:text-stone-900 dark:data-[state=active]:text-stone-100 data-[state=active]:shadow-xs data-[state=active]:border data-[state=active]:border-stone-200/80 dark:data-[state=active]:border-stone-700/60 text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-200 cursor-pointer"
                   >
-                    <Sliders className="h-4 w-4 text-stone-500" />
-                    <span>Manual Setup</span>
+                    <Sliders className="h-4 w-4 text-stone-500 shrink-0" />
+                    <span className="font-semibold">Manual Setup</span>
                   </TabsTrigger>
                 </TabsList>
               </div>
@@ -1698,11 +1705,7 @@ export default function SetupPage() {
                           id="connect-whatsapp-btn"
                           onClick={handleLaunchEmbeddedSignup}
                           disabled={connectingEmbedded}
-                          className="w-full py-3.5 px-6 text-sm sm:text-base font-semibold text-white rounded-xl shadow-md hover:shadow-lg hover:brightness-105 active:scale-[0.99] transition-all flex items-center justify-center gap-3 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed border-0"
-                          style={{
-                            backgroundColor: "#1877F2",
-                            color: "#FFFFFF",
-                          }}
+                          className="w-full min-h-12 py-3 px-6 text-sm sm:text-base font-semibold text-white rounded-xl shadow-[inset_0_2px_4px_0_rgba(255,255,255,0.25),inset_0_-2px_4px_0_rgba(0,0,0,0.22),0_4px_16px_rgba(24,119,242,0.28)] hover:brightness-105 active:scale-[0.98] transition-all duration-200 flex items-center justify-center gap-3 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed border-0 bg-[#1877F2]"
                         >
                           {connectingEmbedded ? (
                             <>
@@ -1724,7 +1727,7 @@ export default function SetupPage() {
                           variant="outline"
                           onClick={handleOpenDirectPopup}
                           disabled={connectingEmbedded}
-                          className="w-full h-11 text-xs sm:text-sm font-medium border border-stone-300 dark:border-stone-700 bg-white/80 dark:bg-stone-800 text-stone-800 dark:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-700 rounded-xl flex items-center justify-center gap-2 shadow-2xs"
+                          className="w-full h-11 text-xs sm:text-sm font-medium border border-stone-300/80 dark:border-stone-700/80 bg-white/80 dark:bg-stone-900/60 text-stone-800 dark:text-stone-200 hover:bg-stone-100/80 dark:hover:bg-stone-800/80 rounded-xl flex items-center justify-center gap-2 shadow-2xs transition-all active:scale-[0.98]"
                         >
                           <ExternalLink className="h-4 w-4 text-[#5F7C65] shrink-0" />
                           <span>Launch Meta Authorization Window</span>
@@ -1750,10 +1753,10 @@ export default function SetupPage() {
               {/* TAB 2: MANUAL SETUP (PRESERVED TRADITIONAL FLOW)               */}
               {/* ============================================================= */}
               <TabsContent value="manual" className="space-y-6 focus-visible:outline-none">
-                <div className="grid md:grid-cols-2 gap-6">
+                <div className="grid md:grid-cols-2 gap-6 items-stretch">
                   {/* Access Token Configuration */}
-                  <div className="rounded-2xl border border-stone-200/80 dark:border-stone-800/80 bg-white/80 dark:bg-stone-900/70 backdrop-blur-md shadow-[0_4px_20px_-4px_rgba(30,45,35,0.06)] p-1.5">
-                    <div className="rounded-[calc(1rem-0.125rem)] bg-[#FAF8F5]/80 dark:bg-stone-900/90 p-5 sm:p-6 border border-stone-200/60 dark:border-stone-800/60 space-y-4">
+                  <div className="rounded-2xl border border-stone-200/80 dark:border-stone-800/80 bg-white/80 dark:bg-stone-900/70 backdrop-blur-md shadow-[0_4px_20px_-4px_rgba(30,45,35,0.06)] p-1.5 flex flex-col">
+                    <div className="rounded-[calc(1rem-0.125rem)] bg-[#FAF8F5]/80 dark:bg-stone-900/90 p-5 sm:p-6 border border-stone-200/60 dark:border-stone-800/60 flex-1 flex flex-col justify-between space-y-5">
                       <div>
                         <div className="flex items-center justify-between">
                           <h3 className="text-base sm:text-lg font-semibold tracking-tight text-stone-900 dark:text-stone-100 flex items-center gap-2">
@@ -1768,158 +1771,163 @@ export default function SetupPage() {
                         </p>
                       </div>
 
-                      <form onSubmit={handleSaveAccessToken} className="space-y-4">
-                        <div className="space-y-1.5">
-                          <div className="flex items-center justify-between">
-                            <Label htmlFor="access-token" className="text-xs font-medium text-stone-700 dark:text-stone-300">Access Token *</Label>
-                            {settings?.has_access_token && (
-                              <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full bg-[#5F7C65]/10 text-[#2D583F] dark:text-[#8EAE95]">
-                                Configured
-                              </span>
-                            )}
-                          </div>
-                          <div className="relative flex items-center gap-2">
-                            <Input
-                              id="access-token"
-                              type="text"
-                              placeholder="Enter your WhatsApp Access Token"
-                              value={
-                                accessToken && !showAccessToken
-                                  ? getMaskedAccessToken(accessToken)
-                                  : accessToken
-                              }
-                              onChange={(e) => {
-                                if (showAccessToken || !settings?.access_token_added) {
-                                  setAccessToken(e.target.value);
+                      <form onSubmit={handleSaveAccessToken} className="flex-1 flex flex-col justify-between space-y-4">
+                        <div className="space-y-4">
+                          <div className="space-y-1.5">
+                            <div className="flex items-center justify-between">
+                              <Label htmlFor="access-token" className="text-xs font-medium text-stone-700 dark:text-stone-300">Access Token *</Label>
+                              {settings?.has_access_token && (
+                                <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[#5F7C65]/12 text-[#2D583F] dark:text-[#8EAE95] border border-[#5F7C65]/20">
+                                  Configured
+                                </span>
+                              )}
+                            </div>
+                            <div className="relative flex items-center gap-2">
+                              <Input
+                                id="access-token"
+                                type="text"
+                                placeholder="Enter your WhatsApp Access Token"
+                                value={
+                                  accessToken && !showAccessToken
+                                    ? getMaskedAccessToken(accessToken)
+                                    : accessToken
                                 }
-                              }}
-                              className="font-mono text-sm pr-20 rounded-xl border-stone-300 dark:border-stone-700 focus-visible:ring-[#5F7C65]"
+                                onChange={(e) => {
+                                  if (showAccessToken || !settings?.access_token_added) {
+                                    setAccessToken(e.target.value);
+                                  }
+                                }}
+                                className="font-mono text-sm pr-20 h-10 rounded-xl border-stone-300/80 dark:border-stone-700/80 bg-white/80 dark:bg-stone-950/40 text-stone-900 dark:text-stone-100 focus-visible:ring-1 focus-visible:ring-[#5F7C65]/30 focus-visible:border-[#5F7C65]"
+                              />
+                              {accessToken && (
+                                <div className="absolute right-2 flex items-center gap-1">
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7 rounded-lg text-stone-500 hover:text-stone-900 dark:hover:text-stone-200"
+                                    onClick={() => setShowAccessToken(!showAccessToken)}
+                                    title={showAccessToken ? "Hide token" : "Show token"}
+                                  >
+                                    {showAccessToken ? (
+                                      <EyeOff className="h-3.5 w-3.5" />
+                                    ) : (
+                                      <Eye className="h-3.5 w-3.5" />
+                                    )}
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7 rounded-lg text-stone-500 hover:text-stone-900 dark:hover:text-stone-200"
+                                    onClick={() => copyToClipboard(accessToken, "access")}
+                                    title="Copy token"
+                                  >
+                                    {copiedAccessToken ? (
+                                      <Check className="h-3.5 w-3.5 text-[#5F7C65]" />
+                                    ) : (
+                                      <Copy className="h-3.5 w-3.5" />
+                                    )}
+                                  </Button>
+                                </div>
+                              )}
+                            </div>
+                            <p className="text-[11px] text-stone-500 dark:text-stone-400">
+                              System User or temporary token from Meta Business Manager
+                            </p>
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <div className="flex items-center justify-between">
+                              <Label htmlFor="phone-number-id" className="text-xs font-medium text-stone-700 dark:text-stone-300">Phone Number ID *</Label>
+                              {settings?.has_phone_number_id && (
+                                <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[#5F7C65]/12 text-[#2D583F] dark:text-[#8EAE95] border border-[#5F7C65]/20">
+                                  Configured
+                                </span>
+                              )}
+                            </div>
+                            <Input
+                              id="phone-number-id"
+                              type="text"
+                              placeholder="Enter your Phone Number ID"
+                              value={phoneNumberId}
+                              onChange={(e) => setPhoneNumberId(e.target.value)}
+                              className="font-mono text-sm h-10 rounded-xl border-stone-300/80 dark:border-stone-700/80 bg-white/80 dark:bg-stone-950/40 text-stone-900 dark:text-stone-100 focus-visible:ring-1 focus-visible:ring-[#5F7C65]/30 focus-visible:border-[#5F7C65]"
                             />
-                            {accessToken && (
-                              <div className="absolute right-2 flex items-center gap-1">
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-7 w-7 rounded-lg text-stone-500 hover:text-stone-900"
-                                  onClick={() => setShowAccessToken(!showAccessToken)}
-                                  title={showAccessToken ? "Hide token" : "Show token"}
-                                >
-                                  {showAccessToken ? (
-                                    <EyeOff className="h-3.5 w-3.5" />
-                                  ) : (
-                                    <Eye className="h-3.5 w-3.5" />
-                                  )}
-                                </Button>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-7 w-7 rounded-lg text-stone-500 hover:text-stone-900"
-                                  onClick={() => copyToClipboard(accessToken, "access")}
-                                  title="Copy token"
-                                >
-                                  {copiedAccessToken ? (
-                                    <Check className="h-3.5 w-3.5 text-[#5F7C65]" />
-                                  ) : (
-                                    <Copy className="h-3.5 w-3.5" />
-                                  )}
-                                </Button>
-                              </div>
-                            )}
+                            <p className="text-[11px] text-stone-500 dark:text-stone-400">
+                              Found in WhatsApp API Setup in Meta App Dashboard
+                            </p>
                           </div>
-                          <p className="text-[11px] text-stone-500 dark:text-stone-400">
-                            System User or temporary token from Meta Business Manager
-                          </p>
+
+                          <div className="space-y-1.5">
+                            <div className="flex items-center justify-between">
+                              <Label htmlFor="business-account-id" className="text-xs font-medium text-stone-700 dark:text-stone-300">
+                                Business Account ID (WABA) <span className="text-[10px] text-stone-400 font-normal">(Auto-detected if blank)</span>
+                              </Label>
+                              {settings?.has_business_account_id && (
+                                <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[#5F7C65]/12 text-[#2D583F] dark:text-[#8EAE95] border border-[#5F7C65]/20">
+                                  Configured
+                                </span>
+                              )}
+                            </div>
+                            <Input
+                              id="business-account-id"
+                              type="text"
+                              placeholder="Auto-detected from Meta (or enter WABA ID)"
+                              value={businessAccountId}
+                              onChange={(e) => setBusinessAccountId(e.target.value)}
+                              className="font-mono text-sm h-10 rounded-xl border-stone-300/80 dark:border-stone-700/80 bg-white/80 dark:bg-stone-950/40 text-stone-900 dark:text-stone-100 focus-visible:ring-1 focus-visible:ring-[#5F7C65]/30 focus-visible:border-[#5F7C65]"
+                            />
+                            <p className="text-[11px] text-stone-500 dark:text-stone-400">
+                              Your WhatsApp Business Account (WABA) ID. Automatically discovered from Meta if left blank.
+                            </p>
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <Label htmlFor="api-version" className="text-xs font-medium text-stone-700 dark:text-stone-300">API Version</Label>
+                            <Input
+                              id="api-version"
+                              type="text"
+                              placeholder="v23.0"
+                              value={apiVersion}
+                              onChange={(e) => setApiVersion(e.target.value)}
+                              className="font-mono text-sm h-10 rounded-xl border-stone-300/80 dark:border-stone-700/80 bg-white/80 dark:bg-stone-950/40 text-stone-900 dark:text-stone-100 focus-visible:ring-1 focus-visible:ring-[#5F7C65]/30 focus-visible:border-[#5F7C65]"
+                            />
+                            <p className="text-[11px] text-stone-500 dark:text-stone-400">
+                              Default: v23.0
+                            </p>
+                          </div>
+
+                          {accessTokenError && (
+                            <div className="text-xs text-red-600 bg-red-500/10 p-3 rounded-xl border border-red-500/20 flex items-start gap-2">
+                              <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+                              <span>{accessTokenError}</span>
+                            </div>
+                          )}
+
+                          {accessTokenSuccess && (
+                            <div className="text-xs text-[#2D583F] dark:text-[#8EAE95] bg-[#5F7C65]/10 p-3 rounded-xl border border-[#5F7C65]/20 flex items-center gap-2">
+                              <CheckCircle2 className="h-4 w-4 text-[#5F7C65]" />
+                              <span>Access token saved successfully!</span>
+                            </div>
+                          )}
                         </div>
-
-                        <div className="space-y-1.5">
-                          <div className="flex items-center justify-between">
-                            <Label htmlFor="phone-number-id" className="text-xs font-medium text-stone-700 dark:text-stone-300">Phone Number ID *</Label>
-                            {settings?.has_phone_number_id && (
-                              <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full bg-[#5F7C65]/10 text-[#2D583F] dark:text-[#8EAE95]">
-                                Configured
-                              </span>
-                            )}
-                          </div>
-                          <Input
-                            id="phone-number-id"
-                            type="text"
-                            placeholder="Enter your Phone Number ID"
-                            value={phoneNumberId}
-                            onChange={(e) => setPhoneNumberId(e.target.value)}
-                            className="font-mono text-sm rounded-xl border-stone-300 dark:border-stone-700 focus-visible:ring-[#5F7C65]"
-                          />
-                          <p className="text-[11px] text-stone-500 dark:text-stone-400">
-                            Found in WhatsApp API Setup in Meta App Dashboard
-                          </p>
-                        </div>
-
-                        <div className="space-y-1.5">
-                          <div className="flex items-center justify-between">
-                            <Label htmlFor="business-account-id" className="text-xs font-medium text-stone-700 dark:text-stone-300">
-                              Business Account ID (WABA) <span className="text-[10px] text-stone-400 font-normal">(Auto-detected if blank)</span>
-                            </Label>
-                            {settings?.has_business_account_id && (
-                              <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full bg-[#5F7C65]/10 text-[#2D583F] dark:text-[#8EAE95]">
-                                Configured
-                              </span>
-                            )}
-                          </div>
-                          <Input
-                            id="business-account-id"
-                            type="text"
-                            placeholder="Auto-detected from Meta (or enter WABA ID)"
-                            value={businessAccountId}
-                            onChange={(e) => setBusinessAccountId(e.target.value)}
-                            className="font-mono text-sm rounded-xl border-stone-300 dark:border-stone-700 focus-visible:ring-[#5F7C65]"
-                          />
-                          <p className="text-[11px] text-stone-500 dark:text-stone-400">
-                            Your WhatsApp Business Account (WABA) ID. Automatically discovered from Meta if left blank.
-                          </p>
-                        </div>
-
-                        <div className="space-y-1.5">
-                          <Label htmlFor="api-version" className="text-xs font-medium text-stone-700 dark:text-stone-300">API Version</Label>
-                          <Input
-                            id="api-version"
-                            type="text"
-                            placeholder="v23.0"
-                            value={apiVersion}
-                            onChange={(e) => setApiVersion(e.target.value)}
-                            className="font-mono text-sm rounded-xl border-stone-300 dark:border-stone-700 focus-visible:ring-[#5F7C65]"
-                          />
-                          <p className="text-[11px] text-stone-500 dark:text-stone-400">
-                            Default: v23.0
-                          </p>
-                        </div>
-
-                        {accessTokenError && (
-                          <div className="text-xs text-red-600 bg-red-500/10 p-3 rounded-xl border border-red-500/20 flex items-start gap-2">
-                            <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
-                            <span>{accessTokenError}</span>
-                          </div>
-                        )}
-
-                        {accessTokenSuccess && (
-                          <div className="text-xs text-[#2D583F] dark:text-[#8EAE95] bg-[#5F7C65]/10 p-3 rounded-xl border border-[#5F7C65]/20 flex items-center gap-2">
-                            <CheckCircle2 className="h-4 w-4 text-[#5F7C65]" />
-                            <span>Access token saved successfully!</span>
-                          </div>
-                        )}
 
                         <Button
                           type="submit"
-                          className="w-full rounded-xl bg-[#5F7C65] hover:bg-[#526D57] text-white shadow-[inset_0_1px_2px_0_rgba(255,255,255,0.2),inset_0_-1px_2px_0_rgba(0,0,0,0.18)] transition-all active:scale-[0.98] text-xs sm:text-sm font-medium h-9"
                           disabled={savingAccessToken}
+                          className="w-full h-11 rounded-xl bg-[#5F7C65] hover:bg-[#526D57] text-white shadow-[inset_0_2px_4px_0_rgba(255,255,255,0.2),inset_0_-2px_4px_0_rgba(0,0,0,0.18)] outline outline-black/10 transition-all duration-200 active:scale-[0.98] text-sm font-medium flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 mt-4"
                         >
                           {savingAccessToken ? (
                             <>
-                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                              Saving...
+                              <Loader2 className="size-4 animate-spin text-white" />
+                              <span>Saving Credentials...</span>
                             </>
                           ) : (
-                            "Save Credentials"
+                            <>
+                              <Check className="size-4 text-white" />
+                              <span>Save Credentials</span>
+                            </>
                           )}
                         </Button>
                       </form>
@@ -1927,8 +1935,8 @@ export default function SetupPage() {
                   </div>
 
                   {/* Webhook Configuration */}
-                  <div className="rounded-2xl border border-stone-200/80 dark:border-stone-800/80 bg-white/80 dark:bg-stone-900/70 backdrop-blur-md shadow-[0_4px_20px_-4px_rgba(30,45,35,0.06)] p-1.5">
-                    <div className="rounded-[calc(1rem-0.125rem)] bg-[#FAF8F5]/80 dark:bg-stone-900/90 p-5 sm:p-6 border border-stone-200/60 dark:border-stone-800/60 space-y-4">
+                  <div className="rounded-2xl border border-stone-200/80 dark:border-stone-800/80 bg-white/80 dark:bg-stone-900/70 backdrop-blur-md shadow-[0_4px_20px_-4px_rgba(30,45,35,0.06)] p-1.5 flex flex-col">
+                    <div className="rounded-[calc(1rem-0.125rem)] bg-[#FAF8F5]/80 dark:bg-stone-900/90 p-5 sm:p-6 border border-stone-200/60 dark:border-stone-800/60 flex-1 flex flex-col justify-between space-y-5">
                       <div>
                         <div className="flex items-center justify-between">
                           <h3 className="text-base sm:text-lg font-semibold tracking-tight text-stone-900 dark:text-stone-100 flex items-center gap-2">
@@ -1943,119 +1951,124 @@ export default function SetupPage() {
                         </p>
                       </div>
 
-                      <form onSubmit={handleSaveWebhook} className="space-y-4">
-                        {/* Webhook URL */}
-                        <div className="space-y-1.5">
-                          <div className="flex items-center justify-between">
-                            <Label className="text-xs font-medium text-stone-700 dark:text-stone-300">Webhook Callback URL</Label>
-                            <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full bg-stone-200/70 dark:bg-stone-800 text-stone-600 dark:text-stone-400">
-                              Unique to You
-                            </span>
-                          </div>
-                          <div className="flex gap-2">
-                            <Input
-                              type="text"
-                              value={webhookUrl || "Generating unique webhook URL..."}
-                              readOnly
-                              className="font-mono text-xs bg-stone-100/80 dark:bg-stone-800/60 rounded-xl border-stone-300 dark:border-stone-700"
-                            />
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="icon"
-                              onClick={() => copyToClipboard(webhookUrl, "webhook")}
-                              disabled={!webhookUrl}
-                              className="rounded-xl border-stone-300 dark:border-stone-700 shrink-0"
-                            >
-                              {copiedWebhookUrl ? (
-                                <Check className="h-4 w-4 text-[#5F7C65]" />
-                              ) : (
-                                <Copy className="h-4 w-4" />
-                              )}
-                            </Button>
-                          </div>
-                          <p className="text-[11px] text-stone-500 dark:text-stone-400">
-                            Copy this URL to your Meta Webhooks configuration
-                          </p>
-                        </div>
-
-                        {/* Verify Token */}
-                        <div className="space-y-1.5">
-                          <div className="flex items-center justify-between">
-                            <Label htmlFor="verify-token" className="text-xs font-medium text-stone-700 dark:text-stone-300">Verify Token *</Label>
-                            {settings?.has_verify_token && (
-                              <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full bg-[#5F7C65]/10 text-[#2D583F] dark:text-[#8EAE95]">
-                                Configured
+                      <form onSubmit={handleSaveWebhook} className="flex-1 flex flex-col justify-between space-y-4">
+                        <div className="space-y-4">
+                          {/* Webhook URL */}
+                          <div className="space-y-1.5">
+                            <div className="flex items-center justify-between">
+                              <Label className="text-xs font-medium text-stone-700 dark:text-stone-300">Webhook Callback URL</Label>
+                              <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[#5F7C65]/12 text-[#2D583F] dark:text-[#8EAE95] border border-[#5F7C65]/20">
+                                Unique to You
                               </span>
-                            )}
-                          </div>
-                          <div className="flex gap-2">
-                            <Input
-                              id="verify-token"
-                              type="text"
-                              placeholder="Enter a secure verify token"
-                              value={verifyToken}
-                              onChange={(e) => setVerifyToken(e.target.value)}
-                              className="font-mono text-sm rounded-xl border-stone-300 dark:border-stone-700 focus-visible:ring-[#5F7C65]"
-                            />
-                            {verifyToken && (
+                            </div>
+                            <div className="flex gap-2">
+                              <Input
+                                type="text"
+                                value={webhookUrl || "Generating unique webhook URL..."}
+                                readOnly
+                                className="font-mono text-xs bg-stone-100/90 dark:bg-stone-950/60 rounded-xl border-stone-300/80 dark:border-stone-700/80 text-stone-800 dark:text-stone-200 h-10 select-all"
+                              />
                               <Button
                                 type="button"
                                 variant="outline"
                                 size="icon"
-                                onClick={() => copyToClipboard(verifyToken, "verify")}
-                                className="rounded-xl border-stone-300 dark:border-stone-700 shrink-0"
+                                onClick={() => copyToClipboard(webhookUrl, "webhook")}
+                                disabled={!webhookUrl}
+                                className="h-10 w-10 rounded-xl border border-stone-300/80 dark:border-stone-700/80 bg-white/80 dark:bg-stone-800/80 hover:bg-stone-100 dark:hover:bg-stone-700 text-stone-600 dark:text-stone-300 shrink-0 transition-all active:scale-95 cursor-pointer flex items-center justify-center"
                               >
-                                {copiedVerifyToken ? (
+                                {copiedWebhookUrl ? (
                                   <Check className="h-4 w-4 text-[#5F7C65]" />
                                 ) : (
                                   <Copy className="h-4 w-4" />
                                 )}
                               </Button>
-                            )}
+                            </div>
+                            <p className="text-[11px] text-stone-500 dark:text-stone-400">
+                              Copy this URL to your Meta Webhooks configuration
+                            </p>
                           </div>
-                          <p className="text-[11px] text-stone-500 dark:text-stone-400">
-                            Custom string matched when Meta verifies your webhook
-                          </p>
+
+                          {/* Verify Token */}
+                          <div className="space-y-1.5">
+                            <div className="flex items-center justify-between">
+                              <Label htmlFor="verify-token" className="text-xs font-medium text-stone-700 dark:text-stone-300">Verify Token *</Label>
+                              {settings?.has_verify_token && (
+                                <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[#5F7C65]/12 text-[#2D583F] dark:text-[#8EAE95] border border-[#5F7C65]/20">
+                                  Configured
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex gap-2">
+                              <Input
+                                id="verify-token"
+                                type="text"
+                                placeholder="Enter a secure verify token"
+                                value={verifyToken}
+                                onChange={(e) => setVerifyToken(e.target.value)}
+                                className="font-mono text-sm h-10 rounded-xl border-stone-300/80 dark:border-stone-700/80 bg-white/80 dark:bg-stone-950/40 text-stone-900 dark:text-stone-100 focus-visible:ring-1 focus-visible:ring-[#5F7C65]/30 focus-visible:border-[#5F7C65]"
+                              />
+                              {verifyToken && (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="icon"
+                                  onClick={() => copyToClipboard(verifyToken, "verify")}
+                                  className="h-10 w-10 rounded-xl border border-stone-300/80 dark:border-stone-700/80 bg-white/80 dark:bg-stone-800/80 hover:bg-stone-100 dark:hover:bg-stone-700 text-stone-600 dark:text-stone-300 shrink-0 transition-all active:scale-95 cursor-pointer flex items-center justify-center"
+                                >
+                                  {copiedVerifyToken ? (
+                                    <Check className="h-4 w-4 text-[#5F7C65]" />
+                                  ) : (
+                                    <Copy className="h-4 w-4" />
+                                  )}
+                                </Button>
+                              )}
+                            </div>
+                            <p className="text-[11px] text-stone-500 dark:text-stone-400">
+                              Custom string matched when Meta verifies your webhook
+                            </p>
+                          </div>
+
+                          {/* Quick steps */}
+                          <div className="bg-[#FAF8F5]/90 dark:bg-stone-950/50 p-3.5 rounded-xl border border-stone-200/80 dark:border-stone-800/80 space-y-1.5 text-xs">
+                            <p className="font-semibold text-stone-900 dark:text-stone-100">Steps in Meta Dashboard:</p>
+                            <ol className="list-decimal list-inside space-y-1 text-stone-600 dark:text-stone-400 text-[11px]">
+                              <li>Go to Meta App Dashboard → WhatsApp → Configuration</li>
+                              <li>Paste the Webhook Callback URL and Verify Token</li>
+                              <li>Click &quot;Verify and Save&quot; in Meta</li>
+                              <li>Subscribe to the <span className="font-mono font-semibold">messages</span> field</li>
+                            </ol>
+                          </div>
+
+                          {webhookError && (
+                            <div className="text-xs text-red-600 bg-red-500/10 p-3 rounded-xl border border-red-500/20 flex items-start gap-2">
+                              <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+                              <span>{webhookError}</span>
+                            </div>
+                          )}
+
+                          {webhookSuccess && (
+                            <div className="text-xs text-[#2D583F] dark:text-[#8EAE95] bg-[#5F7C65]/10 p-3 rounded-xl border border-[#5F7C65]/20 flex items-center gap-2">
+                              <CheckCircle2 className="h-4 w-4 text-[#5F7C65]" />
+                              <span>Webhook configuration saved!</span>
+                            </div>
+                          )}
                         </div>
-
-                        {/* Quick steps */}
-                        <div className="bg-[#FAF8F5]/90 dark:bg-stone-950/40 p-3.5 rounded-xl border border-stone-200/70 dark:border-stone-800/70 space-y-1.5 text-xs">
-                          <p className="font-semibold text-stone-900 dark:text-stone-100">Steps in Meta Dashboard:</p>
-                          <ol className="list-decimal list-inside space-y-1 text-stone-600 dark:text-stone-400 text-[11px]">
-                            <li>Go to Meta App Dashboard → WhatsApp → Configuration</li>
-                            <li>Paste the Webhook Callback URL and Verify Token</li>
-                            <li>Click &quot;Verify and Save&quot; in Meta</li>
-                            <li>Subscribe to the <span className="font-mono font-semibold">messages</span> field</li>
-                          </ol>
-                        </div>
-
-                        {webhookError && (
-                          <div className="text-xs text-red-600 bg-red-500/10 p-3 rounded-xl border border-red-500/20 flex items-start gap-2">
-                            <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
-                            <span>{webhookError}</span>
-                          </div>
-                        )}
-
-                        {webhookSuccess && (
-                          <div className="text-xs text-[#2D583F] dark:text-[#8EAE95] bg-[#5F7C65]/10 p-3 rounded-xl border border-[#5F7C65]/20 flex items-center gap-2">
-                            <CheckCircle2 className="h-4 w-4 text-[#5F7C65]" />
-                            <span>Webhook configuration saved!</span>
-                          </div>
-                        )}
 
                         <Button
                           type="submit"
-                          className="w-full rounded-xl bg-[#5F7C65] hover:bg-[#526D57] text-white shadow-[inset_0_1px_2px_0_rgba(255,255,255,0.2),inset_0_-1px_2px_0_rgba(0,0,0,0.18)] transition-all active:scale-[0.98] text-xs sm:text-sm font-medium h-9"
                           disabled={savingWebhook}
+                          className="w-full h-11 rounded-xl bg-[#5F7C65] hover:bg-[#526D57] text-white shadow-[inset_0_2px_4px_0_rgba(255,255,255,0.2),inset_0_-2px_4px_0_rgba(0,0,0,0.18)] outline outline-black/10 transition-all duration-200 active:scale-[0.98] text-sm font-medium flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 mt-4"
                         >
                           {savingWebhook ? (
                             <>
-                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                              Saving...
+                              <Loader2 className="size-4 animate-spin text-white" />
+                              <span>Saving Configuration...</span>
                             </>
                           ) : (
-                            "Save Webhook Configuration"
+                            <>
+                              <Check className="size-4 text-white" />
+                              <span>Save Webhook Configuration</span>
+                            </>
                           )}
                         </Button>
                       </form>
