@@ -721,6 +721,117 @@ router.get('/conversations', async (req, res, next) => {
     }
 });
 
+router.delete('/conversations/:id', async (req, res, next) => {
+    try {
+        const userId = getUserId(req, res);
+        if (!userId) return;
+        const contactId = req.params.id;
+
+        if (!contactId) {
+            res.status(400).json({ error: 'Missing contact ID' });
+            return;
+        }
+
+        // Strict multi-tenant isolation: ensure contact belongs to this user
+        let contact = await prisma.contact.findFirst({
+            where: {
+                id: contactId,
+                userId: userId,
+            },
+        });
+
+        // Fallback: match by phone number owned by this user
+        if (!contact) {
+            contact = await prisma.contact.findFirst({
+                where: {
+                    phoneNumber: contactId,
+                    userId: userId,
+                },
+            });
+        }
+
+        if (!contact) {
+            res.status(404).json({ error: 'Contact not found or unauthorized' });
+            return;
+        }
+
+        // Clean up group members, messages, and the contact in a transaction
+        await prisma.$transaction(async (tx) => {
+            await tx.groupMember.deleteMany({
+                where: { contactId: contact.id },
+            });
+            await tx.message.deleteMany({
+                where: { contactId: contact.id, userId: userId },
+            });
+            await tx.contact.delete({
+                where: { id: contact.id },
+            });
+        });
+
+        res.json({
+            success: true,
+            message: 'Contact deleted successfully',
+            contactId: contact.id,
+        });
+    } catch (error) {
+        next(error);
+    }
+});
+
+router.delete('/contacts/:id', async (req, res, next) => {
+    try {
+        const userId = getUserId(req, res);
+        if (!userId) return;
+        const contactId = req.params.id;
+
+        if (!contactId) {
+            res.status(400).json({ error: 'Missing contact ID' });
+            return;
+        }
+
+        let contact = await prisma.contact.findFirst({
+            where: {
+                id: contactId,
+                userId: userId,
+            },
+        });
+
+        if (!contact) {
+            contact = await prisma.contact.findFirst({
+                where: {
+                    phoneNumber: contactId,
+                    userId: userId,
+                },
+            });
+        }
+
+        if (!contact) {
+            res.status(404).json({ error: 'Contact not found or unauthorized' });
+            return;
+        }
+
+        await prisma.$transaction(async (tx) => {
+            await tx.groupMember.deleteMany({
+                where: { contactId: contact.id },
+            });
+            await tx.message.deleteMany({
+                where: { contactId: contact.id, userId: userId },
+            });
+            await tx.contact.delete({
+                where: { id: contact.id },
+            });
+        });
+
+        res.json({
+            success: true,
+            message: 'Contact deleted successfully',
+            contactId: contact.id,
+        });
+    } catch (error) {
+        next(error);
+    }
+});
+
 router.get('/messages', async (req, res, next) => {
     try {
         const userId = getUserId(req, res);

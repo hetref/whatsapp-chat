@@ -518,7 +518,11 @@ export default function ChatPage() {
         setSelectedUser((prev) => {
           if (!prev) return null;
           const updated = transformedUsers.find(u => u.id === prev.id);
-          return updated ? { ...prev, ...updated } : prev;
+          if (!updated) {
+            setMessages([]);
+            return null;
+          }
+          return { ...prev, ...updated };
         });
       } else {
         console.error('Error refreshing users:', result.error);
@@ -527,6 +531,16 @@ export default function ChatPage() {
       console.error('Error refreshing users:', error);
     }
   }, [user]);
+
+  const handleUserDelete = useCallback((deletedUserId: string) => {
+    setSelectedUser((prev) => (prev?.id === deletedUserId ? null : prev));
+    setMessages((prev) => (selectedUser?.id === deletedUserId ? [] : prev));
+    if (selectedUser?.id === deletedUserId) {
+      setShowChat(false);
+      setBroadcastGroupId(null);
+      setBroadcastGroupName(null);
+    }
+  }, [selectedUser]);
 
   const handleUpdateName = useCallback(async (userId: string, customName: string) => {
     try {
@@ -881,6 +895,7 @@ export default function ChatPage() {
               currentUserId={user.id}
               onUsersUpdate={refreshUsers}
               onBroadcastToGroup={handleBroadcastToGroup}
+              onUserDelete={handleUserDelete}
             />
           </div>
 
@@ -922,6 +937,7 @@ export default function ChatPage() {
                 currentUserId={user.id}
                 onUsersUpdate={refreshUsers}
                 onBroadcastToGroup={handleBroadcastToGroup}
+                onUserDelete={handleUserDelete}
               />
             </div>
           ) : (

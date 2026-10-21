@@ -3,7 +3,7 @@
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Search, MessageCircle, Plus, Edit3, Check, X, Phone, FileText, Settings, Users } from "lucide-react";
+import { Search, MessageCircle, Plus, Edit3, Check, X, Phone, FileText, Settings, Users, Trash2, Loader2, AlertTriangle } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -40,6 +40,7 @@ interface UserListProps {
   currentUserId: string;
   onUsersUpdate?: () => void;
   onBroadcastToGroup?: (groupId: string, groupName: string) => void;
+  onUserDelete?: (userId: string) => void;
 }
 
 interface NewUserInput {
@@ -69,7 +70,7 @@ function getAvatarStyle(str: string) {
   return AVATAR_PALETTES[index];
 }
 
-export function UserList({ users, selectedUser, onUserSelect, currentUserId, onUsersUpdate, onBroadcastToGroup }: UserListProps) {
+export function UserList({ users, selectedUser, onUserSelect, currentUserId, onUsersUpdate, onBroadcastToGroup, onUserDelete }: UserListProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [showNewChat, setShowNewChat] = useState(false);
   const [newUsers, setNewUsers] = useState<NewUserInput[]>([
@@ -79,6 +80,11 @@ export function UserList({ users, selectedUser, onUserSelect, currentUserId, onU
   const [editingName, setEditingName] = useState("");
   const [isCreatingChat, setIsCreatingChat] = useState(false);
   const [isUpdatingName, setIsUpdatingName] = useState(false);
+
+  // Delete contact state
+  const [contactToDelete, setContactToDelete] = useState<ChatUser | null>(null);
+  const [isDeletingContact, setIsDeletingContact] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   // Groups state
   const [groups, setGroups] = useState<Group[]>([]);
@@ -400,6 +406,49 @@ export function UserList({ users, selectedUser, onUserSelect, currentUserId, onU
     }
   };
 
+  const handleRequestDelete = (user: ChatUser) => {
+    setDeleteError(null);
+    setContactToDelete(user);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!contactToDelete) return;
+
+    setIsDeletingContact(true);
+    setDeleteError(null);
+
+    try {
+      const response = await fetch(`/api/conversations/${contactToDelete.id}`, {
+        method: 'DELETE',
+        headers: currentUserId ? { 'x-user-id': currentUserId } : {},
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || result.message || 'Failed to delete contact');
+      }
+
+      const deletedId = contactToDelete.id;
+      setContactToDelete(null);
+
+      // Deselect if active
+      if (onUserDelete) {
+        onUserDelete(deletedId);
+      }
+
+      // Refresh list
+      if (onUsersUpdate) {
+        await onUsersUpdate();
+      }
+    } catch (error) {
+      console.error('Error deleting contact:', error);
+      setDeleteError(error instanceof Error ? error.message : 'Failed to delete contact');
+    } finally {
+      setIsDeletingContact(false);
+    }
+  };
+
   return (
     <div className="h-full flex flex-col bg-[#FAF8F5]/30 dark:bg-[#0C0F0D]">
       {/* Header */}
@@ -695,7 +744,7 @@ export function UserList({ users, selectedUser, onUserSelect, currentUserId, onU
                                 e.stopPropagation();
                                 handleStartEditName(user);
                               }}
-                              className="p-0.5 h-5 w-5 text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 opacity-0 group-hover:opacity-100 transition-opacity"
+                              className="p-0.5 h-5 w-5 text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 opacity-70 md:opacity-0 md:group-hover:opacity-100 transition-opacity"
                               title="Edit contact name"
                             >
                               <Edit3 className="h-3 w-3" />
@@ -719,9 +768,24 @@ export function UserList({ users, selectedUser, onUserSelect, currentUserId, onU
                       </div>
 
                       <div className="flex flex-col items-end gap-1 shrink-0 ml-2">
-                        <span className="text-[10px] text-stone-400 dark:text-stone-500 tabular-nums">
-                          {formatTime(user.last_message_time || user.last_active)}
-                        </span>
+                        <div className="flex items-center gap-1">
+                          <span className="text-[10px] text-stone-400 dark:text-stone-500 tabular-nums">
+                            {formatTime(user.last_message_time || user.last_active)}
+                          </span>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRequestDelete(user);
+                            }}
+                            className="h-6 w-6 rounded-lg text-stone-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-500/10 transition-all opacity-80 md:opacity-0 md:group-hover:opacity-100 focus:opacity-100"
+                            title="Delete contact"
+                            aria-label={`Delete contact ${getDisplayName(user)}`}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
                         {hasUnread && (
                           <span className="bg-[#5F7C65] text-white text-[10px] font-bold rounded-full min-w-[18px] h-4.5 px-1.5 flex items-center justify-center shadow-xs">
                             {user.unread_count! > 99 ? '99+' : user.unread_count}
@@ -756,6 +820,90 @@ export function UserList({ users, selectedUser, onUserSelect, currentUserId, onU
         group={editingGroup}
         onGroupSaved={handleGroupSaved}
       />
+
+      {/* Delete Contact Confirmation Modal */}
+      {contactToDelete && (
+        <div
+          className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in-0 duration-150"
+          onClick={() => {
+            if (!isDeletingContact) {
+              setContactToDelete(null);
+              setDeleteError(null);
+            }
+          }}
+        >
+          <div
+            className="bg-white dark:bg-[#18201B] border border-stone-200/80 dark:border-stone-800 rounded-2xl max-w-md w-full shadow-xl overflow-hidden animate-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-6">
+              <div className="flex items-start gap-4">
+                <div className="size-11 rounded-2xl bg-red-500/10 dark:bg-red-500/20 text-red-600 dark:text-red-400 border border-red-500/20 flex items-center justify-center shrink-0">
+                  <Trash2 className="h-5 w-5" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-base font-semibold text-stone-900 dark:text-stone-100">
+                    Delete Contact
+                  </h3>
+                  <p className="text-xs text-stone-500 dark:text-stone-400 mt-1 leading-relaxed">
+                    Are you sure you want to delete{" "}
+                    <span className="font-semibold text-stone-900 dark:text-stone-200">
+                      {getDisplayName(contactToDelete)}
+                    </span>
+                    {contactToDelete.phone_number && (
+                      <span className="font-mono text-stone-600 dark:text-stone-400">
+                        {" "}
+                        ({contactToDelete.phone_number})
+                      </span>
+                    )}
+                    ? All messages and conversations with this contact will be permanently deleted for your account. This action cannot be undone.
+                  </p>
+
+                  {deleteError && (
+                    <div className="mt-3 p-2.5 rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/50 flex items-center gap-2 text-xs text-red-700 dark:text-red-300">
+                      <AlertTriangle className="h-4 w-4 shrink-0" />
+                      <span>{deleteError}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 px-6 py-3.5 bg-stone-50/80 dark:bg-[#131915]/80 border-t border-stone-200/70 dark:border-stone-800/70">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setContactToDelete(null);
+                  setDeleteError(null);
+                }}
+                disabled={isDeletingContact}
+                className="rounded-xl border-stone-200 dark:border-stone-700 hover:bg-stone-100 dark:hover:bg-stone-800 text-stone-700 dark:text-stone-300"
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                onClick={handleConfirmDelete}
+                disabled={isDeletingContact}
+                className="bg-red-600 hover:bg-red-700 text-white rounded-xl shadow-xs gap-1.5"
+              >
+                {isDeletingContact ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    <span>Deleting...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="h-3.5 w-3.5" />
+                    <span>Delete Contact</span>
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

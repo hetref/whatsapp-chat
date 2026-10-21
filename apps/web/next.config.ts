@@ -17,6 +17,18 @@ const nextConfig: NextConfig = {
           destination: `${apiBase}/api/conversations`,
         },
         {
+          source: '/api/conversations/:path*',
+          destination: `${apiBase}/api/conversations/:path*`,
+        },
+        {
+          source: '/api/contacts',
+          destination: `${apiBase}/api/contacts`,
+        },
+        {
+          source: '/api/contacts/:path*',
+          destination: `${apiBase}/api/contacts/:path*`,
+        },
+        {
           source: '/api/messages',
           destination: `${apiBase}/api/messages`,
         },
