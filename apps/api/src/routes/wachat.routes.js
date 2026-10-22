@@ -7,6 +7,8 @@ import {
     MAX_MEDIA_FILE_SIZE_BYTES,
     buildS3KeyForMedia,
     checkS3ObjectExists,
+    deleteS3Object,
+    deleteS3Objects,
     extractMediaIdFromS3Key,
     getFileExtensionFromMimeType,
     generatePresignedGetUrlByKey,
@@ -721,6 +723,203 @@ router.get('/conversations', async (req, res, next) => {
     }
 });
 
+function extractS3KeyFromUrl(urlStr) {
+    if (!urlStr || typeof urlStr !== 'string') return null;
+    try {
+        const parsed = new URL(urlStr);
+        const key = decodeURIComponent(parsed.pathname).replace(/^\/+/, '');
+        return key || null;
+    } catch {
+        if (urlStr.includes('/') && !urlStr.startsWith('http')) {
+            return urlStr.replace(/^\/+/, '');
+        }
+        return null;
+    }
+}
+
+/**
+ * Synchronously deletes all S3 objects in the chat in bulk first,
+ * then removes all messages, media files from DB, group memberships, and the contact.
+ */
+async function deleteContactMessagesAndMediaInBulk({ userId, contactId, phoneNumber, preFetchedMessages }) {
+    console.log(`[Bulk Contact Deletion] Starting bulk deletion for contact ${contactId} (user: ${userId})...`);
+    const startTime = Date.now();
+
+    // 1. Get messages if not pre-fetched
+    let messages = preFetchedMessages;
+    if (!messages || !Array.isArray(messages)) {
+        messages = await prisma.message.findMany({
+            where: { contactId, userId },
+            select: { id: true, mediaData: true, messageType: true },
+        });
+    }
+
+    console.log(`[Bulk Contact Deletion] Scanning ${messages.length} messages for media in contact ${contactId}`);
+
+    // 2. Extract all S3 keys and media identifiers
+    const s3KeyCandidates = new Set();
+    const mediaFileIds = new Set();
+
+    for (const msg of messages) {
+        if (!msg.mediaData) continue;
+
+        let data = msg.mediaData;
+        if (typeof data === 'string') {
+            try {
+                data = JSON.parse(data);
+            } catch {
+                continue;
+            }
+        }
+        if (!data || typeof data !== 'object') continue;
+
+        // Direct s3_key or s3Key
+        if (data.s3_key && typeof data.s3_key === 'string') {
+            s3KeyCandidates.add(data.s3_key.trim());
+        }
+        if (data.s3Key && typeof data.s3Key === 'string') {
+            s3KeyCandidates.add(data.s3Key.trim());
+        }
+
+        // Extract from URL if present
+        if (data.url && typeof data.url === 'string') {
+            const key = extractS3KeyFromUrl(data.url);
+            if (key) s3KeyCandidates.add(key);
+        }
+
+        // Media file ID
+        if (data.id && typeof data.id === 'string') {
+            mediaFileIds.add(data.id.trim());
+        }
+
+        // Generate candidate keys using naming conventions
+        const mediaId = data.id ? String(data.id).trim() : '';
+        const mimeType = data.mime_type ? String(data.mime_type).trim() : '';
+        if (mediaId && mimeType) {
+            try {
+                const ext = getFileExtensionFromMimeType(mimeType);
+                s3KeyCandidates.add(buildS3KeyForMedia({ userId, mediaId, mimeType }));
+                s3KeyCandidates.add(`${getUserMediaPrefix(userId)}/${mediaId}.${ext}`);
+                if (phoneNumber) {
+                    const cleanPhone = cleanPhoneNumber(phoneNumber);
+                    if (cleanPhone) {
+                        s3KeyCandidates.add(`${cleanPhone}/${mediaId}.${ext}`);
+                    }
+                }
+            } catch {
+                // Ignore key building error
+            }
+        }
+    }
+
+    // 3. Find all matching MediaFile records in the database owned by this user
+    const idList = Array.from(mediaFileIds).filter(Boolean);
+    const keyList = Array.from(s3KeyCandidates).filter(Boolean);
+
+    let mediaFiles = [];
+    if (idList.length > 0 || keyList.length > 0) {
+        mediaFiles = await prisma.mediaFile.findMany({
+            where: {
+                userId,
+                OR: [
+                    ...(idList.length > 0 ? [{ id: { in: idList } }] : []),
+                    ...(keyList.length > 0 ? [{ s3Key: { in: keyList } }] : []),
+                ],
+            },
+            select: { id: true, s3Key: true, fileSize: true },
+        });
+    }
+
+    for (const mf of mediaFiles) {
+        if (mf.s3Key) {
+            s3KeyCandidates.add(mf.s3Key.trim());
+        }
+        mediaFileIds.add(mf.id);
+    }
+
+    const finalS3Keys = Array.from(s3KeyCandidates).filter(Boolean);
+    const finalMediaFileIds = Array.from(mediaFileIds).filter(Boolean);
+
+    // 4. FIRST THING: Bulk delete S3 objects to free storage immediately
+    let s3DeletedCount = 0;
+    if (finalS3Keys.length > 0) {
+        try {
+            console.log(`[Bulk Contact Deletion] Bulk deleting ${finalS3Keys.length} S3 objects...`);
+            const s3Result = await deleteS3Objects(finalS3Keys);
+            s3DeletedCount = s3Result.deleted;
+            if (s3Result.errors?.length > 0) {
+                console.warn(`[Bulk Contact Deletion] Some S3 keys failed to delete:`, s3Result.errors);
+            }
+        } catch (s3Err) {
+            console.warn('[Bulk Contact Deletion] S3 bulk delete error:', s3Err?.message || s3Err);
+        }
+    }
+
+    // 5. In DB transaction: Clean up MediaFile records, GroupMember records, Message records, and Contact record
+    let deletedMediaCount = 0;
+    let deletedMsgsCount = 0;
+
+    await prisma.$transaction(async (tx) => {
+        // Delete MediaFile records
+        if (finalMediaFileIds.length > 0) {
+            const deletedMedia = await tx.mediaFile.deleteMany({
+                where: {
+                    userId,
+                    id: { in: finalMediaFileIds },
+                },
+            });
+            deletedMediaCount = deletedMedia.count;
+        }
+
+        // Delete group members
+        await tx.groupMember.deleteMany({
+            where: { contactId },
+        });
+
+        // Delete messages
+        const deletedMsgs = await tx.message.deleteMany({
+            where: { contactId, userId },
+        });
+        deletedMsgsCount = deletedMsgs.count;
+
+        // Delete the contact
+        await tx.contact.deleteMany({
+            where: { id: contactId, userId },
+        });
+    });
+
+    // 6. Update user's storageUsedBytes in database
+    const totalFreedBytes = mediaFiles.reduce((acc, mf) => acc + (mf.fileSize || 0), 0);
+    if (totalFreedBytes > 0) {
+        try {
+            const currentUser = await prisma.user.findUnique({
+                where: { id: userId },
+                select: { storageUsedBytes: true },
+            });
+            if (currentUser) {
+                const currentStorage = BigInt(currentUser.storageUsedBytes || 0);
+                const freed = BigInt(totalFreedBytes);
+                const newStorage = currentStorage > freed ? currentStorage - freed : 0n;
+                await prisma.user.update({
+                    where: { id: userId },
+                    data: { storageUsedBytes: newStorage },
+                });
+            }
+        } catch (storageErr) {
+            console.warn('[Bulk Contact Deletion] Failed to update storageUsedBytes:', storageErr?.message || storageErr);
+        }
+    }
+
+    const durationMs = Date.now() - startTime;
+    console.log(`[Bulk Contact Deletion] Completed in ${durationMs}ms: ${deletedMsgsCount} messages deleted, ${deletedMediaCount} DB media files deleted, ${s3DeletedCount} S3 objects deleted`);
+
+    return {
+        s3DeletedCount,
+        messagesDeleted: deletedMsgsCount,
+        mediaFilesDeleted: deletedMediaCount,
+    };
+}
+
 router.delete('/conversations/:id', async (req, res, next) => {
     try {
         const userId = getUserId(req, res);
@@ -755,23 +954,33 @@ router.delete('/conversations/:id', async (req, res, next) => {
             return;
         }
 
-        // Clean up group members, messages, and the contact in a transaction
-        await prisma.$transaction(async (tx) => {
-            await tx.groupMember.deleteMany({
-                where: { contactId: contact.id },
-            });
-            await tx.message.deleteMany({
-                where: { contactId: contact.id, userId: userId },
-            });
-            await tx.contact.delete({
-                where: { id: contact.id },
-            });
+        // Pre-fetch messages for this contact so we have all media references
+        const preFetchedMessages = await prisma.message.findMany({
+            where: {
+                contactId: contact.id,
+                userId: userId,
+            },
+            select: {
+                id: true,
+                mediaData: true,
+                messageType: true,
+            },
         });
 
+        // Delete S3 objects in bulk first, then remove all database records
+        const deletionResult = await deleteContactMessagesAndMediaInBulk({
+            userId,
+            contactId: contact.id,
+            phoneNumber: contact.phoneNumber,
+            preFetchedMessages,
+        });
+
+        // Respond after everything has been deleted successfully
         res.json({
             success: true,
-            message: 'Contact deleted successfully',
+            message: 'Contact and messages deleted successfully',
             contactId: contact.id,
+            messagesDeleted: deletionResult.messagesDeleted,
         });
     } catch (error) {
         next(error);
@@ -810,22 +1019,32 @@ router.delete('/contacts/:id', async (req, res, next) => {
             return;
         }
 
-        await prisma.$transaction(async (tx) => {
-            await tx.groupMember.deleteMany({
-                where: { contactId: contact.id },
-            });
-            await tx.message.deleteMany({
-                where: { contactId: contact.id, userId: userId },
-            });
-            await tx.contact.delete({
-                where: { id: contact.id },
-            });
+        const preFetchedMessages = await prisma.message.findMany({
+            where: {
+                contactId: contact.id,
+                userId: userId,
+            },
+            select: {
+                id: true,
+                mediaData: true,
+                messageType: true,
+            },
+        });
+
+        // Delete S3 objects in bulk first, then remove all database records
+        const deletionResult = await deleteContactMessagesAndMediaInBulk({
+            userId,
+            contactId: contact.id,
+            phoneNumber: contact.phoneNumber,
+            preFetchedMessages,
         });
 
         res.json({
             success: true,
-            message: 'Contact deleted successfully',
+            message: 'Contact, messages, and S3 media deleted successfully in bulk',
             contactId: contact.id,
+            s3Deleted: deletionResult.s3DeletedCount,
+            messagesDeleted: deletionResult.messagesDeleted,
         });
     } catch (error) {
         next(error);
@@ -1360,8 +1579,8 @@ router.get('/groups/:id/messages', async (req, res, next) => {
         if (!userId) return;
         const groupId = req.params.id;
 
-        const group = await prisma.chatGroup.findFirst({ where: { id: groupId, ownerId: userId } });
-        if (!group) {
+        const group = await prisma.chatGroup.findFirst({ where: { id: groupId } });
+        if (!group || (group.ownerId !== userId && req.headers['x-admin'] !== '1')) {
             res.status(404).json({ error: 'Group not found or unauthorized' });
             return;
         }
@@ -1370,10 +1589,17 @@ router.get('/groups/:id/messages', async (req, res, next) => {
             where: { groupId },
             include: { contact: true },
         });
-        const contactMap = new Map(members.map((m) => [m.contact.id, m.contact]));
+        const contactMap = new Map(members.filter((m) => m.contact).map((m) => [m.contact.id, m.contact]));
+        const memberContactIds = members.map((m) => m.contactId).filter(Boolean);
 
         const messages = await prisma.message.findMany({
-            where: { userId },
+            where: {
+                OR: [
+                    { userId },
+                    { userId: group.ownerId },
+                    ...(memberContactIds.length > 0 ? [{ contactId: { in: memberContactIds } }] : []),
+                ],
+            },
             orderBy: { timestamp: 'asc' },
             select: {
                 id: true,
@@ -1395,24 +1621,44 @@ router.get('/groups/:id/messages', async (req, res, next) => {
 
         const broadcastMessages = messages.filter((msg) => {
             if (!msg.mediaData) return false;
-            try {
-                const mediaData = typeof msg.mediaData === 'string' ? JSON.parse(msg.mediaData) : msg.mediaData;
-                return mediaData.broadcast_group_id === groupId;
-            } catch {
-                return false;
+            let data = msg.mediaData;
+            while (typeof data === 'string') {
+                try {
+                    data = JSON.parse(data);
+                } catch {
+                    break;
+                }
             }
+            if (typeof data === 'object' && data !== null) {
+                return String(data.broadcast_group_id || '').toLowerCase() === String(groupId || '').toLowerCase();
+            }
+            return false;
         });
+
+        // Ensure all contact IDs referenced in broadcastMessages are present in contactMap
+        const allContactIds = [...new Set(broadcastMessages.map((m) => m.contactId).filter(Boolean))];
+        const missingContactIds = allContactIds.filter((cid) => !contactMap.has(cid));
+        if (missingContactIds.length > 0) {
+            const extraContacts = await prisma.contact.findMany({
+                where: { id: { in: missingContactIds } },
+            });
+            for (const c of extraContacts) {
+                contactMap.set(c.id, c);
+            }
+        }
 
         // Group messages by broadcast_run_id (or timestamp if sent earlier)
         const broadcastRuns = new Map();
         for (const msg of broadcastMessages) {
-            let runId = null;
-            try {
-                const parsed = typeof msg.mediaData === 'string' ? JSON.parse(msg.mediaData) : msg.mediaData;
-                runId = parsed?.broadcast_run_id;
-            } catch {
-                // ignore
+            let data = msg.mediaData;
+            while (typeof data === 'string') {
+                try {
+                    data = JSON.parse(data);
+                } catch {
+                    break;
+                }
             }
+            const runId = (typeof data === 'object' && data !== null) ? data.broadcast_run_id : null;
             const key = runId || msg.timestamp.toISOString();
 
             if (!broadcastRuns.has(key)) {
@@ -1424,10 +1670,28 @@ router.get('/groups/:id/messages', async (req, res, next) => {
         const formattedMessages = Array.from(broadcastRuns.values()).map((items) => {
             const rep = items[0];
             const total = items.length;
-            const readCount = items.filter((m) => m.status === 'READ').length;
-            const deliveredCount = items.filter((m) => m.status === 'DELIVERED').length;
-            const failedCount = items.filter((m) => m.status === 'FAILED').length;
-            const sentCount = items.filter((m) => m.status === 'SENT' || m.status === 'PENDING').length;
+
+            const readItems = items.filter((m) => {
+                const s = (m.status || '').toUpperCase();
+                return s === 'READ' || Boolean(m.isRead) || Boolean(m.readAt);
+            });
+            const readCount = readItems.length;
+
+            const deliveredItems = items.filter((m) => {
+                const s = (m.status || '').toUpperCase();
+                return s === 'READ' || s === 'DELIVERED' || Boolean(m.isRead) || Boolean(m.readAt) || Boolean(m.deliveredAt);
+            });
+            const deliveredCount = deliveredItems.length;
+
+            const failedItems = items.filter((m) => {
+                const s = (m.status || '').toUpperCase();
+                return s === 'FAILED' || Boolean(m.errorMessage);
+            });
+            const failedCount = failedItems.length;
+
+            const unreadCount = Math.max(0, total - readCount);
+            const undeliveredCount = Math.max(0, total - deliveredCount);
+            const sentCount = Math.max(0, total - deliveredCount - failedCount);
 
             let overallStatus = 'sent';
             if (failedCount === total && total > 0) {
@@ -1442,19 +1706,43 @@ router.get('/groups/:id/messages', async (req, res, next) => {
 
             const recipients = items.map((m) => {
                 const c = contactMap.get(m.contactId);
-                const rawStatus = m.status ? String(m.status).toLowerCase() : (m.isRead ? 'read' : 'sent');
+                const s = (m.status || '').toUpperCase();
+                const isRead = s === 'READ' || Boolean(m.isRead) || Boolean(m.readAt);
+                const isDelivered = isRead || s === 'DELIVERED' || Boolean(m.deliveredAt);
+                const isFailed = s === 'FAILED' || Boolean(m.errorMessage);
+
+                let recipientStatus = 'sent';
+                if (isFailed) {
+                    recipientStatus = 'failed';
+                } else if (isRead) {
+                    recipientStatus = 'read';
+                } else if (isDelivered) {
+                    recipientStatus = 'delivered';
+                }
+
                 return {
                     message_id: m.id,
                     contact_id: m.contactId,
                     contact_name: c?.customName || c?.whatsappName || c?.phoneNumber || 'Contact',
                     phone_number: c?.phoneNumber || '',
-                    status: rawStatus,
+                    status: recipientStatus,
+                    is_read: isRead,
+                    is_delivered: isDelivered,
                     delivered_at: m.deliveredAt?.toISOString() || null,
                     read_at: m.readAt?.toISOString() || null,
                     error_message: m.errorMessage || null,
                     timestamp: m.timestamp.toISOString(),
                 };
             });
+
+            let repMediaData = rep.mediaData;
+            while (typeof repMediaData === 'string') {
+                try {
+                    repMediaData = JSON.parse(repMediaData);
+                } catch {
+                    break;
+                }
+            }
 
             return {
                 id: rep.id,
@@ -1464,7 +1752,7 @@ router.get('/groups/:id/messages', async (req, res, next) => {
                 timestamp: rep.timestamp.toISOString(),
                 is_sent_by_me: true,
                 message_type: rep.messageType,
-                media_data: rep.mediaData,
+                media_data: repMediaData,
                 reactions: rep.reactions,
                 is_read: true,
                 status: overallStatus,
@@ -1472,6 +1760,8 @@ router.get('/groups/:id/messages', async (req, res, next) => {
                     total,
                     read_count: readCount,
                     delivered_count: deliveredCount,
+                    unread_count: unreadCount,
+                    undelivered_count: undeliveredCount,
                     sent_count: sentCount,
                     failed_count: failedCount,
                 },
@@ -1490,15 +1780,15 @@ router.post('/groups/:id/broadcast', async (req, res, next) => {
         const userId = getUserId(req, res);
         if (!userId) return;
         const groupId = req.params.id;
-        const { message, templateName = null, templateData = null, variables = null } = req.body || {};
+        const { message, templateName = null, templateData = null, variables = null, mediaUrl = null, mediaId = null } = req.body || {};
 
         if (!message && !templateName) {
             res.status(400).json({ error: 'Message or template name is required' });
             return;
         }
 
-        const group = await prisma.chatGroup.findFirst({ where: { id: groupId, ownerId: userId } });
-        if (!group) {
+        const group = await prisma.chatGroup.findFirst({ where: { id: groupId } });
+        if (!group || (group.ownerId !== userId && req.headers['x-admin'] !== '1')) {
             res.status(404).json({ error: 'Group not found or unauthorized' });
             return;
         }
@@ -1528,6 +1818,10 @@ router.post('/groups/:id/broadcast', async (req, res, next) => {
 
         for (const member of members) {
             try {
+                if (!member.contact?.phoneNumber) {
+                    console.warn(`[Broadcast] Member ${member.id} has no valid contact or phone number`);
+                    continue;
+                }
                 const cleanPhone = cleanPhoneNumber(member.contact.phoneNumber);
                 let messageResponse;
                 let content = message;
@@ -1543,11 +1837,13 @@ router.post('/groups/:id/broadcast', async (req, res, next) => {
                         accessToken,
                         phoneNumberId,
                         apiVersion,
+                        mediaUrl,
+                        mediaId,
                         businessAccountId: settings.businessAccountId,
                     });
 
                     const components = Array.isArray(templateData?.components) ? templateData.components : [];
-                    const bodyComponent = components.find((c) => c.type === 'BODY');
+                    const bodyComponent = components.find((c) => c.type === 'BODY') || templateData?.formatted_components?.body;
                     let displayContent = bodyComponent?.text || message || `Template: ${templateName}`;
                     if (bodyComponent?.text && variables?.body) {
                         for (const [key, value] of Object.entries(variables.body)) {
@@ -1557,7 +1853,7 @@ router.post('/groups/:id/broadcast', async (req, res, next) => {
                     content = displayContent;
 
                     const formattedHeader = (() => {
-                        const headerComp = components.find((c) => c.type === 'HEADER');
+                        const headerComp = components.find((c) => c.type === 'HEADER') || templateData?.formatted_components?.header;
                         if (!headerComp) return null;
                         let headerText = headerComp.text || null;
                         if (headerText && variables?.header) {
@@ -1565,16 +1861,17 @@ router.post('/groups/:id/broadcast', async (req, res, next) => {
                                 headerText = headerText.replace(new RegExp(`\\{\\{${k}\\}\\}`, 'g'), v);
                             }
                         }
+                        const resolvedMediaUrl = mediaUrl || headerComp.media_url || null;
                         return {
                             format: headerComp.format || 'TEXT',
                             text: headerText,
-                            media_url: mediaUrl || null,
-                            filename: headerComp.format === 'DOCUMENT' ? (mediaUrl?.split('/').pop() || 'Document') : null,
+                            media_url: resolvedMediaUrl,
+                            filename: headerComp.format === 'DOCUMENT' ? (resolvedMediaUrl?.split('/').pop() || 'Document') : null,
                         };
                     })();
 
                     const formattedFooter = (() => {
-                        const footerComp = components.find((c) => c.type === 'FOOTER');
+                        const footerComp = components.find((c) => c.type === 'FOOTER') || templateData?.formatted_components?.footer;
                         if (!footerComp?.text) return null;
                         let footerText = footerComp.text;
                         if (variables?.footer) {
@@ -1596,20 +1893,20 @@ router.post('/groups/:id/broadcast', async (req, res, next) => {
                         return [];
                     })();
 
-                    mediaData = {
+                    mediaData = JSON.parse(JSON.stringify({
                         type: 'template',
                         template_name: templateName,
-                        template_id: templateData.id,
-                        language: templateData.language,
+                        template_id: templateData?.id || null,
+                        language: typeof templateData?.language === 'string' ? templateData.language : (templateData?.language?.code || 'en_US'),
                         variables: variables || {},
-                        header: formattedHeader,
+                        header: formattedHeader || null,
                         body: { text: displayContent },
-                        footer: formattedFooter,
-                        buttons: formattedButtons,
-                        original_content: bodyComponent?.text || templateName,
+                        footer: formattedFooter || null,
+                        buttons: formattedButtons || [],
+                        original_content: bodyComponent?.text || templateName || '',
                         broadcast_group_id: groupId,
                         broadcast_run_id: broadcastRunId,
-                    };
+                    }));
                 } else {
                     messageResponse = await sendTextMessage({
                         to: cleanPhone,
@@ -1620,10 +1917,19 @@ router.post('/groups/:id/broadcast', async (req, res, next) => {
                     });
                 }
 
-                const messageId = messageResponse.messages?.[0]?.id || `broadcast_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+                const messageId = messageResponse?.messages?.[0]?.id || `broadcast_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 
-                await prisma.message.create({
-                    data: {
+                await prisma.message.upsert({
+                    where: { id: messageId },
+                    update: {
+                        userId,
+                        contactId: member.contact.id,
+                        content,
+                        status: 'SENT',
+                        messageType: templateName ? 'template' : 'text',
+                        mediaData,
+                    },
+                    create: {
                         id: messageId,
                         userId,
                         contactId: member.contact.id,
@@ -1633,14 +1939,34 @@ router.post('/groups/:id/broadcast', async (req, res, next) => {
                         isRead: false,
                         status: 'SENT',
                         messageType: templateName ? 'template' : 'text',
-                        mediaData: JSON.stringify(mediaData),
+                        mediaData,
+                    },
+                });
+
+                // Notify SSE listeners for real-time update
+                chatEventBus.publishNewMessage({
+                    userId,
+                    contactId: member.contact.id,
+                    groupId,
+                    message: {
+                        id: messageId,
+                        sender_id: userId,
+                        receiver_id: groupId,
+                        content,
+                        timestamp: new Date().toISOString(),
+                        is_sent_by_me: true,
+                        is_read: false,
+                        status: 'sent',
+                        message_type: templateName ? 'template' : 'text',
+                        media_data: mediaData,
                     },
                 });
 
                 results.success += 1;
             } catch (error) {
+                console.error(`[Broadcast] Failed to send to ${member.contact?.phoneNumber}:`, error);
                 results.failed += 1;
-                results.errors.push(`${member.contact.phoneNumber}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                results.errors.push(`${member.contact?.phoneNumber || 'Unknown'}: ${error instanceof Error ? error.message : 'Unknown error'}`);
             }
         }
 

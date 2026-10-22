@@ -80,6 +80,7 @@ export default function ChatPage() {
   const [checkingSetup, setCheckingSetup] = useState(true);
   const [broadcastGroupId, setBroadcastGroupId] = useState<string | null>(null);
   const [broadcastGroupName, setBroadcastGroupName] = useState<string | null>(null);
+  const [deletingContactIds, setDeletingContactIds] = useState<string[]>([]);
   const { messagingBlocked, messagingBlockedReason } = useSubscriptionStatus();
 
   const normalizeReactions = useCallback((raw?: ReactionEntry[] | null | string) => {
@@ -369,7 +370,10 @@ export default function ChatPage() {
 
     const fetchBroadcastMessages = async () => {
       try {
-        const response = await fetch(`/api/groups/${broadcastGroupId}/messages`);
+        const queryParams = user?.id ? `?userId=${encodeURIComponent(user.id)}` : '';
+        const response = await fetch(`/api/groups/${broadcastGroupId}/messages${queryParams}`, {
+          headers: user?.id ? { 'x-user-id': user.id } : undefined,
+        });
         const result = await response.json();
 
         if (response.ok && result.success) {
@@ -378,18 +382,20 @@ export default function ChatPage() {
             const optimisticMessages = prevMessages.filter(msg => msg.isOptimistic);
             const fetchedMessages = result.messages || [];
 
+            if (fetchedMessages.length === 0 && optimisticMessages.length > 0) {
+              return optimisticMessages;
+            }
+
             // Combine real messages with optimistic ones, avoiding duplicates
-            return [...fetchedMessages, ...optimisticMessages];
+            const fetchedIds = new Set(fetchedMessages.map((m: Message) => m.id));
+            const remainingOptimistic = optimisticMessages.filter(m => !fetchedIds.has(m.id));
+            return [...fetchedMessages, ...remainingOptimistic];
           });
         } else {
           console.error('Failed to fetch broadcast messages:', result.error);
-          // Only clear messages if there are no optimistic ones
-          setMessages((prevMessages) => prevMessages.filter(msg => msg.isOptimistic));
         }
       } catch (error) {
         console.error('Error fetching broadcast messages:', error);
-        // Only clear messages if there are no optimistic ones
-        setMessages((prevMessages) => prevMessages.filter(msg => msg.isOptimistic));
       }
     };
 
@@ -532,7 +538,26 @@ export default function ChatPage() {
     }
   }, [user]);
 
+  const handleStartDelete = useCallback((contactId: string) => {
+    setDeletingContactIds((prev) => [...new Set([...prev, contactId])]);
+  }, []);
+
+  const handleFinishDelete = useCallback((contactId: string, success: boolean) => {
+    setDeletingContactIds((prev) => prev.filter((id) => id !== contactId));
+    if (success) {
+      setUsers((prev) => prev.filter((u) => u.id !== contactId));
+      setSelectedUser((prev) => (prev?.id === contactId ? null : prev));
+      setMessages((prev) => (selectedUser?.id === contactId ? [] : prev));
+      if (selectedUser?.id === contactId) {
+        setShowChat(false);
+        setBroadcastGroupId(null);
+        setBroadcastGroupName(null);
+      }
+    }
+  }, [selectedUser]);
+
   const handleUserDelete = useCallback((deletedUserId: string) => {
+    setUsers((prev) => prev.filter((u) => u.id !== deletedUserId));
     setSelectedUser((prev) => (prev?.id === deletedUserId ? null : prev));
     setMessages((prev) => (selectedUser?.id === deletedUserId ? [] : prev));
     if (selectedUser?.id === deletedUserId) {
@@ -541,6 +566,15 @@ export default function ChatPage() {
       setBroadcastGroupName(null);
     }
   }, [selectedUser]);
+
+  const handleGroupDelete = useCallback((deletedGroupId: string) => {
+    if (broadcastGroupId === deletedGroupId) {
+      setBroadcastGroupId(null);
+      setBroadcastGroupName(null);
+      setMessages([]);
+      setShowChat(false);
+    }
+  }, [broadcastGroupId]);
 
   const handleUpdateName = useCallback(async (userId: string, customName: string) => {
     try {
@@ -611,6 +645,7 @@ export default function ChatPage() {
           templateName: parsedContent.templateName,
           templateData: parsedContent.templateData,
           variables: parsedContent.variables,
+          mediaUrl: parsedContent.mediaUrl,
         };
       } else {
         requestBody = {
@@ -643,12 +678,17 @@ export default function ChatPage() {
     setMessages((prev) => [...prev, optimisticMessage]);
 
     try {
-      const response = await fetch(`/api/groups/${broadcastGroupId}/broadcast`, {
+      const queryParams = user?.id ? `?userId=${encodeURIComponent(user.id)}` : '';
+      const response = await fetch(`/api/groups/${broadcastGroupId}/broadcast${queryParams}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...(user?.id ? { 'x-user-id': user.id } : {}),
         },
-        body: JSON.stringify(requestBody),
+        body: JSON.stringify({
+          ...requestBody,
+          userId: user?.id,
+        }),
       });
 
       const result = await response.json();
@@ -657,14 +697,19 @@ export default function ChatPage() {
         throw new Error(result.error || 'Failed to send broadcast');
       }
 
-      // Remove optimistic message and refresh to get real messages
-      setMessages((prev) => prev.filter(m => m.id !== optimisticId));
-
       // Refresh broadcast messages to show the real ones
-      const messagesResponse = await fetch(`/api/groups/${broadcastGroupId}/messages`);
+      const messagesResponse = await fetch(`/api/groups/${broadcastGroupId}/messages${queryParams}`, {
+        headers: user?.id ? { 'x-user-id': user.id } : undefined,
+      });
       const messagesResult = await messagesResponse.json();
-      if (messagesResponse.ok && messagesResult.success) {
-        setMessages(messagesResult.messages || []);
+      if (messagesResponse.ok && messagesResult.success && Array.isArray(messagesResult.messages) && messagesResult.messages.length > 0) {
+        setMessages(messagesResult.messages);
+      } else {
+        // If real messages didn't arrive instantly, remove optimistic message after fetching
+        setMessages((prev) => prev.filter(m => m.id !== optimisticId));
+        if (messagesResponse.ok && messagesResult.success) {
+          setMessages(messagesResult.messages || []);
+        }
       }
 
       // Show success message
@@ -881,6 +926,12 @@ export default function ChatPage() {
     );
   }
 
+  const isSelectedUserDeleting = selectedUser ? deletingContactIds.includes(selectedUser.id) : false;
+  const isMessagingDisabled = messagingBlocked || isSelectedUserDeleting;
+  const effectiveDisabledReason = isSelectedUserDeleting
+    ? "Deleting user, please wait..."
+    : messagingBlockedReason;
+
   return (
     <div className="h-full flex bg-[#FAF8F5]/30 dark:bg-[#0C0F0D] overflow-hidden">
       {/* Desktop Layout */}
@@ -896,6 +947,10 @@ export default function ChatPage() {
               onUsersUpdate={refreshUsers}
               onBroadcastToGroup={handleBroadcastToGroup}
               onUserDelete={handleUserDelete}
+              onGroupDelete={handleGroupDelete}
+              deletingContactIds={deletingContactIds}
+              onStartDelete={handleStartDelete}
+              onFinishDelete={handleFinishDelete}
             />
           </div>
 
@@ -916,8 +971,8 @@ export default function ChatPage() {
                 setBroadcastGroupName(null);
               }}
               broadcastGroupName={broadcastGroupName}
-              messagingDisabled={messagingBlocked}
-              messagingDisabledReason={messagingBlockedReason}
+              messagingDisabled={isMessagingDisabled}
+              messagingDisabledReason={effectiveDisabledReason}
               whatsappAccessToken={whatsappAccessToken}
             />
           </div>
@@ -938,6 +993,10 @@ export default function ChatPage() {
                 onUsersUpdate={refreshUsers}
                 onBroadcastToGroup={handleBroadcastToGroup}
                 onUserDelete={handleUserDelete}
+                onGroupDelete={handleGroupDelete}
+                deletingContactIds={deletingContactIds}
+                onStartDelete={handleStartDelete}
+                onFinishDelete={handleFinishDelete}
               />
             </div>
           ) : (
@@ -958,8 +1017,8 @@ export default function ChatPage() {
                 isLoading={sendingMessage}
                 onUpdateName={handleUpdateName}
                 broadcastGroupName={broadcastGroupName}
-                messagingDisabled={messagingBlocked}
-                messagingDisabledReason={messagingBlockedReason}
+                messagingDisabled={isMessagingDisabled}
+                messagingDisabledReason={effectiveDisabledReason}
                 whatsappAccessToken={whatsappAccessToken}
               />
             </div>

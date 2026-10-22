@@ -8,6 +8,8 @@ export interface BroadcastStats {
   total: number;
   read_count: number;
   delivered_count: number;
+  unread_count?: number;
+  undelivered_count?: number;
   sent_count: number;
   failed_count: number;
 }
@@ -262,9 +264,17 @@ export const MessageStatusIcon: React.FC<MessageStatusIconProps> = ({
             </div>
 
             {onClick && (
-              <p className="mt-2.5 pt-2 border-t border-stone-200/80 dark:border-stone-800/80 text-[10px] text-center text-stone-500 hover:text-[#2D583F] dark:hover:text-[#8EAE95] font-medium cursor-pointer">
-                Click bubble to inspect recipient logs →
-              </p>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsOpen(false);
+                  onClick();
+                }}
+                className="w-full mt-2.5 pt-2 border-t border-stone-200/80 dark:border-stone-800/80 text-[11px] text-center text-[#2D583F] dark:text-[#8EAE95] font-semibold cursor-pointer hover:underline transition-colors block"
+              >
+                Click to inspect all recipient statuses →
+              </button>
             )}
           </div>
         )}

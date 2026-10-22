@@ -41,6 +41,10 @@ interface UserListProps {
   onUsersUpdate?: () => void;
   onBroadcastToGroup?: (groupId: string, groupName: string) => void;
   onUserDelete?: (userId: string) => void;
+  deletingContactIds?: string[];
+  onStartDelete?: (userId: string) => void;
+  onFinishDelete?: (userId: string, success: boolean) => void;
+  onGroupDelete?: (groupId: string) => void;
 }
 
 interface NewUserInput {
@@ -70,7 +74,19 @@ function getAvatarStyle(str: string) {
   return AVATAR_PALETTES[index];
 }
 
-export function UserList({ users, selectedUser, onUserSelect, currentUserId, onUsersUpdate, onBroadcastToGroup, onUserDelete }: UserListProps) {
+export function UserList({
+  users,
+  selectedUser,
+  onUserSelect,
+  currentUserId,
+  onUsersUpdate,
+  onBroadcastToGroup,
+  onUserDelete,
+  deletingContactIds = [],
+  onStartDelete,
+  onFinishDelete,
+  onGroupDelete,
+}: UserListProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [showNewChat, setShowNewChat] = useState(false);
   const [newUsers, setNewUsers] = useState<NewUserInput[]>([
@@ -83,8 +99,13 @@ export function UserList({ users, selectedUser, onUserSelect, currentUserId, onU
 
   // Delete contact state
   const [contactToDelete, setContactToDelete] = useState<ChatUser | null>(null);
-  const [isDeletingContact, setIsDeletingContact] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  // Internal tracking of contacts currently being deleted
+  const [internalDeletingIds, setInternalDeletingIds] = useState<string[]>([]);
+  // Optimistically removed IDs once API returns success
+  const [optimisticallyDeletedIds, setOptimisticallyDeletedIds] = useState<string[]>([]);
+  // Transient feedback toast
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   // Groups state
   const [groups, setGroups] = useState<Group[]>([]);
@@ -92,6 +113,19 @@ export function UserList({ users, selectedUser, onUserSelect, currentUserId, onU
   const [editingGroup, setEditingGroup] = useState<Group | null>(null);
 
   const router = useRouter();
+
+  // Combine parent deleting IDs and internal deleting IDs
+  const activeDeletingIds = new Set([...deletingContactIds, ...internalDeletingIds]);
+  const isContactDeleting = (userId: string) => activeDeletingIds.has(userId);
+
+  // Auto-dismiss toast
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => {
+      setToast(null);
+    }, 4000);
+    return () => clearTimeout(timer);
+  }, [toast]);
 
   // Load groups on component mount
   useEffect(() => {
@@ -178,7 +212,7 @@ export function UserList({ users, selectedUser, onUserSelect, currentUserId, onU
 
   // Sort users by last message time (most recent first) and then by unread count
   const sortedUsers = users
-    .filter(user => user.id !== currentUserId)
+    .filter(user => user.id !== currentUserId && !optimisticallyDeletedIds.includes(user.id))
     .sort((a, b) => {
       // First, prioritize users with unread messages
       if ((a.unread_count || 0) > 0 && (b.unread_count || 0) === 0) return -1;
@@ -370,18 +404,22 @@ export function UserList({ users, selectedUser, onUserSelect, currentUserId, onU
     try {
       const response = await fetch(`/api/groups/${groupId}`, {
         method: 'DELETE',
+        headers: currentUserId ? { 'x-user-id': currentUserId } : {},
       });
 
-      if (response.ok) {
-        await loadGroups();
-        if (onUsersUpdate) {
-          await onUsersUpdate();
-        }
-      } else {
-        console.error('Failed to delete group');
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || data.message || 'Failed to delete group');
       }
+
+      await loadGroups();
+      if (onUsersUpdate) {
+        await onUsersUpdate();
+      }
+      onGroupDelete?.(groupId);
     } catch (error) {
       console.error('Error deleting group:', error);
+      throw error;
     }
   };
 
@@ -414,11 +452,21 @@ export function UserList({ users, selectedUser, onUserSelect, currentUserId, onU
   const handleConfirmDelete = async () => {
     if (!contactToDelete) return;
 
-    setIsDeletingContact(true);
+    const targetUser = contactToDelete;
+    const targetId = targetUser.id;
+    const targetDisplayName = getDisplayName(targetUser);
+
+    // Immediately close the confirmation modal so the chat list shows the contact entering deleting state
+    setContactToDelete(null);
     setDeleteError(null);
 
+    // Mark this contact as deleting immediately (both locally and for parent)
+    setInternalDeletingIds((prev) => [...new Set([...prev, targetId])]);
+    onStartDelete?.(targetId);
+
     try {
-      const response = await fetch(`/api/conversations/${contactToDelete.id}`, {
+      // Call the API: this synchronously deletes S3 objects in bulk first, then deletes DB records
+      const response = await fetch(`/api/conversations/${targetId}`, {
         method: 'DELETE',
         headers: currentUserId ? { 'x-user-id': currentUserId } : {},
       });
@@ -429,28 +477,70 @@ export function UserList({ users, selectedUser, onUserSelect, currentUserId, onU
         throw new Error(result.error || result.message || 'Failed to delete contact');
       }
 
-      const deletedId = contactToDelete.id;
-      setContactToDelete(null);
+      // ONLY AFTER API SUCCEEDS:
+      // Remove contact from the active list
+      setOptimisticallyDeletedIds((prev) => [...new Set([...prev, targetId])]);
+      setInternalDeletingIds((prev) => prev.filter((id) => id !== targetId));
 
-      // Deselect if active
+      // Deselect active conversation if it matches
       if (onUserDelete) {
-        onUserDelete(deletedId);
+        onUserDelete(targetId);
       }
+      onFinishDelete?.(targetId, true);
 
-      // Refresh list
+      // Trigger list refresh
       if (onUsersUpdate) {
         await onUsersUpdate();
       }
+
+      setToast({
+        type: 'success',
+        message: `Deleted ${targetDisplayName} successfully.`,
+      });
     } catch (error) {
       console.error('Error deleting contact:', error);
-      setDeleteError(error instanceof Error ? error.message : 'Failed to delete contact');
-    } finally {
-      setIsDeletingContact(false);
+      // Remove from deleting state so contact row is re-enabled to click
+      setInternalDeletingIds((prev) => prev.filter((id) => id !== targetId));
+      onFinishDelete?.(targetId, false);
+
+      const errorMessage = error instanceof Error ? error.message : 'Failed to delete contact';
+      setToast({
+        type: 'error',
+        message: errorMessage,
+      });
     }
   };
 
   return (
-    <div className="h-full flex flex-col bg-[#FAF8F5]/30 dark:bg-[#0C0F0D]">
+    <div className="h-full flex flex-col bg-[#FAF8F5]/30 dark:bg-[#0C0F0D] relative">
+      {/* Toast Notification */}
+      {toast && (
+        <div className="absolute top-16 left-3 right-3 z-30 animate-in fade-in slide-in-from-top-2 duration-200">
+          <div
+            className={`p-2.5 rounded-xl border flex items-center justify-between gap-2 shadow-lg backdrop-blur-md ${
+              toast.type === 'success'
+                ? 'bg-emerald-500/10 dark:bg-emerald-950/40 border-emerald-500/30 text-emerald-800 dark:text-emerald-300'
+                : 'bg-red-500/10 dark:bg-red-950/40 border-red-500/30 text-red-800 dark:text-red-300'
+            }`}
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              {toast.type === 'success' ? (
+                <Check className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+              ) : (
+                <AlertTriangle className="h-4 w-4 shrink-0 text-red-600 dark:text-red-400" />
+              )}
+              <span className="text-xs font-medium truncate">{toast.message}</span>
+            </div>
+            <button
+              onClick={() => setToast(null)}
+              className="p-1 rounded-md hover:bg-black/5 dark:hover:bg-white/10 shrink-0 text-stone-400 hover:text-stone-600"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="px-4 py-3.5 border-b border-stone-200/80 dark:border-stone-800/80 bg-[#FAF8F5]/90 dark:bg-[#131915]/90 backdrop-blur-md sticky top-0 z-10 transition-colors">
         <div className="flex items-center justify-between">
@@ -672,24 +762,40 @@ export function UserList({ users, selectedUser, onUserSelect, currentUserId, onU
             const avatarStyle = getAvatarStyle(user.id || user.name);
             const isSelected = selectedUser?.id === user.id;
             const hasUnread = (user.unread_count || 0) > 0;
+            const isDeleting = isContactDeleting(user.id);
 
             return (
               <div
                 key={user.id}
-                onClick={() => onUserSelect(user)}
-                className={`group relative p-3 sm:p-3.5 cursor-pointer transition-all duration-150 ${
-                  isSelected
-                    ? "bg-[#5F7C65]/10 dark:bg-[#5F7C65]/20 border-l-[3px] border-l-[#5F7C65]"
-                    : "hover:bg-stone-100/70 dark:hover:bg-stone-800/40 border-l-[3px] border-l-transparent"
+                onClick={() => {
+                  if (isDeleting) return;
+                  onUserSelect(user);
+                }}
+                className={`group relative p-3 sm:p-3.5 transition-all duration-200 ${
+                  isDeleting
+                    ? "pointer-events-none select-none cursor-not-allowed bg-red-500/[0.07] dark:bg-red-500/[0.12] border-l-[3px] border-l-red-500/80"
+                    : isSelected
+                    ? "cursor-pointer bg-[#5F7C65]/10 dark:bg-[#5F7C65]/20 border-l-[3px] border-l-[#5F7C65]"
+                    : "cursor-pointer hover:bg-stone-100/70 dark:hover:bg-stone-800/40 border-l-[3px] border-l-transparent"
                 }`}
+                aria-disabled={isDeleting}
               >
                 <div className="flex items-start gap-3">
-                  {/* Deterministic Botanical Avatar */}
-                  <Avatar className={`h-11 w-11 rounded-xl border shrink-0 transition-transform duration-200 group-hover:scale-105 shadow-2xs ${avatarStyle.border}`}>
-                    <AvatarFallback className={`rounded-xl font-semibold text-sm ${avatarStyle.bg} ${avatarStyle.text}`}>
-                      {getDisplayName(user).substring(0, 2).toUpperCase()}
-                    </AvatarFallback>
-                  </Avatar>
+                  {/* Botanical Avatar or Spinning Delete Avatar */}
+                  <div className="relative shrink-0">
+                    <Avatar className={`h-11 w-11 rounded-xl border shrink-0 transition-all duration-200 shadow-2xs ${
+                      isDeleting ? "border-red-500/40 opacity-70" : `${avatarStyle.border} group-hover:scale-105`
+                    }`}>
+                      <AvatarFallback className={`rounded-xl font-semibold text-sm ${avatarStyle.bg} ${avatarStyle.text}`}>
+                        {getDisplayName(user).substring(0, 2).toUpperCase()}
+                      </AvatarFallback>
+                    </Avatar>
+                    {isDeleting && (
+                      <div className="absolute inset-0 rounded-xl bg-red-500/20 dark:bg-black/60 backdrop-blur-[1px] flex items-center justify-center">
+                        <Loader2 className="h-5 w-5 animate-spin text-red-600 dark:text-red-400" />
+                      </div>
+                    )}
+                  </div>
 
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-1">
@@ -732,23 +838,33 @@ export function UserList({ users, selectedUser, onUserSelect, currentUserId, onU
                           </div>
                         ) : (
                           <div className="flex items-center gap-1.5">
-                            <h3 className={`text-sm truncate text-stone-900 dark:text-stone-100 ${
-                              hasUnread ? "font-bold text-[#2D583F] dark:text-[#8EAE95]" : "font-medium"
+                            <h3 className={`text-sm truncate ${
+                              isDeleting
+                                ? "line-through text-stone-400 dark:text-stone-500 font-normal"
+                                : hasUnread
+                                ? "font-bold text-[#2D583F] dark:text-[#8EAE95]"
+                                : "font-medium text-stone-900 dark:text-stone-100"
                             }`}>
                               {getDisplayName(user)}
                             </h3>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleStartEditName(user);
-                              }}
-                              className="p-0.5 h-5 w-5 text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 opacity-70 md:opacity-0 md:group-hover:opacity-100 transition-opacity"
-                              title="Edit contact name"
-                            >
-                              <Edit3 className="h-3 w-3" />
-                            </Button>
+                            {isDeleting ? (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-semibold uppercase tracking-wider bg-red-500/15 text-red-700 dark:text-red-300 border border-red-500/25 animate-pulse shrink-0">
+                                Deleting
+                              </span>
+                            ) : (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleStartEditName(user);
+                                }}
+                                className="p-0.5 h-5 w-5 text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 opacity-70 md:opacity-0 md:group-hover:opacity-100 transition-opacity"
+                                title="Edit contact name"
+                              >
+                                <Edit3 className="h-3 w-3" />
+                              </Button>
+                            )}
                           </div>
                         )}
 
@@ -760,7 +876,7 @@ export function UserList({ users, selectedUser, onUserSelect, currentUserId, onU
                             ) : (
                               <>
                                 <Phone className="h-2.5 w-2.5 text-stone-400" />
-                                <span>{user.id}</span>
+                                <span>{user.phone_number || (user.id.includes('-') ? '' : user.id) || 'No number'}</span>
                               </>
                             )}
                           </p>
@@ -769,24 +885,33 @@ export function UserList({ users, selectedUser, onUserSelect, currentUserId, onU
 
                       <div className="flex flex-col items-end gap-1 shrink-0 ml-2">
                         <div className="flex items-center gap-1">
-                          <span className="text-[10px] text-stone-400 dark:text-stone-500 tabular-nums">
-                            {formatTime(user.last_message_time || user.last_active)}
-                          </span>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleRequestDelete(user);
-                            }}
-                            className="h-6 w-6 rounded-lg text-stone-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-500/10 transition-all opacity-80 md:opacity-0 md:group-hover:opacity-100 focus:opacity-100"
-                            title="Delete contact"
-                            aria-label={`Delete contact ${getDisplayName(user)}`}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
+                          {isDeleting ? (
+                            <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-medium text-red-600 dark:text-red-400 bg-red-500/10">
+                              <Loader2 className="h-3 w-3 animate-spin shrink-0" />
+                              <span className="hidden sm:inline">Deleting...</span>
+                            </div>
+                          ) : (
+                            <>
+                              <span className="text-[10px] text-stone-400 dark:text-stone-500 tabular-nums">
+                                {formatTime(user.last_message_time || user.last_active)}
+                              </span>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleRequestDelete(user);
+                                }}
+                                className="h-6 w-6 rounded-lg text-stone-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-500/10 transition-all opacity-80 md:opacity-0 md:group-hover:opacity-100 focus:opacity-100"
+                                title="Delete contact"
+                                aria-label={`Delete contact ${getDisplayName(user)}`}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </>
+                          )}
                         </div>
-                        {hasUnread && (
+                        {!isDeleting && hasUnread && (
                           <span className="bg-[#5F7C65] text-white text-[10px] font-bold rounded-full min-w-[18px] h-4.5 px-1.5 flex items-center justify-center shadow-xs">
                             {user.unread_count! > 99 ? '99+' : user.unread_count}
                           </span>
@@ -794,15 +919,29 @@ export function UserList({ users, selectedUser, onUserSelect, currentUserId, onU
                       </div>
                     </div>
 
-                    <p className={`text-xs truncate mt-1 ${
-                      hasUnread
-                        ? "font-medium text-stone-900 dark:text-stone-100" 
-                        : "text-stone-500 dark:text-stone-400"
-                    }`}>
-                      {getMessagePreview(user)}
-                    </p>
+                    {isDeleting ? (
+                      <p className="text-[11px] font-medium text-red-600 dark:text-red-400 flex items-center gap-1.5 mt-1">
+                        <Loader2 className="h-3 w-3 animate-spin shrink-0" />
+                        <span>Deleting user, please wait...</span>
+                      </p>
+                    ) : (
+                      <p className={`text-xs truncate mt-1 ${
+                        hasUnread
+                          ? "font-medium text-stone-900 dark:text-stone-100" 
+                          : "text-stone-500 dark:text-stone-400"
+                      }`}>
+                        {getMessagePreview(user)}
+                      </p>
+                    )}
                   </div>
                 </div>
+
+                {/* Animated micro-bar for active deletion */}
+                {isDeleting && (
+                  <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-red-500/20 overflow-hidden">
+                    <div className="h-full bg-red-500 w-1/3 animate-pulse" />
+                  </div>
+                )}
               </div>
             );
           })
@@ -826,14 +965,12 @@ export function UserList({ users, selectedUser, onUserSelect, currentUserId, onU
         <div
           className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in-0 duration-150"
           onClick={() => {
-            if (!isDeletingContact) {
-              setContactToDelete(null);
-              setDeleteError(null);
-            }
+            setContactToDelete(null);
+            setDeleteError(null);
           }}
         >
           <div
-            className="bg-white dark:bg-[#18201B] border border-stone-200/80 dark:border-stone-800 rounded-2xl max-w-md w-full shadow-xl overflow-hidden animate-in zoom-in-95 duration-150"
+            className="bg-white dark:bg-[#18201B] border border-stone-200/80 dark:border-stone-800 rounded-2xl max-w-md w-full shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="p-6">
@@ -856,8 +993,16 @@ export function UserList({ users, selectedUser, onUserSelect, currentUserId, onU
                         ({contactToDelete.phone_number})
                       </span>
                     )}
-                    ? All messages and conversations with this contact will be permanently deleted for your account. This action cannot be undone.
+                    ?
                   </p>
+
+                  {/* Non-technical user warning */}
+                  <div className="mt-3.5 p-3 rounded-xl bg-amber-500/10 dark:bg-amber-500/15 border border-amber-500/20 text-xs text-amber-800 dark:text-amber-300 flex items-start gap-2.5">
+                    <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                    <p className="leading-relaxed">
+                      This user will be permanently deleted. <strong>This operation cannot be reversed.</strong>
+                    </p>
+                  </div>
 
                   {deleteError && (
                     <div className="mt-3 p-2.5 rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/50 flex items-center gap-2 text-xs text-red-700 dark:text-red-300">
@@ -877,7 +1022,6 @@ export function UserList({ users, selectedUser, onUserSelect, currentUserId, onU
                   setContactToDelete(null);
                   setDeleteError(null);
                 }}
-                disabled={isDeletingContact}
                 className="rounded-xl border-stone-200 dark:border-stone-700 hover:bg-stone-100 dark:hover:bg-stone-800 text-stone-700 dark:text-stone-300"
               >
                 Cancel
@@ -885,20 +1029,10 @@ export function UserList({ users, selectedUser, onUserSelect, currentUserId, onU
               <Button
                 size="sm"
                 onClick={handleConfirmDelete}
-                disabled={isDeletingContact}
                 className="bg-red-600 hover:bg-red-700 text-white rounded-xl shadow-xs gap-1.5"
               >
-                {isDeletingContact ? (
-                  <>
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    <span>Deleting...</span>
-                  </>
-                ) : (
-                  <>
-                    <Trash2 className="h-3.5 w-3.5" />
-                    <span>Delete Contact</span>
-                  </>
-                )}
+                <Trash2 className="h-3.5 w-3.5" />
+                <span>Delete User</span>
               </Button>
             </div>
           </div>

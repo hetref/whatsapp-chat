@@ -43,6 +43,11 @@ class ChatEventBus extends EventEmitter {
             this.emit(`conversation:${event.contactId}`, payload);
         }
 
+        // Emit for specific broadcast group if known
+        if (event.groupId) {
+            this.emit(`conversation:${event.groupId}`, payload);
+        }
+
         // Global emit for listeners
         this.emit('status_update', { ...payload, userId: event.userId });
     }
@@ -52,6 +57,7 @@ class ChatEventBus extends EventEmitter {
      * @param {Object} event
      * @param {string} event.userId
      * @param {string} [event.contactId]
+     * @param {string} [event.groupId]
      * @param {Object} event.message
      */
     publishNewMessage(event) {
@@ -59,6 +65,7 @@ class ChatEventBus extends EventEmitter {
             type: 'new_message',
             message: event.message,
             contactId: event.contactId || event.message?.contactId,
+            groupId: event.groupId || null,
         };
 
         if (event.userId) {
@@ -67,6 +74,10 @@ class ChatEventBus extends EventEmitter {
 
         if (event.contactId) {
             this.emit(`conversation:${event.contactId}`, payload);
+        }
+
+        if (event.groupId) {
+            this.emit(`conversation:${event.groupId}`, payload);
         }
 
         this.emit('new_message', { ...payload, userId: event.userId });

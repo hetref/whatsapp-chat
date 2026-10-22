@@ -1,4 +1,4 @@
-import { S3Client, GetObjectCommand, HeadObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, GetObjectCommand, HeadObjectCommand, PutObjectCommand, DeleteObjectCommand, DeleteObjectsCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 const AWS_REGION = process.env.AWS_REGION;
@@ -155,6 +155,72 @@ export async function checkS3ObjectExists(s3Key) {
     } catch {
         return false;
     }
+}
+
+export async function deleteS3Object(s3Key) {
+    if (!s3Key) return false;
+    assertS3Configured();
+
+    try {
+        const command = new DeleteObjectCommand({
+            Bucket: AWS_BUCKET_NAME,
+            Key: s3Key,
+        });
+
+        await s3Client.send(command);
+        return true;
+    } catch (error) {
+        console.warn(`[S3 Delete Error] Failed to delete object ${s3Key}:`, error?.message || error);
+        return false;
+    }
+}
+
+export async function deleteS3Objects(s3Keys) {
+    if (!Array.isArray(s3Keys) || s3Keys.length === 0) return { deleted: 0, errors: [] };
+    assertS3Configured();
+
+    const uniqueKeys = [...new Set(s3Keys.filter(Boolean))];
+    if (uniqueKeys.length === 0) return { deleted: 0, errors: [] };
+
+    const batchSize = 1000;
+    const batches = [];
+    for (let i = 0; i < uniqueKeys.length; i += batchSize) {
+        batches.push(uniqueKeys.slice(i, i + batchSize));
+    }
+
+    let totalDeleted = 0;
+    const allErrors = [];
+
+    // Delete all batches in parallel for high performance bulk deletion
+    await Promise.all(
+        batches.map(async (batch) => {
+            try {
+                const command = new DeleteObjectsCommand({
+                    Bucket: AWS_BUCKET_NAME,
+                    Delete: {
+                        Objects: batch.map((key) => ({ Key: key })),
+                        Quiet: true,
+                    },
+                });
+
+                const result = await s3Client.send(command);
+                const errCount = result.Errors?.length || 0;
+                totalDeleted += batch.length - errCount;
+                if (result.Errors?.length) {
+                    allErrors.push(...result.Errors);
+                }
+            } catch (err) {
+                console.warn('[S3 DeleteObjects Batch Error]:', err?.message || err);
+                for (const key of batch) {
+                    const ok = await deleteS3Object(key);
+                    if (ok) totalDeleted++;
+                    else allErrors.push({ Key: key, Message: 'Fallback single delete failed' });
+                }
+            }
+        })
+    );
+
+    return { deleted: totalDeleted, errors: allErrors };
 }
 
 export const MAX_MEDIA_BATCH = 10;

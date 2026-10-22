@@ -3,7 +3,7 @@
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ArrowLeft, Send, MessageCircle, Loader2, X, Download, FileText, Image as ImageIcon, Play, Pause, Volume2, Paperclip, MessageSquare, Users, AlertTriangle, Plus, ShieldCheck } from "lucide-react";
+import { ArrowLeft, Send, MessageCircle, Loader2, X, Download, FileText, Image as ImageIcon, Play, Pause, Volume2, Paperclip, MessageSquare, Users, AlertTriangle, Plus, ShieldCheck, Info, CheckCheck, Clock } from "lucide-react";
 import LogoIcon from "@/components/logo-icon";
 import { useState, useRef, useEffect, useCallback } from "react";
 import Image from "next/image";
@@ -829,12 +829,16 @@ export function ChatWindow({
 
     if (message.media_data) {
       try {
-        // Check if media_data is already an object or a string
-        if (typeof message.media_data === 'string') {
-          mediaData = JSON.parse(message.media_data);
-        } else if (typeof message.media_data === 'object') {
-          // Already an object, use it directly
-          mediaData = message.media_data as unknown as MediaData;
+        let parsed: unknown = message.media_data;
+        while (typeof parsed === 'string') {
+          try {
+            parsed = JSON.parse(parsed);
+          } catch {
+            break;
+          }
+        }
+        if (typeof parsed === 'object' && parsed !== null) {
+          mediaData = parsed as unknown as MediaData;
         }
       } catch (error) {
         console.error('Error parsing media data:', error, 'Type:', typeof message.media_data);
@@ -847,9 +851,9 @@ export function ChatWindow({
       }`;
 
     const isProcessing = processingMedia.has(message.id);
+    const isBroadcast = Boolean(broadcastGroupName || message.broadcast_stats);
 
     const renderStatusFooter = () => {
-      const isBroadcast = Boolean(broadcastGroupName || message.broadcast_stats);
       return (
         <div className={`flex items-center gap-1.5 ${isOwn ? 'justify-end' : 'justify-start'} mt-1.5`}>
           <span className={`text-[11px] leading-none select-none font-mono ${isOwn ? 'text-white/70' : 'text-stone-500 dark:text-stone-400'}`}>
@@ -873,6 +877,23 @@ export function ChatWindow({
                 }
               }}
             />
+          )}
+          {isBroadcast && isOwn && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setSelectedBroadcastMessage(message);
+                setShowBroadcastInfo(true);
+              }}
+              className={`p-1 rounded-full transition-all cursor-pointer active:scale-95 ${
+                isOwn ? 'text-white/75 hover:text-white hover:bg-white/15' : 'text-stone-400 hover:text-stone-600 hover:bg-stone-100 dark:hover:bg-stone-800'
+              }`}
+              title="View broadcast read & delivery recipients"
+              aria-label="View broadcast read recipients"
+            >
+              <Info className="h-3.5 w-3.5" />
+            </button>
           )}
         </div>
       );
@@ -1278,6 +1299,77 @@ export function ChatWindow({
               )}
             </div>
 
+            {/* Broadcast Delivery & Seen Status Banner for Template Messages */}
+            {isBroadcast && message.broadcast_stats && (
+              <div
+                className={`mt-3 pt-2.5 border-t ${
+                  isOwn ? 'border-white/20' : 'border-stone-200 dark:border-stone-800'
+                } flex items-center justify-between gap-2 flex-wrap`}
+              >
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {/* Seen / Read count */}
+                  <span
+                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg font-medium text-[11px] ${
+                      isOwn
+                        ? 'bg-sky-400/25 text-sky-100 border border-sky-400/30'
+                        : 'bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300 border border-sky-200 dark:border-sky-800'
+                    }`}
+                    title="Recipients who have seen this template message"
+                  >
+                    <CheckCheck className="h-3 w-3 text-[#53bdeb]" />
+                    <span>Seen: {message.broadcast_stats.read_count}/{message.broadcast_stats.total}</span>
+                  </span>
+
+                  {/* Received / Delivered count */}
+                  <span
+                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg font-medium text-[11px] ${
+                      isOwn
+                        ? 'bg-white/15 text-white/95 border border-white/20'
+                        : 'bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300 border border-stone-200 dark:border-stone-700'
+                    }`}
+                    title="Recipients whose devices have received this message"
+                  >
+                    <CheckCheck className="h-3 w-3 opacity-80" />
+                    <span>Received: {message.broadcast_stats.delivered_count}/{message.broadcast_stats.total}</span>
+                  </span>
+
+                  {/* Undelivered count */}
+                  {(message.broadcast_stats.undelivered_count ?? Math.max(0, message.broadcast_stats.total - message.broadcast_stats.delivered_count)) > 0 && (
+                    <span
+                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg font-medium text-[11px] ${
+                        isOwn
+                          ? 'bg-amber-400/25 text-amber-100 border border-amber-400/35'
+                          : 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+                      }`}
+                      title="Undelivered messages"
+                    >
+                      <Clock className="h-3 w-3 text-amber-300 dark:text-amber-400" />
+                      <span>Undelivered: {message.broadcast_stats.undelivered_count ?? Math.max(0, message.broadcast_stats.total - message.broadcast_stats.delivered_count)}</span>
+                    </span>
+                  )}
+                </div>
+
+                {/* Prominent Info Icon Button to open categorized read recipients dialog */}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSelectedBroadcastMessage(message);
+                    setShowBroadcastInfo(true);
+                  }}
+                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer select-none active:scale-95 ${
+                    isOwn
+                      ? 'bg-white/20 hover:bg-white/30 text-white border border-white/30 shadow-2xs'
+                      : 'bg-stone-100 hover:bg-stone-200 text-stone-800 dark:bg-stone-800 dark:hover:bg-stone-700 dark:text-stone-200 border border-stone-200 dark:border-stone-700 shadow-2xs'
+                  }`}
+                  title="View categorized read recipients"
+                >
+                  <Info className="h-3.5 w-3.5" />
+                  <span>Info</span>
+                </button>
+              </div>
+            )}
+
             {/* Timestamp & Status */}
             {renderStatusFooter()}
           </div>
@@ -1289,17 +1381,89 @@ export function ChatWindow({
         const isButtonReply = message.content?.trim() === '[button]' || message.content?.trim().startsWith('[button]');
 
         return (
-          <div className={`${baseClasses} ${isOptimistic ? 'opacity-70' : ''} transition-opacity duration-300`}>
+          <div className={`${baseClasses} ${isOptimistic ? 'opacity-70' : ''} transition-opacity duration-300 w-full`}>
             {isButtonReply ? (
               <div className="flex items-center gap-1.5 py-0.5">
                 <span className="inline-block w-2 h-2 rounded-full bg-current opacity-60"></span>
                 <span className="text-sm italic opacity-90">Quick Reply Response</span>
               </div>
             ) : (
-              <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
+              <p className="text-sm whitespace-pre-wrap break-words leading-relaxed font-normal">
                 {message.content}
               </p>
             )}
+
+            {/* Broadcast Delivery & Seen Status Banner for Text Messages */}
+            {isBroadcast && message.broadcast_stats && (
+              <div
+                className={`mt-3 pt-2.5 border-t ${
+                  isOwn ? 'border-white/20' : 'border-stone-200 dark:border-stone-800'
+                } flex items-center justify-between gap-2 flex-wrap`}
+              >
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {/* Seen / Read count */}
+                  <span
+                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg font-medium text-[11px] ${
+                      isOwn
+                        ? 'bg-sky-400/25 text-sky-100 border border-sky-400/30'
+                        : 'bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300 border border-sky-200 dark:border-sky-800'
+                    }`}
+                    title="Recipients who have seen this message"
+                  >
+                    <CheckCheck className="h-3 w-3 text-[#53bdeb]" />
+                    <span>Seen: {message.broadcast_stats.read_count}/{message.broadcast_stats.total}</span>
+                  </span>
+
+                  {/* Received / Delivered count */}
+                  <span
+                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg font-medium text-[11px] ${
+                      isOwn
+                        ? 'bg-white/15 text-white/95 border border-white/20'
+                        : 'bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300 border border-stone-200 dark:border-stone-700'
+                    }`}
+                    title="Recipients whose devices have received this message"
+                  >
+                    <CheckCheck className="h-3 w-3 opacity-80" />
+                    <span>Received: {message.broadcast_stats.delivered_count}/{message.broadcast_stats.total}</span>
+                  </span>
+
+                  {/* Undelivered count */}
+                  {(message.broadcast_stats.undelivered_count ?? Math.max(0, message.broadcast_stats.total - message.broadcast_stats.delivered_count)) > 0 && (
+                    <span
+                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg font-medium text-[11px] ${
+                        isOwn
+                          ? 'bg-amber-400/25 text-amber-100 border border-amber-400/35'
+                          : 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+                      }`}
+                      title="Undelivered messages"
+                    >
+                      <Clock className="h-3 w-3 text-amber-300 dark:text-amber-400" />
+                      <span>Undelivered: {message.broadcast_stats.undelivered_count ?? Math.max(0, message.broadcast_stats.total - message.broadcast_stats.delivered_count)}</span>
+                    </span>
+                  )}
+                </div>
+
+                {/* Prominent Info Icon Button to open categorized read recipients dialog */}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSelectedBroadcastMessage(message);
+                    setShowBroadcastInfo(true);
+                  }}
+                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer select-none active:scale-95 ${
+                    isOwn
+                      ? 'bg-white/20 hover:bg-white/30 text-white border border-white/30 shadow-2xs'
+                      : 'bg-stone-100 hover:bg-stone-200 text-stone-800 dark:bg-stone-800 dark:hover:bg-stone-700 dark:text-stone-200 border border-stone-200 dark:border-stone-700 shadow-2xs'
+                  }`}
+                  title="View categorized read recipients"
+                >
+                  <Info className="h-3.5 w-3.5" />
+                  <span>Info</span>
+                </button>
+              </div>
+            )}
+
             {renderStatusFooter()}
           </div>
         );

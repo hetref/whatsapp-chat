@@ -33,7 +33,7 @@ function isPublic(pathname: string): boolean {
 // In-memory cache for session token to user ID lookup to prevent excessive roundtrips
 const sessionCache = new Map<string, { userId: string; expires: number }>();
 
-export default async function proxy(req: NextRequest) {
+export async function proxy(req: NextRequest) {
   // Prevent any internal recursion from sub-fetches
   if (req.headers.has("x-internal-proxy")) {
     return NextResponse.next();
@@ -104,6 +104,8 @@ export default async function proxy(req: NextRequest) {
 
   return NextResponse.next();
 }
+
+export default proxy;
 
 export const config = {
   matcher: [
