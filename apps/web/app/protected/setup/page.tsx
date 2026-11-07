@@ -35,6 +35,7 @@ import {
   ShieldAlert,
   ArrowRightLeft,
   FlaskConical,
+  ChevronDown,
 } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
@@ -91,7 +92,17 @@ declare global {
 
 const META_APP_ID = process.env.NEXT_PUBLIC_META_APP_ID || "1825841578150241";
 const META_CONFIG_ID = process.env.NEXT_PUBLIC_META_CONFIG_ID || "2024693201673779";
-const META_HOSTED_URL = `https://business.facebook.com/messaging/whatsapp/onboard/?app_id=${META_APP_ID}&config_id=${META_CONFIG_ID}&extras=%7B%22sessionInfoVersion%22%3A%223%22%2C%22version%22%3A%22v4%22%7D`;
+
+// Feature Type: WhatsApp Business App Onboarding
+// Enables coexistence so phone numbers currently active on the WhatsApp Business mobile app
+// can be onboarded seamlessly without issues and without losing access to WhatsApp Business.
+const EMBEDDED_SIGNUP_EXTRAS = {
+  featureType: "whatsapp_business_app_onboarding",
+  sessionInfoVersion: "3",
+  version: "v4",
+} as const;
+
+const META_HOSTED_URL = `https://business.facebook.com/messaging/whatsapp/onboard/?app_id=${META_APP_ID}&config_id=${META_CONFIG_ID}&extras=${encodeURIComponent(JSON.stringify(EMBEDDED_SIGNUP_EXTRAS))}`;
 
 export default function SetupPage() {
   // Settings state
@@ -164,6 +175,28 @@ export default function SetupPage() {
   const [copiedAccessToken, setCopiedAccessToken] = useState(false);
   const [copiedPhoneId, setCopiedPhoneId] = useState(false);
   const [copiedWabaId, setCopiedWabaId] = useState(false);
+  const [copiedHostedUrl, setCopiedHostedUrl] = useState(false);
+  const [copiedSessionLog, setCopiedSessionLog] = useState(false);
+
+  // Embedded Signup Feature Type & Session Logging Response state
+  // Defaults to "whatsapp_business_app_onboarding" for full WhatsApp Business mobile app coexistence
+  const [featureType, setFeatureType] = useState<"whatsapp_business_app_onboarding" | "none">(
+    "whatsapp_business_app_onboarding"
+  );
+  const [sessionLoggingResponse, setSessionLoggingResponse] = useState<string>("");
+
+  const currentExtras = featureType !== "none"
+    ? {
+        featureType: "whatsapp_business_app_onboarding",
+        sessionInfoVersion: "3",
+        version: "v4",
+      }
+    : {
+        sessionInfoVersion: "3",
+        version: "v4",
+      };
+
+  const metaHostedUrl = `https://business.facebook.com/messaging/whatsapp/onboard/?app_id=${META_APP_ID}&config_id=${META_CONFIG_ID}&extras=${encodeURIComponent(JSON.stringify(currentExtras))}`;
 
   // Show/hide states
   const [showAccessToken, setShowAccessToken] = useState(false);
@@ -653,6 +686,7 @@ export default function SetupPage() {
     const handleMessage = async (event: MessageEvent) => {
       // 1. Check for our OAuth popup postMessage
       if (event.data?.type === "META_AUTH_CODE" && event.data?.code) {
+        setSessionLoggingResponse(JSON.stringify(event.data, null, 2));
         await completeEmbeddedSignup({
           code: event.data.code,
           redirect_uri: event.data.redirect_uri,
@@ -661,6 +695,7 @@ export default function SetupPage() {
       }
 
       if (event.data?.type === "META_AUTH_ERROR") {
+        setSessionLoggingResponse(JSON.stringify(event.data, null, 2));
         setEmbeddedError(event.data.error || "Meta authorization was denied.");
         setConnectingEmbedded(false);
         return;
@@ -681,6 +716,7 @@ export default function SetupPage() {
         const data = typeof event.data === "string" ? JSON.parse(event.data) : event.data;
 
         if (data?.type === "WA_EMBEDDED_SIGNUP") {
+          setSessionLoggingResponse(JSON.stringify(data, null, 2));
           if (typeof data.event === "string" && data.event.startsWith("FINISH")) {
             const { phone_number_id, waba_id } = data.data || {};
             await completeEmbeddedSignup({
@@ -717,7 +753,7 @@ export default function SetupPage() {
   }, [completeEmbeddedSignup]);
 
   // 5. Trigger Embedded Signup Dialog with Direct OAuth Flow & redirect_uri
-  const handleLaunchEmbeddedSignup = () => {
+  const handleLaunchEmbeddedSignup = (useHostedUrl: boolean = false) => {
     sessionPayloadRef.current = {};
     isSubmittingRef.current = false;
     setConnectingEmbedded(true);
@@ -727,13 +763,25 @@ export default function SetupPage() {
 
     const redirectUri = `${window.location.origin}/protected/setup`;
     const scopes = "whatsapp_business_management,whatsapp_business_messaging";
-    const oauthUrl = `https://www.facebook.com/v23.0/dialog/oauth?client_id=${META_APP_ID}&config_id=${META_CONFIG_ID}&response_type=code&scope=${encodeURIComponent(scopes)}&redirect_uri=${encodeURIComponent(redirectUri)}`;
+    const extrasPayload: Record<string, unknown> = {
+      setup: {},
+      sessionInfoVersion: "3",
+      version: "v4",
+      ...(featureType !== "none" ? { featureType } : {}),
+    };
+    const currentExtrasParam = encodeURIComponent(JSON.stringify(currentExtras));
+    const oauthUrl = `https://www.facebook.com/v23.0/dialog/oauth?client_id=${META_APP_ID}&config_id=${META_CONFIG_ID}&response_type=code&scope=${encodeURIComponent(scopes)}&redirect_uri=${encodeURIComponent(redirectUri)}&extras=${currentExtrasParam}`;
 
-    // If FB JS SDK is loaded and ready, invoke FB.login
-    if (window.FB) {
+    const isHosted = typeof useHostedUrl === "boolean" ? useHostedUrl : false;
+
+    // If FB JS SDK is loaded and ready, invoke FB.login (unless explicitly requesting hosted URL)
+    if (window.FB && !isHosted) {
       try {
         window.FB.login(
           (response) => {
+            if (response) {
+              setSessionLoggingResponse(JSON.stringify(response, null, 2));
+            }
             if (response.authResponse?.code) {
               void completeEmbeddedSignup({
                 code: response.authResponse.code,
@@ -747,11 +795,7 @@ export default function SetupPage() {
             config_id: META_CONFIG_ID,
             response_type: "code",
             override_default_response_type: true,
-            extras: {
-              sessionInfoVersion: "3",
-              version: "v4",
-              scope: scopes,
-            },
+            extras: extrasPayload,
           }
         );
         return;
@@ -760,16 +804,17 @@ export default function SetupPage() {
       }
     }
 
-    // Direct Meta OAuth Popup (Works reliably even if SDK is blocked by browser shields)
+    // Direct Meta Popup (Opens either Meta Hosted URL or OAuth dialog with extras)
+    const targetUrl = isHosted ? metaHostedUrl : oauthUrl;
     const popup = window.open(
-      oauthUrl,
+      targetUrl,
       "whatsapp_meta_oauth",
       "width=720,height=800,scrollbars=yes,status=yes"
     );
 
     if (!popup) {
       // If popup was blocked, redirect in same window
-      window.location.href = oauthUrl;
+      window.location.href = targetUrl;
       return;
     }
 
@@ -793,9 +838,9 @@ export default function SetupPage() {
     }, 800);
   };
 
-  // Direct Meta Popup Fallback
+  // Direct Meta Popup Fallback (opens the Meta-hosted onboarding page with featureType enabled)
   const handleOpenDirectPopup = () => {
-    handleLaunchEmbeddedSignup();
+    handleLaunchEmbeddedSignup(true);
   };
 
   // 6. Disconnect WhatsApp Handler
@@ -1621,124 +1666,321 @@ export default function SetupPage() {
               {/* ============================================================= */}
               <TabsContent value="embedded" className="space-y-6 focus-visible:outline-none">
                 <div className="rounded-2xl border border-stone-200/80 dark:border-stone-800/80 bg-white/80 dark:bg-stone-900/70 backdrop-blur-md shadow-[0_4px_20px_-4px_rgba(30,45,35,0.06)] p-1.5">
-                  <div className="rounded-[calc(1rem-0.125rem)] bg-[#FAF8F5]/80 dark:bg-stone-900/90 p-6 sm:p-8 border border-stone-200/60 dark:border-stone-800/60 text-center">
-                    <div className="mx-auto size-14 rounded-2xl bg-[#5F7C65]/12 dark:bg-[#5F7C65]/20 border border-[#5F7C65]/25 flex items-center justify-center text-[#5F7C65] mb-3">
-                      <Zap className="h-7 w-7" />
+                  <div className="rounded-[calc(1rem-0.125rem)] bg-[#FAF8F5]/80 dark:bg-stone-900/90 p-5 sm:p-7 border border-stone-200/60 dark:border-stone-800/60 space-y-6">
+                    {/* Header */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-stone-200/70 dark:border-stone-800/70">
+                      <div className="flex items-center gap-3">
+                        <div className="size-11 rounded-2xl bg-[#5F7C65]/12 dark:bg-[#5F7C65]/20 border border-[#5F7C65]/25 flex items-center justify-center text-[#5F7C65] shrink-0">
+                          <Zap className="h-5 w-5" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h2 className="text-lg sm:text-xl font-semibold tracking-[-0.02em] text-stone-900 dark:text-stone-100">
+                              Embedded Signup Dialog
+                            </h2>
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider bg-[#5F7C65]/12 text-[#2D583F] dark:text-[#8EAE95] border border-[#5F7C65]/25">
+                              v4 Active
+                            </span>
+                          </div>
+                          <p className="text-xs text-stone-600 dark:text-stone-400 mt-0.5">
+                            Open Embedded Signup in a popup window with WhatsApp Business App Onboarding enabled.
+                          </p>
+                        </div>
+                      </div>
+                      <div className="shrink-0 flex items-center gap-2">
+                        <span className="text-[11px] font-medium text-stone-500 dark:text-stone-400">
+                          Status:
+                        </span>
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-[#5F7C65]/10 text-[#2D583F] dark:text-[#8EAE95] border border-[#5F7C65]/20">
+                          <span className="size-1.5 rounded-full bg-[#5F7C65] animate-pulse" />
+                          {fbSdkLoaded ? "Meta SDK Ready" : "OAuth Flow Ready"}
+                        </span>
+                      </div>
                     </div>
-                    <h2 className="text-xl sm:text-2xl font-semibold tracking-[-0.025em] text-stone-900 dark:text-stone-100">
-                      Connect with WhatsApp Embedded Signup
-                    </h2>
-                    <p className="text-stone-600 dark:text-stone-400 text-sm max-w-lg mx-auto mt-1.5 leading-relaxed">
-                      Log in with Facebook to select your WhatsApp Business Account and phone number.
-                      Everything is configured automatically in under 60 seconds.
-                    </p>
 
-                    <div className="space-y-6 max-w-xl mx-auto mt-6 text-left">
-                      {/* Benefits 3-col */}
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-center">
-                        <div className="p-3.5 rounded-xl border border-stone-200/80 dark:border-stone-800/80 bg-white/90 dark:bg-stone-900/80 shadow-2xs space-y-1">
-                          <CheckCircle2 className="h-5 w-5 text-[#5F7C65] mx-auto" />
-                          <p className="font-semibold text-xs text-stone-900 dark:text-stone-100">No Manual Tokens</p>
-                          <p className="text-[11px] text-stone-500 dark:text-stone-400">Permanent system token issued automatically</p>
-                        </div>
-                        <div className="p-3.5 rounded-xl border border-stone-200/80 dark:border-stone-800/80 bg-white/90 dark:bg-stone-900/80 shadow-2xs space-y-1">
-                          <Radio className="h-5 w-5 text-[#5F7C65] mx-auto" />
-                          <p className="font-semibold text-xs text-stone-900 dark:text-stone-100">Instant Webhooks</p>
-                          <p className="text-[11px] text-stone-500 dark:text-stone-400">Auto-subscribed to receive real-time messages</p>
-                        </div>
-                        <div className="p-3.5 rounded-xl border border-stone-200/80 dark:border-stone-800/80 bg-white/90 dark:bg-stone-900/80 shadow-2xs space-y-1">
-                          <ShieldCheck className="h-5 w-5 text-[#5F7C65] mx-auto" />
-                          <p className="font-semibold text-xs text-stone-900 dark:text-stone-100">Official Meta Flow</p>
-                          <p className="text-[11px] text-stone-500 dark:text-stone-400">Secured directly by Meta Business Platform</p>
+                    {/* Interactive Meta Embedded Signup Configuration Grid (Matches Meta Developer Portal) */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                      {/* 1. Login Configuration */}
+                      <div className="p-3.5 rounded-xl border border-stone-200/80 dark:border-stone-800/80 bg-white/90 dark:bg-stone-900/60 shadow-2xs space-y-1">
+                        <Label className="text-[11px] font-semibold text-stone-700 dark:text-stone-300">
+                          Choose a Login Configuration
+                        </Label>
+                        <div className="h-9 px-3 rounded-lg border border-stone-200/80 dark:border-stone-800 bg-[#FAF8F5]/80 dark:bg-stone-950/40 flex items-center justify-between text-xs font-medium text-stone-800 dark:text-stone-200">
+                          <span>ES Config</span>
+                          <span className="text-[10px] text-stone-400 font-mono">2024693201673779</span>
                         </div>
                       </div>
 
-                      {/* Progress / Status feedback */}
-                      {connectingEmbedded && (
-                        <div className="space-y-3">
-                          <div className="p-4 rounded-xl bg-[#5F7C65]/10 border border-[#5F7C65]/20 flex items-center gap-3">
-                            <Loader2 className="h-5 w-5 text-[#5F7C65] animate-spin shrink-0" />
-                            <div className="text-sm">
-                              <p className="font-medium text-stone-900 dark:text-stone-100">Connecting to Meta...</p>
-                              <p className="text-xs text-[#2D583F] dark:text-[#8EAE95]">{embeddedStep}</p>
-                            </div>
-                          </div>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              setConnectingEmbedded(false);
-                              loadSettings();
-                            }}
-                            className="w-full text-xs text-stone-500 hover:text-stone-900 dark:hover:text-stone-100 border-dashed rounded-xl"
+                      {/* 2. ES Version */}
+                      <div className="p-3.5 rounded-xl border border-stone-200/80 dark:border-stone-800/80 bg-white/90 dark:bg-stone-900/60 shadow-2xs space-y-1">
+                        <Label className="text-[11px] font-semibold text-stone-700 dark:text-stone-300">
+                          ES Version
+                        </Label>
+                        <div className="h-9 px-3 rounded-lg border border-stone-200/80 dark:border-stone-800 bg-[#FAF8F5]/80 dark:bg-stone-950/40 flex items-center justify-between text-xs font-mono font-medium text-stone-800 dark:text-stone-200">
+                          <span>v4</span>
+                          <span className="text-[10px] text-[#5F7C65] font-sans font-medium">Standard</span>
+                        </div>
+                      </div>
+
+                      {/* 3. Session Info Version */}
+                      <div className="p-3.5 rounded-xl border border-stone-200/80 dark:border-stone-800/80 bg-white/90 dark:bg-stone-900/60 shadow-2xs space-y-1">
+                        <Label className="text-[11px] font-semibold text-stone-700 dark:text-stone-300">
+                          Session Info Version
+                        </Label>
+                        <div className="h-9 px-3 rounded-lg border border-stone-200/80 dark:border-stone-800 bg-[#FAF8F5]/80 dark:bg-stone-950/40 flex items-center justify-between text-xs font-mono font-medium text-stone-800 dark:text-stone-200">
+                          <span>3</span>
+                          <span className="text-[10px] text-[#5F7C65] font-sans font-medium">postMessage</span>
+                        </div>
+                      </div>
+
+                      {/* 4. Feature Type · Optional */}
+                      <div className="p-3.5 rounded-xl border border-stone-200/80 dark:border-stone-800/80 bg-white/90 dark:bg-stone-900/60 shadow-2xs space-y-1">
+                        <div className="flex items-center justify-between">
+                          <Label htmlFor="feature-type-select" className="text-[11px] font-semibold text-stone-700 dark:text-stone-300">
+                            Feature Type · Optional
+                          </Label>
+                          <span className="text-[10px] font-semibold uppercase text-[#5F7C65]">
+                            {featureType === "whatsapp_business_app_onboarding" ? "Active" : "Standard"}
+                          </span>
+                        </div>
+                        <div className="relative">
+                          <select
+                            id="feature-type-select"
+                            value={featureType}
+                            onChange={(e) => setFeatureType(e.target.value as "whatsapp_business_app_onboarding" | "none")}
+                            className="w-full h-9 pl-3 pr-8 rounded-lg border border-stone-300/80 dark:border-stone-700 bg-white dark:bg-stone-900 text-xs font-medium text-stone-800 dark:text-stone-100 appearance-none focus:outline-none focus:ring-1 focus:ring-[#5F7C65] cursor-pointer"
                           >
-                            <RefreshCw className="mr-2 h-3.5 w-3.5" />
-                            Already completed in Meta popup? Refresh connection status
-                          </Button>
+                            <option value="whatsapp_business_app_onboarding">WhatsApp Business App Onboarding</option>
+                            <option value="none">None (Standard Cloud API Number)</option>
+                          </select>
+                          <ChevronDown className="size-3.5 text-stone-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                         </div>
-                      )}
+                      </div>
+                    </div>
 
-                      {embeddedError && (
-                        <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 flex items-start gap-3">
-                          <AlertCircle className="h-5 w-5 text-red-600 mt-0.5 shrink-0" />
-                          <div className="text-sm">
-                            <p className="font-medium text-red-900 dark:text-red-200">Connection Failed</p>
-                            <p className="text-xs text-red-700 dark:text-red-300">{embeddedError}</p>
-                          </div>
-                        </div>
-                      )}
-
-                      {embeddedSuccess && (
-                        <div className="p-4 rounded-xl bg-[#5F7C65]/10 border border-[#5F7C65]/20 flex items-center gap-3">
-                          <CheckCircle2 className="h-5 w-5 text-[#5F7C65] shrink-0" />
-                          <p className="text-sm font-medium text-[#2D583F] dark:text-[#8EAE95]">
-                            WhatsApp connected successfully! Loading your account...
+                    {/* WhatsApp Business App Coexistence Callout */}
+                    {featureType === "whatsapp_business_app_onboarding" && (
+                      <div className="p-3.5 rounded-xl border border-[#5F7C65]/30 bg-[#5F7C65]/8 dark:bg-[#5F7C65]/12 flex items-start gap-3">
+                        <CheckCircle2 className="size-4 text-[#5F7C65] mt-0.5 shrink-0" />
+                        <div className="text-xs space-y-0.5">
+                          <p className="font-semibold text-stone-900 dark:text-stone-100">
+                            WhatsApp Business App Onboarding (Coexistence Enabled)
+                          </p>
+                          <p className="text-stone-600 dark:text-stone-300 text-[11px] leading-relaxed">
+                            Phone numbers already registered on the WhatsApp Business mobile app can onboard directly to WaChat. You do not need to delete or deregister your number from the WhatsApp Business app, and your customer chat history stays intact while enabling WaChat Cloud API features.
                           </p>
                         </div>
-                      )}
+                      </div>
+                    )}
 
-                      {/* Main Connect Buttons */}
-                      <div className="space-y-3 pt-2">
-                        <button
-                          type="button"
-                          id="connect-whatsapp-btn"
-                          onClick={handleLaunchEmbeddedSignup}
-                          disabled={connectingEmbedded}
-                          className="w-full min-h-12 py-3 px-6 text-sm sm:text-base font-semibold text-white rounded-xl shadow-[inset_0_2px_4px_0_rgba(255,255,255,0.25),inset_0_-2px_4px_0_rgba(0,0,0,0.22),0_4px_16px_rgba(24,119,242,0.28)] hover:brightness-105 active:scale-[0.98] transition-all duration-200 flex items-center justify-center gap-3 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed border-0 bg-[#1877F2]"
-                        >
-                          {connectingEmbedded ? (
-                            <>
-                              <Loader2 className="h-5 w-5 animate-spin text-white shrink-0" />
-                              <span>{embeddedStep || "Connecting WhatsApp..."}</span>
-                            </>
-                          ) : (
-                            <>
-                              <svg className="h-5 w-5 fill-white shrink-0" viewBox="0 0 24 24">
-                                <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
-                              </svg>
-                              <span>Connect WhatsApp via Facebook</span>
-                            </>
-                          )}
-                        </button>
+                    {/* Meta Explanation text */}
+                    <p className="text-xs text-stone-600 dark:text-stone-400 text-center font-medium">
+                      Launch Embedded Signup to create/select a WhatsApp Business Account, add a phone number, verify it and share it.
+                    </p>
 
+                    {/* Connection Progress Feedback */}
+                    {connectingEmbedded && (
+                      <div className="space-y-3">
+                        <div className="p-4 rounded-xl bg-[#5F7C65]/10 border border-[#5F7C65]/20 flex items-center gap-3">
+                          <Loader2 className="h-5 w-5 text-[#5F7C65] animate-spin shrink-0" />
+                          <div className="text-sm">
+                            <p className="font-medium text-stone-900 dark:text-stone-100">Connecting to Meta...</p>
+                            <p className="text-xs text-[#2D583F] dark:text-[#8EAE95]">{embeddedStep}</p>
+                          </div>
+                        </div>
                         <Button
                           type="button"
                           variant="outline"
-                          onClick={handleOpenDirectPopup}
-                          disabled={connectingEmbedded}
-                          className="w-full h-11 text-xs sm:text-sm font-medium border border-stone-300/80 dark:border-stone-700/80 bg-white/80 dark:bg-stone-900/60 text-stone-800 dark:text-stone-200 hover:bg-stone-100/80 dark:hover:bg-stone-800/80 rounded-xl flex items-center justify-center gap-2 shadow-2xs transition-all active:scale-[0.98]"
+                          size="sm"
+                          onClick={() => {
+                            setConnectingEmbedded(false);
+                            loadSettings();
+                          }}
+                          className="w-full text-xs text-stone-500 hover:text-stone-900 dark:hover:text-stone-100 border-dashed rounded-xl"
                         >
-                          <ExternalLink className="h-4 w-4 text-[#5F7C65] shrink-0" />
-                          <span>Launch Meta Authorization Window</span>
+                          <RefreshCw className="mr-2 h-3.5 w-3.5" />
+                          Already completed in Meta popup? Refresh connection status
                         </Button>
+                      </div>
+                    )}
 
-                        <p className="text-xs text-stone-500 dark:text-stone-400 text-center">
-                          Direct Meta OAuth 2.0 flow. Once authorized, your WhatsApp account is linked in under 60 seconds.
+                    {embeddedError && (
+                      <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 flex items-start gap-3">
+                        <AlertCircle className="h-5 w-5 text-red-600 mt-0.5 shrink-0" />
+                        <div className="text-sm">
+                          <p className="font-medium text-red-900 dark:text-red-200">Connection Failed</p>
+                          <p className="text-xs text-red-700 dark:text-red-300">{embeddedError}</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {embeddedSuccess && (
+                      <div className="p-4 rounded-xl bg-[#5F7C65]/10 border border-[#5F7C65]/20 flex items-center gap-3">
+                        <CheckCircle2 className="h-5 w-5 text-[#5F7C65] shrink-0" />
+                        <p className="text-sm font-medium text-[#2D583F] dark:text-[#8EAE95]">
+                          WhatsApp connected successfully! Loading your account...
                         </p>
+                      </div>
+                    )}
+
+                    {/* Primary Action Button (Login with Facebook) */}
+                    <div className="space-y-3 max-w-md mx-auto">
+                      <button
+                        type="button"
+                        id="connect-whatsapp-btn"
+                        onClick={() => handleLaunchEmbeddedSignup(false)}
+                        disabled={connectingEmbedded}
+                        className="w-full min-h-12 py-3 px-6 text-sm sm:text-base font-semibold text-white rounded-xl shadow-[inset_0_2px_4px_0_rgba(255,255,255,0.25),inset_0_-2px_4px_0_rgba(0,0,0,0.22),0_4px_16px_rgba(24,119,242,0.28)] hover:brightness-105 active:scale-[0.98] transition-all duration-200 flex items-center justify-center gap-3 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed border-0 bg-[#1877F2]"
+                      >
+                        {connectingEmbedded ? (
+                          <>
+                            <Loader2 className="h-5 w-5 animate-spin text-white shrink-0" />
+                            <span>{embeddedStep || "Connecting WhatsApp..."}</span>
+                          </>
+                        ) : (
+                          <>
+                            <svg className="h-5 w-5 fill-white shrink-0" viewBox="0 0 24 24">
+                              <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
+                            </svg>
+                            <span>Login with Facebook</span>
+                          </>
+                        )}
+                      </button>
+
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={handleOpenDirectPopup}
+                        disabled={connectingEmbedded}
+                        className="w-full h-10 text-xs font-medium border border-stone-300/80 dark:border-stone-700/80 bg-white/80 dark:bg-stone-900/60 text-stone-800 dark:text-stone-200 hover:bg-stone-100/80 dark:hover:bg-stone-800/80 rounded-xl flex items-center justify-center gap-2 shadow-2xs transition-all active:scale-[0.98]"
+                      >
+                        <ExternalLink className="h-3.5 w-3.5 text-[#5F7C65] shrink-0" />
+                        <span>Launch Meta Dialog Window (Direct Popup)</span>
+                      </Button>
+                    </div>
+
+                    {/* Your Meta-hosted Embedded Signup landing page */}
+                    <div className="pt-4 border-t border-stone-200/70 dark:border-stone-800/70 space-y-2">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between text-xs gap-1">
+                        <Label className="font-semibold text-stone-700 dark:text-stone-300 text-xs">
+                          Your Meta-hosted Embedded Signup landing page
+                        </Label>
+                        <span className="text-[11px] text-[#5F7C65] font-mono font-medium truncate">
+                          featureType: {featureType}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          readOnly
+                          value={metaHostedUrl}
+                          className="font-mono text-[11px] h-9 bg-white/70 dark:bg-stone-950/40 text-stone-600 dark:text-stone-300 border-stone-200 dark:border-stone-800 select-all"
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            navigator.clipboard.writeText(metaHostedUrl);
+                            setCopiedHostedUrl(true);
+                            setTimeout(() => setCopiedHostedUrl(false), 2000);
+                          }}
+                          className="h-9 px-3 rounded-xl border-stone-300 dark:border-stone-700 text-xs shrink-0 flex items-center gap-1.5"
+                          title="Copy Meta-hosted URL"
+                        >
+                          {copiedHostedUrl ? (
+                            <>
+                              <Check className="size-3.5 text-[#5F7C65]" />
+                              <span>Copied</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="size-3.5" />
+                              <span>Copy</span>
+                            </>
+                          )}
+                        </Button>
+                        <a
+                          href={metaHostedUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center justify-center size-9 rounded-xl border border-stone-300 dark:border-stone-700 hover:bg-stone-100 dark:hover:bg-stone-800 text-stone-600 dark:text-stone-300 shrink-0 transition-colors"
+                          title="Open Meta-hosted landing page"
+                        >
+                          <ExternalLink className="size-3.5" />
+                        </a>
                       </div>
                     </div>
 
+                    {/* Session Logging Response */}
+                    <div className="pt-4 border-t border-stone-200/70 dark:border-stone-800/70 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <Label className="font-semibold text-stone-700 dark:text-stone-300 text-xs">
+                            Session Logging Response
+                          </Label>
+                          <p className="text-[11px] text-stone-500 dark:text-stone-400 mt-0.5">
+                            This section&apos;s value will update with the post-message response from Embedded Signup. It will respond with the WABA ID and Phone Number IDs.
+                          </p>
+                        </div>
+                        {sessionLoggingResponse && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              navigator.clipboard.writeText(sessionLoggingResponse);
+                              setCopiedSessionLog(true);
+                              setTimeout(() => setCopiedSessionLog(false), 2000);
+                            }}
+                            className="h-7 px-2.5 text-[11px] rounded-lg text-stone-600 dark:text-stone-300 shrink-0 flex items-center gap-1"
+                          >
+                            {copiedSessionLog ? (
+                              <>
+                                <Check className="size-3 text-[#5F7C65]" />
+                                <span>Copied</span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="size-3" />
+                                <span>Copy JSON</span>
+                              </>
+                            )}
+                          </Button>
+                        )}
+                      </div>
+                      <div className="rounded-xl border border-stone-200/80 dark:border-stone-800 bg-stone-900 dark:bg-stone-950 p-3 text-stone-200 font-mono text-[11px] overflow-x-auto min-h-16 flex items-center">
+                        {sessionLoggingResponse ? (
+                          <pre className="whitespace-pre-wrap break-all w-full text-[#8EAE95]">
+                            {sessionLoggingResponse}
+                          </pre>
+                        ) : (
+                          <span className="text-stone-500 italic text-[11px]">
+                            // Waiting for Embedded Signup session post-message response (WABA ID &amp; Phone Number IDs will appear here)...
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* 3-Col Key Benefits */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 text-center">
+                      <div className="p-3.5 rounded-xl border border-stone-200/80 dark:border-stone-800/80 bg-white/90 dark:bg-stone-900/80 shadow-2xs space-y-1">
+                        <CheckCircle2 className="h-5 w-5 text-[#5F7C65] mx-auto" />
+                        <p className="font-semibold text-xs text-stone-900 dark:text-stone-100">WhatsApp Business Coexistence</p>
+                        <p className="text-[11px] text-stone-500 dark:text-stone-400">Keep using WhatsApp Business mobile app seamlessly</p>
+                      </div>
+                      <div className="p-3.5 rounded-xl border border-stone-200/80 dark:border-stone-800/80 bg-white/90 dark:bg-stone-900/80 shadow-2xs space-y-1">
+                        <Radio className="h-5 w-5 text-[#5F7C65] mx-auto" />
+                        <p className="font-semibold text-xs text-stone-900 dark:text-stone-100">Auto Token Exchange</p>
+                        <p className="text-[11px] text-stone-500 dark:text-stone-400">Permanent system token acquired in background</p>
+                      </div>
+                      <div className="p-3.5 rounded-xl border border-stone-200/80 dark:border-stone-800/80 bg-white/90 dark:bg-stone-900/80 shadow-2xs space-y-1">
+                        <ShieldCheck className="h-5 w-5 text-[#5F7C65] mx-auto" />
+                        <p className="font-semibold text-xs text-stone-900 dark:text-stone-100">Zero Downtime Migration</p>
+                        <p className="text-[11px] text-stone-500 dark:text-stone-400">No chat loss or number deregistration required</p>
+                      </div>
+                    </div>
+
+                    {/* Card Footer */}
                     <div className="mt-8 pt-4 border-t border-stone-200/70 dark:border-stone-800/70 text-center text-xs text-stone-500 dark:text-stone-400 space-y-1">
                       <p>
                         App ID: <span className="font-mono">{META_APP_ID}</span> | Login Config: <span className="font-mono">{META_CONFIG_ID}</span>
