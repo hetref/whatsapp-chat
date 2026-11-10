@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ArrowLeft, Send, MessageCircle, Loader2, X, Download, FileText, Image as ImageIcon, Play, Pause, Volume2, Paperclip, MessageSquare, Users, AlertTriangle, Plus, ShieldCheck, Info, CheckCheck, Clock } from "lucide-react";
 import LogoIcon from "@/components/logo-icon";
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import Image from "next/image";
 import { MediaUpload } from "./media-upload";
 import { UserInfoDialog } from "./user-info-dialog";
@@ -1470,17 +1470,26 @@ export function ChatWindow({
     }
   };
 
-  // Group messages by date (filtering out any phantom reaction messages)
-  const groupedMessages = messages
-    .filter((m) => m.message_type !== 'reaction' && m.content !== '[reaction]')
-    .reduce((groups: { [key: string]: Message[] }, message) => {
-      const date = new Date(message.timestamp).toDateString();
-      if (!groups[date]) {
-        groups[date] = [];
-      }
-      groups[date].push(message);
-      return groups;
-    }, {});
+  // Group messages by date (filtering out phantom reactions and deduplicating by ID)
+  const groupedMessages = useMemo(() => {
+    const seenIds = new Set<string>();
+    return messages
+      .filter((m) => {
+        if (m.message_type === 'reaction' || m.content === '[reaction]') return false;
+        if (!m.id) return true;
+        if (seenIds.has(m.id)) return false;
+        seenIds.add(m.id);
+        return true;
+      })
+      .reduce((groups: { [key: string]: Message[] }, message) => {
+        const date = new Date(message.timestamp).toDateString();
+        if (!groups[date]) {
+          groups[date] = [];
+        }
+        groups[date].push(message);
+        return groups;
+      }, {});
+  }, [messages]);
 
   // Show welcome screen only if neither individual user nor broadcast group is selected
   if (!selectedUser && !broadcastGroupName) {
@@ -1683,7 +1692,7 @@ export function ChatWindow({
 
                     return (
                       <div
-                        key={message.id}
+                        key={`${message.id || 'msg'}-${index}`}
                         className={`${isNewMessage ? 'animate-fade-in-up' : ''}`}
                       >
                         {/* Unread messages indicator */}

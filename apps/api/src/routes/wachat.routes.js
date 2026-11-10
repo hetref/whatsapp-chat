@@ -36,7 +36,12 @@ function getUserId(req, res) {
 }
 
 function cleanPhoneNumber(input) {
-    return String(input || '').replace(/\s+/g, '').replace(/[^\d]/g, '');
+    let cleaned = String(input || '').replace(/\s+/g, '').replace(/[^\d]/g, '');
+    // Auto-prefix Indian country code '91' if a 10-digit mobile number starting with 6-9 is provided
+    if (cleaned.length === 10 && /^[6-9]/.test(cleaned)) {
+        cleaned = '91' + cleaned;
+    }
+    return cleaned;
 }
 
 async function getUserSettings(userId) {
@@ -171,6 +176,13 @@ function validateTemplateComponents(components) {
                     if (button.text.length > 25) return 'Button text must be 25 characters or less';
                     if (button.type === 'URL' && !button.url) return 'URL button requires url field';
                     if (button.type === 'PHONE_NUMBER' && !button.phone_number) return 'PHONE_NUMBER button requires phone_number field';
+                    if (button.type === 'FLOW') {
+                        if (!button.flow_id) return 'FLOW button requires flow_id field';
+                        const action = button.flow_action || 'navigate';
+                        if (action === 'navigate' && !button.navigate_screen) {
+                            return 'FLOW button with navigate action requires navigate_screen field';
+                        }
+                    }
                 }
                 break;
             }
@@ -461,6 +473,16 @@ async function sendTemplateMessage({
                         parameters: [{ type: 'text', text: otpCode }],
                     });
                 }
+            } else if (btnType === 'FLOW' && btn.flow_id) {
+                templateComponents.push({
+                    type: 'button',
+                    sub_type: 'flow',
+                    index: String(index),
+                    parameters: [{
+                        type: 'action',
+                        action: { flow_token: String(btn.flow_id) },
+                    }],
+                });
             }
         });
     }
@@ -2202,6 +2224,42 @@ router.post('/templates/create', async (req, res, next) => {
                     // Always delete the custom frontend field to prevent Meta schema validation errors
                     delete component.headerMedia;
                 }
+
+                if (component.type === 'BUTTONS' && Array.isArray(component.buttons)) {
+                    component.buttons = component.buttons.map((button) => {
+                        if (button.type === 'FLOW') {
+                            const cleaned = {
+                                type: 'FLOW',
+                                text: String(button.text || '').trim(),
+                                flow_id: String(button.flow_id || '').trim(),
+                                flow_action: button.flow_action === 'data_exchange' ? 'data_exchange' : 'navigate',
+                            };
+                            if (button.navigate_screen && String(button.navigate_screen).trim()) {
+                                cleaned.navigate_screen = String(button.navigate_screen).trim();
+                            }
+                            return cleaned;
+                        }
+                        if (button.type === 'URL') {
+                            return {
+                                type: 'URL',
+                                text: String(button.text || '').trim(),
+                                url: String(button.url || '').trim(),
+                            };
+                        }
+                        if (button.type === 'PHONE_NUMBER') {
+                            return {
+                                type: 'PHONE_NUMBER',
+                                text: String(button.text || '').trim(),
+                                phone_number: String(button.phone_number || '').trim(),
+                            };
+                        }
+                        return {
+                            type: 'QUICK_REPLY',
+                            text: String(button.text || '').trim(),
+                        };
+                    });
+                }
+
                 processedComponents.push(component);
             }
             templateData.components = processedComponents;
@@ -2600,6 +2658,157 @@ router.get('/send-template', async (req, res, next) => {
             configured: Boolean(settings?.accessToken),
             version: settings?.apiVersion || 'v23.0',
             timestamp: new Date().toISOString(),
+        });
+    } catch (error) {
+        next(error);
+    }
+});
+
+router.post('/send-flow', async (req, res, next) => {
+    try {
+        const userId = getUserId(req, res);
+        if (!userId) return;
+
+        let {
+            to,
+            contactId,
+            contactName,
+            flowId,
+            flowName,
+            flowCta = 'View Flow',
+            headerText,
+            bodyText = 'Please complete the form below:',
+            footerText,
+            screen,
+        } = req.body || {};
+
+        if (!to && contactId) {
+            const contact = await prisma.contact.findFirst({
+                where: { id: contactId, userId },
+            });
+            if (contact?.phoneNumber) {
+                to = contact.phoneNumber;
+                if (!contactName) contactName = contact.customName || contact.whatsappName;
+            }
+        }
+
+        if (!to || !flowId) {
+            res.status(400).json({ error: 'Missing required parameters: to (recipient phone) and flowId are required' });
+            return;
+        }
+
+        const settings = await getUserSettings(userId);
+        if (!settings?.accessToken || !settings.phoneNumberId) {
+            res.status(400).json({ error: 'WhatsApp Access Token not configured. Please complete setup.' });
+            return;
+        }
+
+        const contact = await getOrCreateContact(userId, to, contactName || null);
+        const apiVersion = settings.apiVersion || 'v23.0';
+
+        const actionParameters = {
+            flow_message_version: '3',
+            flow_token: `flow_${flowId}_${Date.now()}`,
+            flow_id: String(flowId),
+            flow_cta: String(flowCta || 'View Flow').slice(0, 20),
+            flow_action: 'navigate',
+        };
+        if (screen) {
+            actionParameters.flow_action_payload = { screen };
+        }
+
+        const interactivePayload = {
+            messaging_product: 'whatsapp',
+            recipient_type: 'individual',
+            to: cleanPhoneNumber(to),
+            type: 'interactive',
+            interactive: {
+                type: 'flow',
+                ...(headerText ? { header: { type: 'text', text: headerText } } : {}),
+                body: { text: bodyText },
+                ...(footerText ? { footer: { text: footerText } } : {}),
+                action: {
+                    name: 'flow',
+                    parameters: actionParameters,
+                },
+            },
+        };
+
+        const response = await fetch(`https://graph.facebook.com/${apiVersion}/${settings.phoneNumberId}/messages`, {
+            method: 'POST',
+            headers: {
+                Authorization: `Bearer ${settings.accessToken}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(interactivePayload),
+        });
+
+        const metaResult = await response.json();
+        if (!response.ok) {
+            console.error('[send-flow] Meta WhatsApp error:', response.status, metaResult);
+            const err = new Error(metaResult?.error?.message || 'Failed to send WhatsApp Flow');
+            err.statusCode = response.status;
+            err.details = metaResult;
+            throw err;
+        }
+
+        const messageId = metaResult.messages?.[0]?.id;
+        const timestamp = new Date();
+
+        const fullMediaData = {
+            type: 'flow',
+            flowId,
+            flowName: flowName || `Flow ${flowId}`,
+            flowCta,
+            header: headerText ? { format: 'TEXT', text: headerText } : null,
+            body: { text: bodyText },
+            footer: footerText ? { text: footerText } : null,
+            buttons: [
+                {
+                    type: 'FLOW',
+                    text: flowCta,
+                    flow_id: String(flowId),
+                },
+            ],
+        };
+
+        const createdMessage = await prisma.message.create({
+            data: {
+                id: messageId,
+                userId,
+                contactId: contact.id,
+                content: bodyText,
+                timestamp,
+                isSentByMe: true,
+                isRead: false,
+                status: 'SENT',
+                messageType: 'template',
+                mediaData: fullMediaData,
+            },
+        });
+
+        chatEventBus.publishNewMessage({
+            userId,
+            contactId: contact.id,
+            message: {
+                id: createdMessage.id,
+                sender_id: userId,
+                receiver_id: contact.phoneNumber,
+                content: createdMessage.content,
+                timestamp: timestamp.toISOString(),
+                is_sent_by_me: true,
+                is_read: false,
+                status: 'sent',
+                message_type: 'template',
+                media_data: createdMessage.mediaData,
+            },
+        });
+
+        res.json({
+            success: true,
+            messageId,
+            timestamp: timestamp.toISOString(),
+            status: 'sent',
         });
     } catch (error) {
         next(error);

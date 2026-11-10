@@ -135,8 +135,18 @@ export default function ChatPage() {
           }));
 
         setMessages((prevMessages) => {
-          const optimisticMessages = prevMessages.filter(msg => msg.isOptimistic);
-          return [...mappedMessages, ...optimisticMessages];
+          const fetchedIds = new Set(mappedMessages.map((m: Message) => m.id));
+          const remainingOptimistic = prevMessages.filter(
+            (msg) => msg.isOptimistic && !fetchedIds.has(msg.id)
+          );
+          const combined = [...mappedMessages, ...remainingOptimistic];
+          const seen = new Set<string>();
+          return combined.filter((m) => {
+            if (!m.id) return true;
+            if (seen.has(m.id)) return false;
+            seen.add(m.id);
+            return true;
+          });
         });
       } else {
         console.error('Error fetching messages:', result.error);
@@ -318,13 +328,32 @@ export default function ChatPage() {
             }
             setMessages((prev) => {
               if (prev.some((m) => m.id === data.message.id)) return prev;
-              return [
-                ...prev,
+              const isSentByMe = data.message.sender_id === user.id;
+              // If sent by me, remove any matching optimistic message
+              let list = prev;
+              if (isSentByMe) {
+                const optIndex = list.findIndex(
+                  (m) => m.isOptimistic && (m.content === data.message.content || m.id.startsWith('optimistic_'))
+                );
+                if (optIndex !== -1) {
+                  list = list.filter((_, i) => i !== optIndex);
+                }
+              }
+              const nextList = [
+                ...list,
                 {
                   ...data.message,
-                  is_sent_by_me: data.message.sender_id === user.id,
+                  is_sent_by_me: isSentByMe,
                 },
               ];
+              // Ensure unique IDs
+              const seen = new Set<string>();
+              return nextList.filter((m) => {
+                if (!m.id) return true;
+                if (seen.has(m.id)) return false;
+                seen.add(m.id);
+                return true;
+              });
             });
             fetchUsers();
           }
@@ -389,7 +418,14 @@ export default function ChatPage() {
             // Combine real messages with optimistic ones, avoiding duplicates
             const fetchedIds = new Set(fetchedMessages.map((m: Message) => m.id));
             const remainingOptimistic = optimisticMessages.filter(m => !fetchedIds.has(m.id));
-            return [...fetchedMessages, ...remainingOptimistic];
+            const combined = [...fetchedMessages, ...remainingOptimistic];
+            const seen = new Set<string>();
+            return combined.filter((m) => {
+              if (!m.id) return true;
+              if (seen.has(m.id)) return false;
+              seen.add(m.id);
+              return true;
+            });
           });
         } else {
           console.error('Failed to fetch broadcast messages:', result.error);
@@ -788,21 +824,34 @@ export default function ChatPage() {
       }
 
       // Replace optimistic message with real message from API response
-      setMessages((prev) => prev.map(m =>
-        m.id === optimisticId
-          ? {
-            id: result.messageId,
-            sender_id: user.id,
-            receiver_id: selectedUser.id,
-            content,
-            timestamp: result.timestamp || timestamp,
-            is_sent_by_me: true,
-            message_type: 'text',
-            media_data: null,
-            isOptimistic: false
-          }
-          : m
-      ));
+      setMessages((prev) => {
+        const alreadyExists = prev.some((m) => m.id === result.messageId);
+        if (alreadyExists) {
+          return prev.filter((m) => m.id !== optimisticId);
+        }
+        const updated = prev.map((m) =>
+          m.id === optimisticId
+            ? {
+                id: result.messageId,
+                sender_id: user.id,
+                receiver_id: selectedUser.id,
+                content,
+                timestamp: result.timestamp || timestamp,
+                is_sent_by_me: true,
+                message_type: 'text',
+                media_data: null,
+                isOptimistic: false,
+              }
+            : m
+        );
+        const seen = new Set<string>();
+        return updated.filter((m) => {
+          if (!m.id) return true;
+          if (seen.has(m.id)) return false;
+          seen.add(m.id);
+          return true;
+        });
+      });
 
       // Update the user list to show this as the latest message
       setUsers(prev => prev.map(u =>

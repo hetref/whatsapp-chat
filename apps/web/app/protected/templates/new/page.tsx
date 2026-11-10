@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,12 +20,19 @@ import {
   Sparkles,
   ChevronDown,
   Check,
+  Search,
+  X,
+  ExternalLink,
+  Workflow,
+  Database,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { MediaUpload } from "@/components/chat/media-upload";
+import FlowPreview from "@/components/flows/flow-preview";
 import LogoIcon from "@/components/logo-icon";
 import { cn } from "@/lib/utils";
+import type { StoredFlow } from "@/lib/flows/flow-types";
 
 // Type definitions
 interface TemplateComponent {
@@ -40,10 +47,13 @@ interface TemplateComponent {
 }
 
 interface ButtonComponent {
-  type: 'QUICK_REPLY' | 'URL' | 'PHONE_NUMBER' | 'CATALOG' | 'OTP';
+  type: 'QUICK_REPLY' | 'URL' | 'PHONE_NUMBER' | 'FLOW' | 'CATALOG' | 'OTP';
   text: string;
   url?: string;
   phone_number?: string;
+  flow_id?: string;
+  flow_action?: 'navigate' | 'data_exchange';
+  navigate_screen?: string;
 }
 
 interface CreateTemplateRequest {
@@ -88,7 +98,46 @@ export default function NewTemplatePage() {
   const [isCreating, setIsCreating] = useState(false);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [showPreview, setShowPreview] = useState(true);
+  const [publishedFlows, setPublishedFlows] = useState<StoredFlow[]>([]);
+  const [flowsLoading, setFlowsLoading] = useState(true);
+  const [flowsError, setFlowsError] = useState('');
+  const [flowModalTarget, setFlowModalTarget] = useState<{ componentIndex: number; buttonIndex: number } | null>(null);
+  const [selectedModalFlowId, setSelectedModalFlowId] = useState<string | null>(null);
+  const [flowSearchQuery, setFlowSearchQuery] = useState('');
+  const [manualFlowModeMap, setManualFlowModeMap] = useState<Record<string, boolean>>({});
   const router = useRouter();
+
+  const selectedModalFlow = publishedFlows.find((f) => f.id === selectedModalFlowId) || publishedFlows[0] || null;
+
+  useEffect(() => {
+    let active = true;
+    fetch('/api/flows', { cache: 'no-store' })
+      .then(async (response) => {
+        const result = await response.json();
+        if (!response.ok) {
+          throw new Error(result.error || 'Could not load published Flows.');
+        }
+        if (active) {
+          setPublishedFlows(
+            (result.data as StoredFlow[]).filter(
+              (flow) => flow.status === 'PUBLISHED' && Boolean(flow.metaFlowId),
+            ),
+          );
+        }
+      })
+      .catch((error: unknown) => {
+        if (active) {
+          setFlowsError(error instanceof Error ? error.message : 'Could not load published Flows.');
+        }
+      })
+      .finally(() => {
+        if (active) setFlowsLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const [showMediaUpload, setShowMediaUpload] = useState(false);
   const [selectedHeaderMedia, setSelectedHeaderMedia] = useState<{
@@ -269,6 +318,14 @@ export default function NewTemplatePage() {
           if (button.type === 'PHONE_NUMBER' && !button.phone_number?.trim()) {
             errors.push(`Button ${buttonIndex + 1} phone number is required`);
           }
+          if (button.type === 'FLOW') {
+            if (!button.flow_id?.trim()) {
+              errors.push(`Button ${buttonIndex + 1} must be connected to a Flow (choose a published flow or enter a Flow ID)`);
+            }
+            if ((button.flow_action || 'navigate') === 'navigate' && !button.navigate_screen?.trim()) {
+              errors.push(`Button ${buttonIndex + 1} requires an initial screen name for navigation`);
+            }
+          }
         });
       }
     });
@@ -362,6 +419,26 @@ export default function NewTemplatePage() {
               fileName: selectedHeaderMedia.fileName,
               mimeType: selectedHeaderMedia.mimeType,
             } : undefined
+          };
+        }
+        if (comp.type === 'BUTTONS' && comp.buttons) {
+          return {
+            ...comp,
+            buttons: comp.buttons.map((button) => {
+              if (button.type === 'FLOW') {
+                const cleaned: ButtonComponent = {
+                  type: 'FLOW',
+                  text: button.text?.trim() || 'View flow',
+                  flow_id: button.flow_id?.trim(),
+                  flow_action: button.flow_action === 'data_exchange' ? 'data_exchange' : 'navigate',
+                };
+                if (button.navigate_screen?.trim()) {
+                  cleaned.navigate_screen = button.navigate_screen.trim();
+                }
+                return cleaned;
+              }
+              return button;
+            }),
           };
         }
         return comp;
@@ -990,31 +1067,43 @@ export default function NewTemplatePage() {
                                 <div className="relative mt-1">
                                   <select
                                     value={button.type}
-                                    onChange={(e) =>
+                                    onChange={(e) => {
+                                      const nextType = e.target.value as ButtonComponent['type'];
+                                      const defaultFlow = publishedFlows[0];
                                       updateButton(index, buttonIndex, {
-                                        type: e.target.value as ButtonComponent['type'],
-                                        url: e.target.value === 'URL' ? button.url : undefined,
-                                        phone_number: e.target.value === 'PHONE_NUMBER' ? button.phone_number : undefined,
-                                      })
-                                    }
+                                        type: nextType,
+                                        url: nextType === 'URL' ? button.url : undefined,
+                                        phone_number: nextType === 'PHONE_NUMBER' ? button.phone_number : undefined,
+                                        flow_id: nextType === 'FLOW' ? (button.flow_id || defaultFlow?.metaFlowId || defaultFlow?.id) : undefined,
+                                        flow_action: nextType === 'FLOW' ? (button.flow_action || 'navigate') : undefined,
+                                        navigate_screen: nextType === 'FLOW' ? (button.navigate_screen || defaultFlow?.screenConfig?.screens?.[0]?.id || 'WELCOME') : undefined,
+                                        text: nextType === 'FLOW' && (!button.text?.trim() || button.text === 'Track Order') ? 'View flow' : button.text,
+                                      });
+                                    }}
                                     className="appearance-none w-full h-8 pl-3 pr-8 rounded-lg border border-stone-300/80 dark:border-stone-700/80 bg-white dark:bg-stone-900 text-xs font-medium text-stone-700 dark:text-stone-300 focus:outline-none focus:ring-1 focus:ring-[#5F7C65]"
                                   >
                                     <option value="QUICK_REPLY">Quick Reply (Preset user text)</option>
                                     <option value="URL">Website URL</option>
                                     <option value="PHONE_NUMBER">Phone Call</option>
+                                    <option value="FLOW">WhatsApp Flow (Complete flow)</option>
                                   </select>
                                   <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 size-3 text-stone-400 pointer-events-none" />
                                 </div>
                               </div>
 
                               <div>
-                                <Label className="text-[11px] font-medium text-stone-600 dark:text-stone-400">
-                                  Button Label * (Max 25 chars)
-                                </Label>
+                                <div className="flex items-center justify-between">
+                                  <Label className="text-[11px] font-medium text-stone-600 dark:text-stone-400">
+                                    Button Label * (Max 25 chars)
+                                  </Label>
+                                  <span className="text-[10px] font-mono text-stone-400">
+                                    {(button.text || '').length} / 25
+                                  </span>
+                                </div>
                                 <Input
                                   value={button.text}
                                   onChange={(e) => updateButton(index, buttonIndex, { text: e.target.value })}
-                                  placeholder="e.g. Track Order"
+                                  placeholder={button.type === 'FLOW' ? 'View flow' : 'e.g. Track Order'}
                                   className="mt-1 h-8 text-xs rounded-lg border-stone-300/80 dark:border-stone-700/80 bg-white dark:bg-stone-900"
                                   maxLength={25}
                                 />
@@ -1048,6 +1137,205 @@ export default function NewTemplatePage() {
                                 />
                               </div>
                             )}
+
+                            {button.type === 'FLOW' && (() => {
+                              const buttonKey = `${index}-${buttonIndex}`;
+                              const isManual = Boolean(manualFlowModeMap[buttonKey]);
+                              const matchedFlow = publishedFlows.find(
+                                (f) => f.metaFlowId === button.flow_id || f.id === button.flow_id
+                              );
+
+                              return (
+                                <div className="space-y-3 pt-2 border-t border-stone-200/60 dark:border-stone-800/60">
+                                  {/* Flow Connection Header */}
+                                  <div className="flex items-center justify-between">
+                                    <Label className="text-[11px] font-semibold text-stone-700 dark:text-stone-300 flex items-center gap-1.5">
+                                      <Workflow className="size-3.5 text-[#2D583F] dark:text-[#8EAE95]" />
+                                      <span>WhatsApp Flow *</span>
+                                    </Label>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setManualFlowModeMap((prev) => ({
+                                          ...prev,
+                                          [buttonKey]: !isManual,
+                                        }));
+                                      }}
+                                      className="text-[10px] text-[#2D583F] dark:text-[#8EAE95] hover:underline cursor-pointer font-mono"
+                                    >
+                                      {isManual ? "← Select from WaChat Flows" : "Enter Meta Flow ID manually"}
+                                    </button>
+                                  </div>
+
+                                  {isManual ? (
+                                    <div className="p-3 rounded-xl border border-stone-200/80 dark:border-stone-800/80 bg-stone-50/50 dark:bg-stone-900/40 space-y-2">
+                                      <div className="flex items-center justify-between">
+                                        <span className="text-[10px] font-mono text-stone-500 uppercase tracking-wider">
+                                          Manual Flow ID
+                                        </span>
+                                        <span className="text-[10px] text-amber-600 dark:text-amber-400">
+                                          Flow created in Meta WhatsApp Manager
+                                        </span>
+                                      </div>
+                                      <Input
+                                        value={button.flow_id || ''}
+                                        onChange={(e) => updateButton(index, buttonIndex, { flow_id: e.target.value.trim() })}
+                                        placeholder="e.g. 2322935545166844"
+                                        className="h-8 text-xs font-mono rounded-lg border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-900"
+                                      />
+                                      <p className="text-[10px] text-stone-400">
+                                        Paste the Flow ID shown in your Meta WhatsApp Manager.
+                                      </p>
+                                    </div>
+                                  ) : (
+                                    <div>
+                                      {matchedFlow ? (
+                                        <div className="p-3 rounded-xl border border-[#2D583F]/30 bg-[#2D583F]/5 dark:bg-[#2D583F]/15 space-y-2">
+                                          <div className="flex items-center justify-between gap-2">
+                                            <div className="flex items-center gap-2.5 min-w-0">
+                                              <div className="size-7 rounded-lg bg-[#2D583F]/10 flex items-center justify-center text-[#2D583F] dark:text-[#8EAE95] shrink-0 border border-[#2D583F]/20">
+                                                <Workflow className="size-4" />
+                                              </div>
+                                              <div className="min-w-0">
+                                                <div className="flex items-center gap-2">
+                                                  <span className="text-xs font-semibold text-stone-900 dark:text-stone-100 truncate">
+                                                    {matchedFlow.name}
+                                                  </span>
+                                                  <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 font-mono">
+                                                    Published
+                                                  </span>
+                                                </div>
+                                                <p className="text-[10px] text-stone-500 font-mono truncate mt-0.5">
+                                                  Flow ID: {matchedFlow.metaFlowId || 'Pending'}
+                                                </p>
+                                              </div>
+                                            </div>
+
+                                            <Button
+                                              type="button"
+                                              variant="outline"
+                                              size="sm"
+                                              onClick={() => {
+                                                setSelectedModalFlowId(matchedFlow.id);
+                                                setFlowModalTarget({ componentIndex: index, buttonIndex });
+                                              }}
+                                              className="h-7 px-2.5 rounded-lg text-[11px] cursor-pointer shrink-0"
+                                            >
+                                              Change Flow
+                                            </Button>
+                                          </div>
+
+                                          <div className="flex items-center gap-2 text-[10px] text-stone-500 dark:text-stone-400 font-mono pt-1 border-t border-stone-200/50 dark:border-stone-800/50">
+                                            <span>Category: {matchedFlow.category}</span>
+                                            <span>•</span>
+                                            <span>{matchedFlow.screenConfig.screens.length} Screen(s)</span>
+                                          </div>
+                                        </div>
+                                      ) : (
+                                        <div className="p-4 rounded-xl border border-dashed border-stone-300 dark:border-stone-700 bg-stone-50/50 dark:bg-stone-900/40 text-center space-y-2">
+                                          <p className="text-xs text-stone-600 dark:text-stone-400">
+                                            {publishedFlows.length > 0
+                                              ? "Choose an existing published flow to attach to this button."
+                                              : "No published flows found. Publish a flow in WaChat or enter a Meta Flow ID manually."}
+                                          </p>
+                                          <div className="flex items-center justify-center gap-2 pt-1">
+                                            <Button
+                                              type="button"
+                                              variant="outline"
+                                              size="sm"
+                                              onClick={() => {
+                                                if (publishedFlows.length > 0) {
+                                                  setSelectedModalFlowId(publishedFlows[0].id);
+                                                }
+                                                setFlowModalTarget({ componentIndex: index, buttonIndex });
+                                              }}
+                                              className="h-8 rounded-xl border-[#5F7C65]/40 text-[#2D583F] dark:text-[#8EAE95] hover:bg-[#5F7C65]/10 text-xs font-medium gap-1.5 cursor-pointer shadow-2xs"
+                                            >
+                                              <Workflow className="size-3.5" />
+                                              <span>Select an existing flow</span>
+                                            </Button>
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+
+                                  {/* Action Mode & Initial Screen */}
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                                    <div>
+                                      <Label className="text-[11px] font-medium text-stone-600 dark:text-stone-400">
+                                        Flow Action Mode
+                                      </Label>
+                                      <div className="relative mt-1">
+                                        <select
+                                          value={button.flow_action || 'navigate'}
+                                          onChange={(e) =>
+                                            updateButton(index, buttonIndex, {
+                                              flow_action: e.target.value as 'navigate' | 'data_exchange',
+                                            })
+                                          }
+                                          className="appearance-none w-full h-8 pl-3 pr-8 rounded-lg border border-stone-300/80 dark:border-stone-700/80 bg-white dark:bg-stone-900 text-xs font-medium text-stone-700 dark:text-stone-300 focus:outline-none focus:ring-1 focus:ring-[#5F7C65]"
+                                        >
+                                          <option value="navigate">Navigate to Screen (Complete Flow)</option>
+                                          <option value="data_exchange">Endpoint Flow (WaChat Data Exchange)</option>
+                                        </select>
+                                        <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 size-3 text-stone-400 pointer-events-none" />
+                                      </div>
+                                      <p className="text-[10px] text-stone-500 dark:text-stone-400 mt-1">
+                                        {button.flow_action === 'data_exchange'
+                                          ? 'Interactions query WaChat Endpoint (/api/flow-endpoint) dynamically.'
+                                          : 'Customer completes flow screens natively on WhatsApp.'}
+                                      </p>
+                                    </div>
+
+                                    <div>
+                                      <Label className="text-[11px] font-medium text-stone-600 dark:text-stone-400">
+                                        Initial Screen {button.flow_action === 'data_exchange' ? '(Optional)' : '*'}
+                                      </Label>
+                                      {matchedFlow && matchedFlow.screenConfig.screens.length > 0 ? (
+                                        <div className="relative mt-1">
+                                          <select
+                                            value={button.navigate_screen || matchedFlow.screenConfig.screens[0]?.id || 'WELCOME'}
+                                            onChange={(e) =>
+                                              updateButton(index, buttonIndex, { navigate_screen: e.target.value })
+                                            }
+                                            className="appearance-none w-full h-8 pl-3 pr-8 rounded-lg border border-stone-300/80 dark:border-stone-700/80 bg-white dark:bg-stone-900 text-xs font-medium text-stone-700 dark:text-stone-300 focus:outline-none focus:ring-1 focus:ring-[#5F7C65]"
+                                          >
+                                            {matchedFlow.screenConfig.screens.map((screen) => (
+                                              <option key={screen.id} value={screen.id}>
+                                                {screen.title ? `${screen.title} (${screen.id})` : screen.id}
+                                              </option>
+                                            ))}
+                                          </select>
+                                          <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 size-3 text-stone-400 pointer-events-none" />
+                                        </div>
+                                      ) : (
+                                        <Input
+                                          value={button.navigate_screen || 'WELCOME'}
+                                          onChange={(e) => updateButton(index, buttonIndex, { navigate_screen: e.target.value.trim() })}
+                                          placeholder="e.g. WELCOME"
+                                          className="mt-1 h-8 text-xs font-mono rounded-lg border-stone-300/80 dark:border-stone-700/80 bg-white dark:bg-stone-900"
+                                        />
+                                      )}
+                                      <p className="text-[10px] text-stone-500 dark:text-stone-400 mt-1">
+                                        Starting screen displayed when user taps the button.
+                                      </p>
+                                    </div>
+                                  </div>
+
+                                  {/* Submissions routing note */}
+                                  <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-900 dark:text-emerald-300 text-xs space-y-1">
+                                    <div className="flex items-center gap-1.5 font-semibold font-mono text-[11px]">
+                                      <Database className="size-3.5 text-emerald-600 dark:text-emerald-400" />
+                                      <span>Submissions Route Directly to WaChat</span>
+                                    </div>
+                                    <p className="text-[10px] text-emerald-800 dark:text-emerald-300/90 leading-relaxed">
+                                      Customer responses to this Flow are received via WaChat webhook &amp; endpoint, saved under Flows &gt; Submissions, and displayed inside the customer chat window. Responses are not stored in Meta.
+                                    </p>
+                                  </div>
+                                </div>
+                              );
+                            })()}
                           </div>
                         ))}
 
@@ -1181,9 +1469,9 @@ export default function NewTemplatePage() {
                             className="w-full py-2 px-3 rounded-xl bg-stone-800/90 text-center text-xs font-medium text-emerald-300 border border-stone-700/60 shadow-xs flex items-center justify-center gap-1.5"
                           >
                             <span>
-                              {b.type === 'URL' ? '🔗' : b.type === 'PHONE_NUMBER' ? '📞' : '↩️'}
+                              {b.type === 'URL' ? '🔗' : b.type === 'PHONE_NUMBER' ? '📞' : b.type === 'FLOW' ? '📋' : '↩️'}
                             </span>
-                            <span className="truncate">{b.text || `Button ${i + 1}`}</span>
+                            <span className="truncate">{b.text || (b.type === 'FLOW' ? 'View flow' : `Button ${i + 1}`)}</span>
                           </div>
                         ))}
                       </div>
@@ -1220,6 +1508,198 @@ export default function NewTemplatePage() {
         onSend={handleSelectHeaderMedia}
         selectedUser={null}
       />
+
+      {/* Select an Existing Flow Modal */}
+      {flowModalTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-stone-900 rounded-2xl shadow-2xl border border-stone-200 dark:border-stone-800 w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
+            {/* Modal Header */}
+            <div className="px-5 py-4 border-b border-stone-200 dark:border-stone-800 flex items-center justify-between">
+              <div>
+                <h2 className="text-sm sm:text-base font-semibold text-stone-900 dark:text-stone-100 flex items-center gap-2">
+                  <Workflow className="size-4 text-[#2D583F] dark:text-[#8EAE95]" />
+                  <span>Select an existing flow</span>
+                </h2>
+                <p className="text-xs text-stone-500 mt-0.5">
+                  Choose a published Flow to attach to your WhatsApp template button.
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={() => setFlowModalTarget(null)}
+                className="size-8 rounded-lg text-stone-500 hover:text-stone-800 dark:hover:text-stone-200 cursor-pointer"
+              >
+                <X className="size-4" />
+              </Button>
+            </div>
+
+            {/* Search Input */}
+            <div className="px-5 py-3 border-b border-stone-200/80 dark:border-stone-800/80 bg-stone-50/60 dark:bg-stone-950/40">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-stone-400" />
+                <Input
+                  value={flowSearchQuery}
+                  onChange={(e) => setFlowSearchQuery(e.target.value)}
+                  placeholder="Search flows by name or ID..."
+                  className="pl-9 h-8 text-xs bg-white dark:bg-stone-900 rounded-xl border-stone-300/80 dark:border-stone-700/80"
+                />
+              </div>
+            </div>
+
+            {/* Modal Main: Flow List (Left) + Live Preview (Right) */}
+            <div className="flex-1 min-h-0 flex flex-col md:flex-row overflow-hidden">
+              {/* Flows List */}
+              <div className="w-full md:w-1/2 p-4 overflow-y-auto space-y-2 border-b md:border-b-0 md:border-r border-stone-200 dark:border-stone-800 max-h-[350px] md:max-h-[500px]">
+                {flowsLoading ? (
+                  <div className="py-12 flex flex-col items-center justify-center text-xs text-stone-500">
+                    <Loader2 className="size-5 animate-spin text-[#2D583F] mb-2" />
+                    <span>Loading published flows...</span>
+                  </div>
+                ) : publishedFlows.length === 0 ? (
+                  <div className="py-10 text-center space-y-3">
+                    <Workflow className="size-8 mx-auto text-stone-300 dark:text-stone-600" />
+                    <p className="text-xs text-stone-500">No published Flows available in your account.</p>
+                    <Link
+                      href="/protected/flows/new"
+                      target="_blank"
+                      className="inline-flex items-center gap-1.5 text-xs font-medium text-[#2D583F] dark:text-[#8EAE95] underline"
+                    >
+                      <Plus className="size-3.5" />
+                      <span>Create and publish a new Flow</span>
+                    </Link>
+                  </div>
+                ) : (
+                  (() => {
+                    const filtered = publishedFlows.filter(
+                      (flow) =>
+                        flow.name.toLowerCase().includes(flowSearchQuery.toLowerCase()) ||
+                        flow.category.toLowerCase().includes(flowSearchQuery.toLowerCase()) ||
+                        (flow.metaFlowId && flow.metaFlowId.includes(flowSearchQuery))
+                    );
+
+                    if (filtered.length === 0) {
+                      return (
+                        <div className="py-8 text-center text-xs text-stone-500">
+                          No flows matched &quot;{flowSearchQuery}&quot;
+                        </div>
+                      );
+                    }
+
+                    return filtered.map((flow) => {
+                      const isSelected = selectedModalFlowId === flow.id || (!selectedModalFlowId && publishedFlows[0]?.id === flow.id);
+                      return (
+                        <div
+                          key={flow.id}
+                          onClick={() => setSelectedModalFlowId(flow.id)}
+                          className={cn(
+                            "flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all",
+                            isSelected
+                              ? "border-[#2D583F] bg-[#2D583F]/5 dark:bg-[#2D583F]/15 shadow-2xs"
+                              : "border-stone-200/80 dark:border-stone-800/80 hover:border-stone-300 dark:hover:border-stone-700 bg-white dark:bg-stone-900"
+                          )}
+                        >
+                          <div className="mt-0.5">
+                            <div
+                              className={cn(
+                                "size-4 rounded-full border flex items-center justify-center transition-all",
+                                isSelected
+                                  ? "border-[#2D583F] bg-[#2D583F]"
+                                  : "border-stone-300 dark:border-stone-600"
+                              )}
+                            >
+                              {isSelected && <div className="size-1.5 rounded-full bg-white" />}
+                            </div>
+                          </div>
+
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-xs font-semibold text-stone-900 dark:text-stone-100 truncate">
+                                {flow.name}
+                              </span>
+                              <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 font-mono">
+                                Published
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-stone-500 font-mono mt-0.5 truncate">
+                              ID: {flow.metaFlowId || 'Pending'}
+                            </p>
+                            <p className="text-[10px] text-stone-400 mt-0.5">
+                              {flow.category} • {flow.screenConfig?.screens?.length || 1} Screen(s)
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    });
+                  })()
+                )}
+              </div>
+
+              {/* Right Live Flow Preview */}
+              <div className="w-full md:w-1/2 p-4 bg-stone-50/60 dark:bg-stone-950/50 flex flex-col items-center justify-center overflow-y-auto max-h-[350px] md:max-h-[500px]">
+                {selectedModalFlow && selectedModalFlow.screenConfig?.screens?.length > 0 ? (
+                  <div className="w-full max-w-[310px] scale-90 sm:scale-95 origin-top">
+                    <FlowPreview screens={selectedModalFlow.screenConfig.screens} />
+                  </div>
+                ) : (
+                  <div className="text-center p-6 text-stone-400 text-xs space-y-2">
+                    <Workflow className="size-8 mx-auto opacity-30 text-[#2D583F]" />
+                    <p>Select a flow on the left to preview its screens and interactive layout.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-5 py-3.5 border-t border-stone-200 dark:border-stone-800 flex items-center justify-between gap-3 bg-white dark:bg-stone-900">
+              <Link
+                href="/protected/flows/new"
+                target="_blank"
+                className="inline-flex items-center gap-1 text-xs font-medium text-[#2D583F] dark:text-[#8EAE95] hover:underline"
+              >
+                <Plus className="size-3.5" />
+                <span>Create new</span>
+                <ExternalLink className="size-3 opacity-60 ml-0.5" />
+              </Link>
+
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setFlowModalTarget(null)}
+                  className="h-8 rounded-xl text-xs cursor-pointer"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={!selectedModalFlow}
+                  onClick={() => {
+                    if (selectedModalFlow && flowModalTarget) {
+                      const currentBtn = templateData.components[flowModalTarget.componentIndex]?.buttons?.[flowModalTarget.buttonIndex];
+                      updateButton(flowModalTarget.componentIndex, flowModalTarget.buttonIndex, {
+                        flow_id: selectedModalFlow.metaFlowId || selectedModalFlow.id,
+                        flow_action: 'navigate',
+                        navigate_screen: selectedModalFlow.screenConfig?.screens?.[0]?.id || 'WELCOME',
+                        text: currentBtn?.text?.trim() && currentBtn.text !== 'Track Order'
+                          ? currentBtn.text
+                          : 'View flow',
+                      });
+                      setFlowModalTarget(null);
+                    }
+                  }}
+                  className="h-8 px-4 rounded-xl bg-[#2D583F] hover:bg-[#234531] text-white text-xs font-medium cursor-pointer"
+                >
+                  Select Flow
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

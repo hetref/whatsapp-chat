@@ -37,12 +37,14 @@ model User {
   accounts Account[]
 
   // Relations
-  contacts   Contact[] // WhatsApp contacts owned by this user
-  messages   Message[] // Messages owned by this user
-  groups     ChatGroup[] // Broadcast groups owned by this user
-  settings   UserSettings? // WhatsApp API settings for this user
-  apiKeys    ApiKey[] // API keys for this user
-  mediaFiles MediaFile[] // Media files uploaded by this user
+  contacts        Contact[] // WhatsApp contacts owned by this user
+  messages        Message[] // Messages owned by this user
+  flowSubmissions WhatsAppFlowSubmission[]
+  groups          ChatGroup[] // Broadcast groups owned by this user
+  settings        UserSettings? // WhatsApp API settings for this user
+  apiKeys         ApiKey[] // API keys for this user
+  mediaFiles      MediaFile[] // Media files uploaded by this user
+  flows           WhatsAppFlow[]
 
   // SaaS Relations
   subscription Subscription? // User's subscription (null until first payment)
@@ -70,8 +72,9 @@ model Contact {
   createdAt    DateTime @default(now()) @map("created_at")
 
   // Relations
-  owner            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  owner            User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
   messages         Message[] // All messages for this contact
+  flowSubmissions  WhatsAppFlowSubmission[]
   groupMemberships GroupMember[] // Group memberships for this contact
 
   @@unique([userId, phoneNumber], name: "contacts_user_id_phone_number_key")
@@ -178,6 +181,59 @@ model UserSettings {
   @@index([webhookToken], name: "idx_user_settings_webhook_token")
   @@index([businessAccountId], name: "idx_user_settings_business_account_id")
   @@map("user_settings")
+}
+
+enum WhatsAppFlowStatus {
+  DRAFT
+  PUBLISHED
+  DEPRECATED
+}
+
+/// Static WhatsApp Flow definitions owned by a platform user/business.
+model WhatsAppFlow {
+  id                String             @id @default(uuid()) @db.Uuid
+  userId            String             @map("user_id") @db.Text
+  businessAccountId String?            @map("business_account_id") @db.Text
+  name              String             @db.VarChar(60)
+  description       String?            @db.VarChar(512)
+  category          String             @default("OTHER") @db.VarChar(32)
+  status            WhatsAppFlowStatus @default(DRAFT)
+  metaFlowId        String?            @map("meta_flow_id") @db.Text
+  flowJson          Json               @map("flow_json")
+  screenConfig      Json               @map("screen_config")
+  createdAt         DateTime           @default(now()) @map("created_at")
+  updatedAt         DateTime           @updatedAt @map("updated_at")
+
+  owner       User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  submissions WhatsAppFlowSubmission[]
+
+  @@unique([metaFlowId], name: "whatsapp_flows_meta_flow_id_key")
+  @@index([userId, updatedAt(sort: Desc)], name: "idx_whatsapp_flows_user_updated")
+  @@index([userId, status], name: "idx_whatsapp_flows_user_status")
+  @@index([businessAccountId], name: "idx_whatsapp_flows_business_account_id")
+  @@map("whatsapp_flows")
+}
+
+/// Completed submissions received from WhatsApp Flow response webhooks.
+model WhatsAppFlowSubmission {
+  id                String   @id @default(uuid()) @db.Uuid
+  flowId            String   @map("flow_id") @db.Uuid
+  userId            String   @map("user_id") @db.Text
+  contactId         String?  @map("contact_id") @db.Uuid
+  whatsappMessageId String   @unique @map("whatsapp_message_id") @db.Text
+  contextMessageId  String?  @map("context_message_id") @db.Text
+  contactPhone      String   @map("contact_phone") @db.Text
+  contactName       String?  @map("contact_name") @db.Text
+  responseData      Json     @map("response_data")
+  submittedAt       DateTime @default(now()) @map("submitted_at")
+
+  flow    WhatsAppFlow @relation(fields: [flowId], references: [id], onDelete: Cascade)
+  owner   User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contact Contact?     @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  @@index([userId, flowId, submittedAt(sort: Desc)], name: "idx_flow_submissions_user_flow_date")
+  @@index([contactId], name: "idx_flow_submissions_contact_id")
+  @@map("whatsapp_flow_submissions")
 }
 
 /// API Keys for external API access to WhatsApp Cloud features
@@ -395,4 +451,3 @@ model Verification {
   @@index([identifier])
   @@map("verifications")
 }
-

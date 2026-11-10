@@ -14,6 +14,9 @@ interface ButtonComponent {
     text: string;
     url?: string;
     phone_number?: string;
+    flow_id?: string;
+    flow_action?: string;
+    navigate_screen?: string;
 }
 
 interface WhatsAppTemplate {
@@ -482,6 +485,11 @@ function validateComponents(components: TemplateComponent[]): string | null {
                     }
                     if (button.type === 'PHONE_NUMBER' && !button.phone_number) {
                         return 'PHONE_NUMBER button requires phone_number field';
+                    }
+                    if (button.type === 'FLOW') {
+                        if (!button.flow_id) {
+                            return 'FLOW button requires flow_id field';
+                        }
                     }
                 }
                 break;

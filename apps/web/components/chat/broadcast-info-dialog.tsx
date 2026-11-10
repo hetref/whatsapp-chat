@@ -406,7 +406,7 @@ export const BroadcastInfoDialog: React.FC<BroadcastInfoDialogProps> = ({
               </p>
             </div>
           ) : (
-            filteredRecipients.map((recipient) => {
+            filteredRecipients.map((recipient, idx) => {
               const s = (recipient.status || "").toLowerCase();
               const isRead = Boolean(recipient.is_read || s === "read" || recipient.read_at);
               const isDelivered = Boolean(recipient.is_delivered || isRead || s === "delivered" || recipient.delivered_at);
@@ -417,7 +417,7 @@ export const BroadcastInfoDialog: React.FC<BroadcastInfoDialogProps> = ({
 
               return (
                 <div
-                  key={recipient.message_id || recipient.contact_id}
+                  key={`${recipient.message_id || recipient.contact_id || 'recip'}-${idx}`}
                   className="py-3 flex items-center justify-between gap-3 first:pt-0 last:pb-0 hover:bg-muted/30 -mx-2 px-2 rounded-xl transition-colors"
                 >
                   {/* Left: Avatar & Contact Info */}

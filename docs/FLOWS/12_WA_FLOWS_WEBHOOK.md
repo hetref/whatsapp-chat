@@ -100,6 +100,12 @@ Below is the structure of the Flow response message webhook payload:
 | `interactive.nfm_reply.response_json`<br>*string* | Flow-specific data. The structure is either defined in flow JSON (see [Complete action](https://developers.facebook.com/documentation/business-messaging/whatsapp/flows/guides/flowjson#complete-action)) or, if flow is using an endpoint, controlled by endpoint (see Final Response Payload in [Data Exchange Request](https://developers.facebook.com/documentation/business-messaging/whatsapp/flows/guides/implementingyourflowendpoint#data_exchange_request)) |
 | `timestamp`<br>*string* | Time of flow response message |
 
+### WaChat Flow submissions
+
+WaChat stores completed Flow responses in `whatsapp_flow_submissions` and shows them from the **Submissions** action on each Flow card. Responses are associated with a Flow using the originating message context and the Flow ID carried in `flow_token`. The submissions API is scoped to the authenticated user and Flow.
+
+After a new submission is stored, WaChat emails the Flow owner's account email with the submitter's contact details and response data. Duplicate webhook deliveries do not send duplicate emails. Configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, and optionally `SMTP_FROM` in the API service environment; email delivery failures are logged and do not prevent webhook processing.
+
 ## Flows status and performance webhooks
 ### Webhook notification object
 
@@ -345,4 +351,3 @@ The detection period for the alert is 10 minutes.
   "object": "whatsapp_business_account"
 }
 ```
-

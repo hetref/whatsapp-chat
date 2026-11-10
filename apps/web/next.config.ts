@@ -61,6 +61,10 @@ const nextConfig: NextConfig = {
           destination: `${apiBase}/api/send-template`,
         },
         {
+          source: '/api/send-flow',
+          destination: `${apiBase}/api/send-flow`,
+        },
+        {
           source: '/api/send-media',
           destination: `${apiBase}/api/send-media`,
         },

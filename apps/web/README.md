@@ -26,6 +26,7 @@
 - [Quick Start](#-quick-start)
 - [Setup Guide](#-complete-setup-guide)
 - [Features Documentation](#-features-documentation)
+- [Static WhatsApp Flow Builder](../../docs/FLOWS/STATIC_FLOW_BUILDER.md)
 - [API Reference](#-api-reference)
 - [Deployment](#-deployment)
 - [Troubleshooting](#-troubleshooting)
@@ -283,6 +284,10 @@ Visit `http://localhost:3000` 🎉
 ---
 
 ## 📖 Features Documentation
+
+### Static WhatsApp Flows
+
+See the [Static WhatsApp Flow Builder guide](../../docs/FLOWS/STATIC_FLOW_BUILDER.md) for dashboard usage, database setup, supported JSON behavior, and the app-local publish status.
 
 ### ⚙️ Initial Setup (Multi-Tenant)
 

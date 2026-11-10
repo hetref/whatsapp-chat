@@ -25,6 +25,7 @@ import {
   User as UserIcon,
   BadgeCheck,
   Phone,
+  GitBranch,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -56,6 +57,13 @@ const navItems = [
     path: "/protected/templates",
     icon: FileText,
     description: "Manage templates",
+    requiresFeature: null as string | null,
+  },
+  {
+    name: "Flows",
+    path: "/protected/flows",
+    icon: GitBranch,
+    description: "Build WhatsApp Flows",
     requiresFeature: null as string | null,
   },
   {
@@ -469,7 +477,7 @@ export default function ProtectedLayout({
         <button
           type="button"
           aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-          className="hidden md:flex absolute -right-3 top-20 size-6 rounded-full border border-stone-200/80 dark:border-stone-700 bg-white dark:bg-stone-900 text-stone-600 dark:text-stone-300 shadow-xs hover:shadow-md hover:scale-105 active:scale-95 items-center justify-center transition-all z-20"
+          className="hidden md:flex absolute -right-3 top-5 size-6 rounded-full border border-stone-200/80 dark:border-stone-700 bg-white dark:bg-stone-900 text-stone-600 dark:text-stone-300 shadow-xs hover:shadow-md hover:scale-105 active:scale-95 items-center justify-center transition-all z-20"
           onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
         >
           {sidebarCollapsed ? (

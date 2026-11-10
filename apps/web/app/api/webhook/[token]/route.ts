@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { randomUUID } from 'node:crypto';
 import { prisma } from '@/lib/prisma';
 import { downloadAndUploadToS3 } from '@/lib/aws-s3';
 import { incrementStorageUsed, checkSubscriptionActive } from '@/lib/plan-limits';
@@ -56,6 +57,11 @@ interface WhatsAppMessage {
       id: string;
       title: string;
       description?: string;
+    };
+    nfm_reply?: {
+      name: string;
+      body: string;
+      response_json: string;
     };
   };
 }
@@ -334,6 +340,35 @@ function processMessageContent(message: WhatsAppMessage) {
         content = message.interactive.button_reply.title;
       } else if (message.interactive?.list_reply?.title) {
         content = message.interactive.list_reply.title;
+      } else if (message.interactive?.nfm_reply) {
+        const nfm = message.interactive.nfm_reply;
+        let parsedData: Record<string, unknown> | null = null;
+        try {
+          parsedData = JSON.parse(nfm.response_json);
+        } catch {
+          parsedData = null;
+        }
+
+        if (parsedData && typeof parsedData === 'object') {
+          const entries = Object.entries(parsedData).filter(([k]) => k !== 'flow_token');
+          if (entries.length > 0) {
+            const formattedFields = entries
+              .map(([k, v]) => `• ${k.replace(/_/g, ' ')}: ${typeof v === 'object' ? JSON.stringify(v) : String(v)}`)
+              .join('\n');
+            content = `📋 Flow Submission:\n${formattedFields}`;
+          } else {
+            content = nfm.body || 'Flow Completed';
+          }
+        } else {
+          content = nfm.body || 'Flow Completed';
+        }
+
+        mediaData = {
+          type: 'flow_response',
+          flow_token: (parsedData as any)?.flow_token,
+          response_data: parsedData,
+          raw_response: nfm.response_json,
+        };
       } else {
         content = '[Interactive Response]';
       }
@@ -676,6 +711,81 @@ export async function POST(
             });
           } catch (messageError: unknown) {
             console.error('[Webhook POST /:token] Error storing message:', messageError);
+          }
+
+          // Store flow submission record if message contains flow response
+          if (message.interactive?.nfm_reply?.response_json) {
+            try {
+              let parsedData: any = null;
+              try {
+                parsedData = JSON.parse(message.interactive.nfm_reply.response_json);
+              } catch {}
+
+              if (parsedData && typeof parsedData === 'object') {
+                const flowToken = typeof parsedData.flow_token === 'string' ? parsedData.flow_token : null;
+
+                // Find matching flow in whatsapp_flows
+                let matchedFlow = null;
+                if (flowToken && flowToken !== 'unused') {
+                  const tokenMatch = flowToken.match(/flow_(\d+)_/);
+                  const metaFlowId = tokenMatch ? tokenMatch[1] : flowToken;
+                  matchedFlow = await prisma.whatsAppFlow.findFirst({
+                    where: { userId: businessOwnerId, metaFlowId },
+                    select: { id: true, name: true },
+                  });
+                }
+
+                // If context message ID exists, try finding flow from that message
+                if (!matchedFlow && (message as any).context?.id) {
+                  const originatingMsg = await prisma.message.findFirst({
+                    where: { id: String((message as any).context.id), userId: businessOwnerId },
+                    select: { mediaData: true },
+                  });
+                  if (originatingMsg?.mediaData) {
+                    try {
+                      const parsedMedia = typeof originatingMsg.mediaData === 'string'
+                        ? JSON.parse(originatingMsg.mediaData)
+                        : (originatingMsg.mediaData as Record<string, any>);
+                      const flowButtons = Array.isArray(parsedMedia?.buttons)
+                        ? parsedMedia.buttons.filter((b: any) => String(b?.type || '').toUpperCase() === 'FLOW' && b.flow_id)
+                        : [];
+                      if (flowButtons.length > 0) {
+                        matchedFlow = await prisma.whatsAppFlow.findFirst({
+                          where: { userId: businessOwnerId, metaFlowId: String(flowButtons[0].flow_id) },
+                          select: { id: true, name: true },
+                        });
+                      }
+                    } catch {}
+                  }
+                }
+
+                // Fallback: match any flow for this user
+                if (!matchedFlow) {
+                  matchedFlow = await prisma.whatsAppFlow.findFirst({
+                    where: { userId: businessOwnerId },
+                    orderBy: { updatedAt: 'desc' },
+                    select: { id: true, name: true },
+                  });
+                }
+
+                if (matchedFlow) {
+                  await prisma.$executeRaw`
+                    INSERT INTO "whatsapp_flow_submissions" (
+                      "id", "flow_id", "user_id", "contact_id", "whatsapp_message_id",
+                      "context_message_id", "contact_phone", "contact_name", "response_data", "submitted_at"
+                    ) VALUES (
+                      ${randomUUID()}::uuid, ${matchedFlow.id}::uuid, ${businessOwnerId}, ${existingContact.id}::uuid,
+                      ${String(message.id)}, ${(message as any).context?.id ? String((message as any).context.id) : null},
+                      ${cleanPhone}, ${existingContact.whatsappName || (existingContact as any).customName || null},
+                      ${JSON.stringify(parsedData)}::jsonb, ${new Date(messageTimestamp)}
+                    )
+                    ON CONFLICT ("whatsapp_message_id") DO NOTHING
+                  `;
+                }
+              }
+            } catch (flowErr) {
+              console.error('[Webhook POST /:token] Error storing flow submission:', flowErr);
+            }
           }
         }
       }

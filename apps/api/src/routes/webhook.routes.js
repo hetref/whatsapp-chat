@@ -1,6 +1,8 @@
 import { Router } from 'express';
+import { randomUUID } from 'node:crypto';
 import { prisma } from '@repo/db';
 import { chatEventBus } from '../services/event-bus.service.js';
+import { sendFlowSubmissionEmail } from '../services/email.service.js';
 
 const router = Router();
 
@@ -40,6 +42,101 @@ function normalizeReactions(raw) {
             .filter((entry) => entry.emoji && entry.from);
     }
     return [];
+}
+
+function parseJsonObject(value) {
+    if (typeof value === 'string') {
+        try {
+            value = JSON.parse(value);
+        } catch {
+            return null;
+        }
+    }
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+}
+
+async function storeFlowSubmission({ message, userId, contact, submittedAt }) {
+    const nfmReply = message?.interactive?.nfm_reply;
+    if (message?.interactive?.type !== 'nfm_reply' || !nfmReply?.response_json) return null;
+
+    const responseData = parseJsonObject(nfmReply.response_json);
+    if (!responseData) {
+        console.warn('[API Webhook Flow] Ignoring malformed Flow response JSON:', message.id);
+        return null;
+    }
+
+    let flowMetaId = null;
+    const contextMessageId = message.context?.id ? String(message.context.id) : null;
+    if (contextMessageId) {
+        const originatingMessage = await prisma.message.findFirst({
+            where: { id: contextMessageId, userId, isSentByMe: true },
+            select: { mediaData: true },
+        });
+        const mediaData = parseJsonObject(originatingMessage?.mediaData);
+        const flowButtons = Array.isArray(mediaData?.buttons)
+            ? mediaData.buttons.filter((button) => String(button?.type || '').toUpperCase() === 'FLOW' && button.flow_id)
+            : [];
+        const token = typeof responseData.flow_token === 'string' ? responseData.flow_token : null;
+        if (token && flowButtons.some((button) => String(button.flow_id) === token)) {
+            flowMetaId = token;
+        } else if (flowButtons.length === 1) {
+            flowMetaId = String(flowButtons[0].flow_id);
+        }
+    }
+
+    if (!flowMetaId && typeof responseData.flow_token === 'string' && responseData.flow_token !== 'unused') {
+        const tokenMatch = responseData.flow_token.match(/flow_(\d+)_/);
+        flowMetaId = tokenMatch ? tokenMatch[1] : responseData.flow_token;
+    }
+    if (!message.id || !contact?.id) return null;
+
+    let flow = null;
+    if (flowMetaId) {
+        flow = await prisma.whatsAppFlow.findFirst({
+            where: { userId, metaFlowId: flowMetaId },
+            select: {
+                id: true,
+                name: true,
+                owner: { select: { email: true, name: true } },
+            },
+        });
+    }
+    if (!flow) {
+        flow = await prisma.whatsAppFlow.findFirst({
+            where: { userId },
+            orderBy: { updatedAt: 'desc' },
+            select: {
+                id: true,
+                name: true,
+                owner: { select: { email: true, name: true } },
+            },
+        });
+    }
+    if (!flow) return null;
+
+    const insertedCount = await prisma.$executeRaw`
+        INSERT INTO "whatsapp_flow_submissions" (
+            "id", "flow_id", "user_id", "contact_id", "whatsapp_message_id",
+            "context_message_id", "contact_phone", "contact_name", "response_data", "submitted_at"
+        ) VALUES (
+            ${randomUUID()}::uuid, ${flow.id}, ${userId}, ${contact.id},
+            ${String(message.id)}, ${contextMessageId}, ${contact.phoneNumber},
+            ${contact.customName || contact.whatsappName || null},
+            ${JSON.stringify(responseData)}::jsonb, ${submittedAt}
+        )
+        ON CONFLICT ("whatsapp_message_id") DO NOTHING
+    `;
+    if (insertedCount === 0) return null;
+
+    return {
+        flowName: flow.name,
+        ownerEmail: flow.owner.email,
+        ownerName: flow.owner.name,
+        contactName: contact.customName || contact.whatsappName || null,
+        contactPhone: contact.phoneNumber,
+        responseData,
+        submittedAt,
+    };
 }
 
 /**
@@ -448,14 +545,61 @@ async function handleWebhookPost(req, res, pathToken = null) {
                             messageType = 'text';
                             break;
                         case 'interactive':
-                            if (message.interactive?.button_reply?.title) {
+                            if (message.interactive?.type === 'nfm_reply') {
+                                const nfmReply = message.interactive.nfm_reply;
+                                let parsedResponse = null;
+                                try {
+                                    parsedResponse = typeof nfmReply.response_json === 'string'
+                                        ? JSON.parse(nfmReply.response_json)
+                                        : nfmReply.response_json;
+                                } catch {}
+
+                                if (parsedResponse && typeof parsedResponse === 'object') {
+                                    const entries = Object.entries(parsedResponse).filter(([k]) => k !== 'flow_token');
+                                    if (entries.length > 0) {
+                                        content = '📋 Flow Submission:\n' + entries
+                                            .map(([k, v]) => `• ${k.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())}: ${typeof v === 'object' ? JSON.stringify(v) : v}`)
+                                            .join('\n');
+                                    } else {
+                                        content = '📋 Flow Submission Received';
+                                    }
+                                } else {
+                                    content = '📋 Flow Submission Received';
+                                }
+
+                                messageType = 'flow';
+                                mediaData = {
+                                    type: 'flow',
+                                    flow_submission: true,
+                                    response_data: parsedResponse,
+                                };
+                                try {
+                                    const submission = await storeFlowSubmission({
+                                        message,
+                                        userId: businessOwnerId,
+                                        contact: existingContact,
+                                        submittedAt: messageTimestamp,
+                                    });
+                                    if (submission) {
+                                        try {
+                                            await sendFlowSubmissionEmail(submission);
+                                        } catch (emailError) {
+                                            console.error('[API Webhook Flow] Failed to send submission email:', emailError);
+                                        }
+                                    }
+                                } catch (flowError) {
+                                    console.error('[API Webhook Flow] Failed to store Flow submission:', flowError);
+                                }
+                            } else if (message.interactive?.button_reply?.title) {
                                 content = message.interactive.button_reply.title;
+                                messageType = 'text';
                             } else if (message.interactive?.list_reply?.title) {
                                 content = message.interactive.list_reply.title;
+                                messageType = 'text';
                             } else {
                                 content = '[Interactive Response]';
+                                messageType = 'text';
                             }
-                            messageType = 'text';
                             break;
                         default:
                             content = `[${message.type || 'Message'}]`;
